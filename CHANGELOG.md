@@ -10,6 +10,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Changed
+- **Build queue corrected against the PRD, 2026-07-29** — a trace of PRD §4/§5 and
+  `AUTH.md` against `TASKS.md` found six requirements with no task: the immutable
+  audit log, email verification/password reset, MFA, admin user management, the
+  founder AI chat, and the events catalogue. All are now queued (T1.1a, T1.2a–T1.2d,
+  T3.7), along with deployment (T5.7). Email delivery moved from Phase 5 to Phase 1,
+  because email verification gates sensitive actions from T1.2 and could not have
+  worked otherwise. Decisions D17 (no `fastapi-users`) and D18 (one catalogue, events
+  as a product type) recorded. No API change.
 - **Stack change (`DECISIONS.md` D4, D13), 2026-07-29** — Neon (serverless Postgres +
   pgvector) replaces Supabase; authentication is now self-built in FastAPI (Argon2id,
   our own JWT access + rotating refresh tokens); uploads go to Cloudflare R2 and never

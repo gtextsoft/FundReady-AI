@@ -16,10 +16,15 @@ Legend: `[ ]` todo · `[x]` done · `[~]` in progress
 ## Phase 1 — Foundations
 
 - [ ] **T1.1 Alembic setup** and base migration. *Done when: `alembic upgrade head` runs on a clean DB.*
-- [ ] **T1.2 Identity + auth module** — user model, roles (founder/investor/admin), self-built auth per `AUTH.md` (Argon2id hashing, JWT access+refresh, refresh rotation). *Done when: users can register, log in, and refresh; roles persist.*
-- [ ] **T1.3 Tenant isolation** — app-layer ownership checks (primary) + optional Postgres RLS via a per-transaction user setting (GUC). *Done when: `tests/security` prove a founder cannot read another founder's rows via any path.*
+- [ ] **T1.1a Immutable audit log** — `audit_log` model (`actor_id`, `action`, `target_type`, `target_id`, `metadata`, `created_at`) + append-only service helper, used by every admin and auth-sensitive action from T1.2 onward. *Done when: an action writes a row and the table rejects UPDATE and DELETE at the database level — immutability enforced, not merely intended.*
+- [ ] **T1.2 Identity + auth module** — user model, roles (founder/investor/admin), self-built auth per `AUTH.md` (Argon2id hashing, JWT access+refresh, refresh rotation with reuse detection → family revocation). *Done when: users can register, log in, and refresh; a replayed refresh token kills the session family; roles persist.*
+- [ ] **T1.2a Minimal transactional email** — one `send_email` in `modules/notifications/` over Resend's HTTP API via `httpx` (no SDK). Verification + reset templates only; T5.3 adds the rest. *Done when: a verification email is really delivered, and a send failure is logged without leaking recipient PII.*
+- [ ] **T1.2b Email verification + password reset** — single-use, expiring, hashed-at-rest tokens (24 h verify / 1 h reset); uniform responses that do not enumerate accounts. *Done when: a used token is rejected, and completing a reset bumps `session_valid_after` and revokes every refresh token.*
+- [ ] **T1.2c MFA (TOTP) + admin enforcement** — enrolment confirmed by one code before enabling; secret encrypted at rest; 10 hashed single-use recovery codes. *Done when: an admin cannot obtain tokens without a second factor.*
+- [ ] **T1.2d Admin user management** — admin-only provisioning of admins, suspend/reactivate, role change; no self-service path to `admin`. *Done when: every action is audit-logged and bumps `session_valid_after`.*
+- [ ] **T1.3 Tenant isolation** — app-layer ownership checks (primary) + optional Postgres RLS via a per-transaction user setting (GUC). *Done when: `tests/security` prove a founder cannot read another founder's rows via any path, including with RLS disabled.*
 - [ ] **T1.4 Startup Profile** — model + schemas; create/update endpoints with ownership checks; `source`/`confidence` per field and `missingFields`. *Done when: a founder can create/update only their own profile.*
-- [ ] **T1.5 Document upload** — signed upload/download URLs to object storage; type/size validation; scan hook. *Done when: uploads are stored out of the DB and served via expiring URLs.*
+- [ ] **T1.5 Document upload** — signed upload/download URLs to **Cloudflare R2** (`boto3`, S3-compatible); type/size validation; scan hook. *Done when: uploads are stored out of the DB and served via expiring URLs.*
 
 ## Phase 2 — Audit engine
 
@@ -36,11 +41,12 @@ Legend: `[ ]` todo · `[x]` done · `[~]` in progress
 ## Phase 3 — Readiness loop
 
 - [ ] **T3.1 Task generation** — required/recommended tasks from audit gaps, specific to the report; link to products where relevant. *Done when: gaps produce correct required vs recommended tasks.*
-- [ ] **T3.2 Product catalogue** — model + admin CRUD; tags + region relevance. *Done when: products can be listed and matched to gaps.*
+- [ ] **T3.2 Product & event catalogue** — one model with a type discriminator (`program` · `mentorship` · `event`) per `DECISIONS.md` D18; admin CRUD; tags + region relevance; events carry date/location. *Done when: products and events can be listed, filtered by region, and matched to gaps.*
 - [ ] **T3.3 Stripe checkout** — purchase products via Checkout; webhook signature verification; purchase records link to tasks. *Done when: a verified webhook marks a purchase and links its task.*
 - [ ] **T3.4 Founder subscription** — Stripe Billing lifecycle; subscription gates founder access. *Done when: subscription state is trusted from Stripe only.*
 - [ ] **T3.5 Evidence upload + assessment** — upload evidence; `assess_evidence` job grades against per-task criteria → pass/fail/needs-more. *Done when: weak evidence fails with reasons; strong evidence passes.*
 - [ ] **T3.6 Re-audit + gating** — passing evidence re-audits affected dimensions; investor-visibility gate = audit cleared AND required tasks passed; dispute/re-audit path. *Done when: a startup only becomes investor-visible after the gate is satisfied; `tests/security` prove it.*
+- [ ] **T3.7 Founder AI chat** — the founder-facing half of the "both chat surfaces" in the PRD: chat over **their own** audit, tasks, and gaps; retrieval scoped to their own tenant; cheaper model per D16. *Done when: the chat cannot retrieve another startup's data even when prompted to.*
 
 ## Phase 4 — Investor side & brokerage
 
@@ -55,10 +61,11 @@ Legend: `[ ]` todo · `[x]` done · `[~]` in progress
 
 - [ ] **T5.1 Per-country benchmarks & recommendations** — region-aware benchmark lookup and program matching.
 - [ ] **T5.2 Recommendation surfacing** — gap→program in both chats + browsable catalogue, filtered per country.
-- [ ] **T5.3 Notifications** — transactional emails (audit ready, task assigned, evidence result, meeting booked).
+- [ ] **T5.3 Notifications** — the full templated set, extending T1.2a (audit ready, task assigned, evidence result, meeting booked).
 - [ ] **T5.4 Analytics/metrics** — the success metrics from the PRD.
 - [ ] **T5.5 Hardening** — rate limiting, per-user AI budget caps, monitoring/alerting, security review.
 - [ ] **T5.6 API docs polish** — complete OpenAPI, exported collection, and `CHANGELOG` for the mobile developer.
+- [ ] **T5.7 Deployment** — provision Neon, Upstash Redis, R2 buckets, and the host (Render/Railway/Hetzner); secrets in the platform's secret manager; migrations run on deploy. *Done when: a green CI build deploys and `/v1/health` answers on the public URL.*
 
 ---
 

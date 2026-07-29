@@ -94,3 +94,13 @@ Format: **Decision → Why → Constraint (what this means for the code).**
 ### D16 — AI cost is controlled by model tiering + prompt caching + budgets
 **Why:** keep running cost low (a stated requirement).
 **Constraint:** cheaper model for chat, strongest for audits; cache prompts; cap tokens per request; enforce per-user daily AI budgets. Watch per-audit cost from day one.
+
+### D17 — Auth is hand-rolled against `AUTH.md`; `fastapi-users` is not used
+*Recorded 2026-07-29. Follows from D4 (self-built auth).*
+**Why:** the PRD listed `fastapi-users` as optional. It was evaluated and declined: it brings its own user model and router conventions that cut across the role/tier/broker logic — which is the heart of this product, not boilerplate — and against the `router → service → repository` boundary in `ARCHITECTURE.md` §3. It would also not supply the control that matters most here, refresh-token **family revocation on reuse** (`AUTH.md` §4.2), so the security-critical part would be hand-written regardless.
+**Constraint:** implement auth directly against the `AUTH.md` spec. Don't adopt an auth framework later without a new decision entry — the cost of migrating a live user table is the thing being avoided.
+
+### D18 — One catalogue; events are a product type
+*Recorded 2026-07-29.*
+**Why:** the PRD describes programs, mentorship, and events as things SACI lists and sells. They share everything that matters — tags, region relevance, pricing, Stripe Checkout, and the link from a readiness gap to a purchase. A separate events module would duplicate all of it to model a difference that is really just two extra fields.
+**Constraint:** a single catalogue model with a type discriminator (`program` · `mentorship` · `event`); events carry date and location. One admin CRUD, one purchase path. Splitting them later is a new decision entry.
