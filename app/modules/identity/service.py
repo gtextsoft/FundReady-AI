@@ -23,8 +23,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.core.errors import (
+    ConflictError,
     ForbiddenError,
     InvalidRequestError,
+    NotFoundError,
     UnauthenticatedError,
 )
 from app.core.logging import get_request_id
@@ -716,3 +718,188 @@ async def verify_mfa_challenge(
 def _invalid_mfa(reason: str) -> UnauthenticatedError:
     logger.info("mfa verification failed", extra={"context": {"reason": reason}})
     return UnauthenticatedError("That code is not valid.")
+
+
+# ---------------------------------------------------------------------------
+# Admin user management (AUTH.md section 9)
+# ---------------------------------------------------------------------------
+
+
+def _require_admin(actor: CurrentUser) -> None:
+    """Re-check the actor's role in the service layer.
+
+    The route dependency already enforced this. Checking again here is the
+    defence-in-depth `CLAUDE.md` section 4 asks for: these functions are also
+    callable from a script or another module, where no dependency ran.
+    """
+    if actor.role is not Role.ADMIN:
+        raise ForbiddenError
+
+
+async def _load_target(session: AsyncSession, user_id: uuid.UUID) -> User:
+    target = await UserRepository(session).get_by_id(user_id)
+    if target is None:
+        raise NotFoundError("No such user.")
+    return target
+
+
+async def _refuse_if_last_active_admin(session: AsyncSession, target: User) -> None:
+    """Stop an action that would leave the platform with no administrators.
+
+    The escape hatch would be `scripts/create_admin.py` and database
+    credentials, which is not a position to put an operator in.
+    """
+    if target.role is not Role.ADMIN or target.status is not AccountStatus.ACTIVE:
+        return
+    if await UserRepository(session).count_active_admins() <= 1:
+        raise ConflictError("This is the only active admin account.")
+
+
+async def provision_admin(
+    session: AsyncSession,
+    actor: CurrentUser,
+    *,
+    email: str,
+    password: str,
+) -> User:
+    """Create an admin account. The only path that produces one.
+
+    The new admin lands `pending_verification` and **without MFA**, so they must
+    verify their address and enrol a second factor before any admin capability
+    opens to them (AUTH.md section 9).
+
+    Unlike self-registration, a duplicate address is a real error here: the
+    caller is already a trusted admin, so there is no enumeration concern and
+    silently doing nothing would be worse than saying so.
+    """
+    _require_admin(actor)
+
+    normalised = normalise_email(email)
+    validate_password(password, normalised)
+
+    users = UserRepository(session)
+    if await users.get_by_email(normalised) is not None:
+        raise ConflictError("That email address already has an account.")
+
+    admin = await users.create(
+        email=normalised,
+        password_hash=hash_password(password),
+        role=Role.ADMIN,
+        status=AccountStatus.PENDING_VERIFICATION,
+    )
+    await record_action(
+        session,
+        AuditAction.ADMIN_PROVISIONED,
+        actor_id=actor.id,
+        target_type="user",
+        target_id=admin.id,
+    )
+    # No session_valid_after bump: the account has never had a session.
+    await send_verification_email(session, admin)
+    await session.flush()
+    return admin
+
+
+async def suspend_user(
+    session: AsyncSession, actor: CurrentUser, user_id: uuid.UUID
+) -> User:
+    """Suspend an account and end its sessions immediately.
+
+    Suspension is what an admin reaches for when they believe an account is
+    compromised, so it evicts rather than waits: every refresh token is revoked
+    and `session_valid_after` is bumped, which kills access tokens already
+    issued (AUTH.md section 11).
+    """
+    _require_admin(actor)
+    if actor.id == user_id:
+        raise ForbiddenError("You cannot suspend your own account.")
+
+    target = await _load_target(session, user_id)
+    await _refuse_if_last_active_admin(session, target)
+
+    now = datetime.now(UTC)
+    target.status = AccountStatus.SUSPENDED
+    target.session_valid_after = now
+    revoked = await RefreshTokenRepository(session).revoke_all_for_user(
+        target.id, at=now
+    )
+    await record_action(
+        session,
+        AuditAction.USER_SUSPENDED,
+        actor_id=actor.id,
+        target_type="user",
+        target_id=target.id,
+        details={"sessions_revoked": revoked},
+    )
+    await session.flush()
+    return target
+
+
+async def reactivate_user(
+    session: AsyncSession, actor: CurrentUser, user_id: uuid.UUID
+) -> User:
+    """Lift a suspension.
+
+    Restores `active` only if the address was verified; an account suspended
+    while still pending returns to pending, not straight to active.
+
+    No `session_valid_after` bump: the suspension already moved it, and moving
+    it again would revoke nothing that is not already dead.
+    """
+    _require_admin(actor)
+
+    target = await _load_target(session, user_id)
+    if target.status is not AccountStatus.SUSPENDED:
+        raise ConflictError("That account is not suspended.")
+
+    target.status = (
+        AccountStatus.ACTIVE
+        if target.email_verified
+        else AccountStatus.PENDING_VERIFICATION
+    )
+    await record_action(
+        session,
+        AuditAction.USER_REACTIVATED,
+        actor_id=actor.id,
+        target_type="user",
+        target_id=target.id,
+        details={"status": target.status.value},
+    )
+    await session.flush()
+    return target
+
+
+async def change_user_role(
+    session: AsyncSession, actor: CurrentUser, user_id: uuid.UUID, new_role: Role
+) -> User:
+    """Change a user's role and force them to re-authenticate.
+
+    `session_valid_after` is bumped because the change has to take effect now:
+    `AUTH.md` section 11 lists a role change under force-logout. Refresh tokens
+    issued before the bump stop working too, so the user logs in again and
+    every subsequent request is authorised against the new role.
+    """
+    _require_admin(actor)
+    if actor.id == user_id:
+        raise ForbiddenError("You cannot change your own role.")
+
+    target = await _load_target(session, user_id)
+    if target.role is new_role:
+        raise ConflictError("That user already has that role.")
+    if new_role is not Role.ADMIN:
+        await _refuse_if_last_active_admin(session, target)
+
+    previous = target.role
+    target.role = new_role
+    target.session_valid_after = datetime.now(UTC)
+
+    await record_action(
+        session,
+        AuditAction.USER_ROLE_CHANGED,
+        actor_id=actor.id,
+        target_type="user",
+        target_id=target.id,
+        details={"from": previous.value, "to": new_role.value},
+    )
+    await session.flush()
+    return target

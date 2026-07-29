@@ -12,7 +12,7 @@ endpoint -- deferred to T5.5 rather than conflated with liveness here.
 from typing import Literal
 
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app import __version__
 from app.core.config import Environment, get_settings
@@ -22,6 +22,14 @@ router = APIRouter(tags=["health"])
 
 class HealthResponse(BaseModel):
     """Service liveness."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {"status": "ok", "version": "0.1.0", "environment": "production"}
+            ]
+        }
+    )
 
     status: Literal["ok"] = Field(description="Always `ok` when the API is serving.")
     version: str = Field(description="Deployed API version.", examples=["0.1.0"])

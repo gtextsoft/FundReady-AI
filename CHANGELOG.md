@@ -45,6 +45,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   rather than after launch: the mobile app does not call `/v1/auth/login` yet, so
   the cost is zero today and only grows.
 
+### Fixed
+- **`422` was documented with the wrong schema on two endpoints.** `suspend` and
+  `reactivate` omitted `422` from their declared responses, so FastAPI published its
+  own `HTTPValidationError` shape instead of this API's error envelope — a client
+  coding against the document would have expected the wrong body. Both now declare
+  it, `HTTPValidationError` is gone from the document entirely, and
+  `tests/unit/test_openapi_contract.py` fails if any endpoint regresses.
+- **Every request and response model now publishes an example** (`CLAUDE.md` §6).
+  Previously none did. `LoginResponse` publishes **both** branches, so a client can
+  see the `mfa_required` shape and not only the happy path.
+
 ### Added
 - Repository scaffold: module/layer structure per `ARCHITECTURE.md`, `pyproject.toml`,
   `.env.example`, README (T0.1). No API endpoints yet.
@@ -61,6 +72,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   generated. On a `500`, the same id appears in `details.request_id`.
 - Core scaffolding (T0.3): env-driven settings, async SQLAlchemy session
   management, and structured JSON logging with automatic secret redaction.
+- **Admin user management** (T1.2d) — all four routes require an admin **with MFA
+  enrolled**, so none of this is reachable without a second factor.
+  - `POST /v1/admin/users` — provision an admin. The only path that creates one;
+    `/v1/auth/register` refuses the role. The new admin lands
+    `pending_verification` without MFA, so it confers no power until both are
+    done. A duplicate address returns `409` (unlike registration, the caller is
+    already trusted, so there is no enumeration concern).
+  - `POST /v1/admin/users/{id}/suspend` — blocks the account and **ends its
+    sessions immediately**. `403` on your own account, `409` if it is the only
+    active admin.
+  - `POST /v1/admin/users/{id}/reactivate` — returns to `active`, or to
+    `pending_verification` if the address was never verified.
+  - `PATCH /v1/admin/users/{id}/role` — **forces the user to log in again** so the
+    new role applies at once. `403` on your own account, `409` if it would leave
+    no active admin.
+  - The first admin is created by `scripts/create_admin.py` (needs database
+    credentials); there is no bootstrap endpoint.
 - **Two-factor authentication** (T1.2c) — TOTP, mandatory for admins.
   - `POST /v1/auth/mfa/enroll` — returns a base32 secret and an `otpauth://` URI
     for a QR code. **Does not enable MFA.**

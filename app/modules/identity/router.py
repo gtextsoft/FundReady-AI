@@ -7,14 +7,17 @@ with `schemas`, call exactly one `service` method, return a response schema.
 No business logic, no database access, no LLM calls.
 """
 
+import uuid
+
 from fastapi import APIRouter, status
 
-from app.core.deps import AuthenticatedUserDep, SessionDep
+from app.core.deps import AuthenticatedUserDep, CurrentAdmin, SessionDep
 from app.core.errors import UnauthenticatedError, error_responses
 from app.core.security import create_mfa_challenge_token
 from app.modules.identity import service
 from app.modules.identity.repository import UserRepository
 from app.modules.identity.schemas import (
+    ChangeRoleRequest,
     LoginRequest,
     LoginResponse,
     LogoutRequest,
@@ -24,6 +27,7 @@ from app.modules.identity.schemas import (
     MfaVerifyRequest,
     PasswordResetConfirmRequest,
     PasswordResetRequest,
+    ProvisionAdminRequest,
     RefreshRequest,
     RegisterRequest,
     RegistrationAccepted,
@@ -287,3 +291,108 @@ async def confirm_mfa(
         raise UnauthenticatedError
     codes = await service.confirm_mfa_enrolment(session, record, payload.code)
     return MfaRecoveryCodesResponse(recovery_codes=codes)
+
+
+# ---------------------------------------------------------------------------
+# Admin user management. Every route here is admin-only, and `CurrentAdmin`
+# additionally refuses an admin who has not enrolled MFA (AUTH.md section 9),
+# so none of this is reachable without a second factor.
+# ---------------------------------------------------------------------------
+
+ADMIN_ACTION_DESCRIPTION = (
+    "\n\nRequires an admin account **with MFA enrolled**. An admin who has "
+    "not enrolled receives `403` here until they do."
+)
+
+
+@router.post(
+    "/admin/users",
+    status_code=status.HTTP_201_CREATED,
+    response_model=UserResponse,
+    summary="Provision an admin account",
+    description=(
+        "Creates an admin. This is the only way one comes into existence -- "
+        "`/v1/auth/register` refuses the role.\n\n"
+        "The new admin lands `pending_verification` and without MFA, so they "
+        "must verify their address and enrol a second factor before any admin "
+        "capability opens to them. A verification email is sent.\n\n"
+        "Unlike self-registration, a duplicate address returns `409` rather "
+        "than a uniform success: the caller is already trusted, so there is no "
+        "enumeration concern." + ADMIN_ACTION_DESCRIPTION
+    ),
+    responses=error_responses(401, 403, 409, 422),
+)
+async def provision_admin(
+    payload: ProvisionAdminRequest, actor: CurrentAdmin, session: SessionDep
+) -> UserResponse:
+    admin = await service.provision_admin(
+        session, actor, email=payload.email, password=payload.password
+    )
+    return UserResponse.model_validate(admin)
+
+
+@router.post(
+    "/admin/users/{user_id}/suspend",
+    response_model=UserResponse,
+    summary="Suspend an account",
+    description=(
+        "Blocks the account and **ends its sessions immediately** -- refresh "
+        "tokens revoked, access tokens already issued invalidated.\n\n"
+        "`403` if you target your own account. `409` if the target is the only "
+        "active admin, since the only way back from zero admins is database "
+        "credentials." + ADMIN_ACTION_DESCRIPTION
+    ),
+    responses=error_responses(401, 403, 404, 409, 422),
+)
+async def suspend_user(
+    user_id: uuid.UUID, actor: CurrentAdmin, session: SessionDep
+) -> UserResponse:
+    return UserResponse.model_validate(
+        await service.suspend_user(session, actor, user_id)
+    )
+
+
+@router.post(
+    "/admin/users/{user_id}/reactivate",
+    response_model=UserResponse,
+    summary="Lift a suspension",
+    description=(
+        "Returns the account to `active`, or to `pending_verification` if the "
+        "address was never verified -- reactivating does not confer "
+        "verification.\n\n"
+        "`409` if the account is not suspended." + ADMIN_ACTION_DESCRIPTION
+    ),
+    responses=error_responses(401, 403, 404, 409, 422),
+)
+async def reactivate_user(
+    user_id: uuid.UUID, actor: CurrentAdmin, session: SessionDep
+) -> UserResponse:
+    return UserResponse.model_validate(
+        await service.reactivate_user(session, actor, user_id)
+    )
+
+
+@router.patch(
+    "/admin/users/{user_id}/role",
+    response_model=UserResponse,
+    summary="Change a user's role",
+    description=(
+        "Applies the new role and **forces the user to log in again**: "
+        "`session_valid_after` moves, so their existing access and refresh "
+        "tokens stop working and the next login is authorised against the new "
+        "role.\n\n"
+        "`403` if you target your own account. `409` if the user already has "
+        "that role, or if demoting them would leave no active admin."
+        + ADMIN_ACTION_DESCRIPTION
+    ),
+    responses=error_responses(401, 403, 404, 409, 422),
+)
+async def change_user_role(
+    user_id: uuid.UUID,
+    payload: ChangeRoleRequest,
+    actor: CurrentAdmin,
+    session: SessionDep,
+) -> UserResponse:
+    return UserResponse.model_validate(
+        await service.change_user_role(session, actor, user_id, payload.role)
+    )

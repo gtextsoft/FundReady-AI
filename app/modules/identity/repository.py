@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Any, cast
 
-from sqlalchemy import ColumnElement, CursorResult, delete, select, update
+from sqlalchemy import ColumnElement, CursorResult, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import AccountStatus, Role
@@ -92,6 +92,36 @@ class UserRepository:
             select(User).where(User.email == email)
         )
         return result
+
+    async def count_admins(self, *, active_only: bool = True) -> int:
+        """How many admin accounts exist.
+
+        `active_only` (the default) answers "how many can act right now", which
+        is what the never-zero-admins guard needs. The bootstrap script asks
+        with `active_only=False`: a just-created admin is still
+        `pending_verification`, and counting only active ones would let it
+        create a second first-admin.
+        """
+        conditions = [User.role == Role.ADMIN]
+        if active_only:
+            conditions.append(User.status == AccountStatus.ACTIVE)
+        result = await self._session.scalar(
+            select(func.count()).select_from(User).where(*conditions)
+        )
+        return int(result or 0)
+
+    async def count_active_admins(self) -> int:
+        """How many admins can currently act.
+
+        Used to refuse an action that would leave the platform with none, whose
+        only remedy is database credentials and a script.
+        """
+        result = await self._session.scalar(
+            select(func.count())
+            .select_from(User)
+            .where(User.role == Role.ADMIN, User.status == AccountStatus.ACTIVE)
+        )
+        return int(result or 0)
 
     async def create(
         self, *, email: str, password_hash: str, role: Role, status: AccountStatus

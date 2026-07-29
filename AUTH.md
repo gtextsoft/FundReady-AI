@@ -170,7 +170,9 @@ The admin role is the highest-value target — it can reveal any full report —
 
 - **MFA required** for all admin accounts. Founders/investors: optional but supported.
 - Enrolling requires being logged in, so an admin who has not yet enrolled **is** issued tokens — but `require_role(ADMIN)` refuses every admin capability until `mfa_enabled` is true. The second factor gates the *power*, not the session; there is no window in which admin actions are reachable without it.
-- **No self-service admin signup**; provisioned by an existing admin; creation logged.
+- **No self-service admin signup**; provisioned by an existing admin via `POST /v1/admin/users`; creation logged.
+- **The first admin** is created by `scripts/create_admin.py`, which needs database credentials. Deliberately not an env-gated endpoint: that would be a permanent attack surface existing to be misconfigured once. The bootstrapped account lands `pending_verification` and without MFA, so it grants nothing until both are done, and the script refuses to create a second admin — after the first, use the API so the action is attributable.
+- **An admin cannot lock everyone out.** Suspending or demoting yourself is refused, and so is any action that would leave zero active admins — the only remedy for that is database credentials.
 - **Every admin action is written to the immutable audit log** (who, what, target, when) — especially report reveals, tier changes, and user/role changes.
 - Consider IP allow-listing or a separate admin surface later; v1 enforces MFA + logging.
 - Single admin role in v1; sub-roles can come later.
@@ -310,6 +312,10 @@ Enums:
 | `POST /v1/auth/password-reset/request` | Begin a reset (uniform response) |
 | `POST /v1/auth/password-reset/confirm` | Complete a reset; ends all sessions |
 | `GET /v1/users/me` | The caller's own profile, role, and gate status |
+| `POST /v1/admin/users` | **Admin-only.** Provision an admin. The only path that creates one |
+| `POST /v1/admin/users/{id}/suspend` | **Admin-only.** Suspend and end all sessions immediately |
+| `POST /v1/admin/users/{id}/reactivate` | **Admin-only.** Lift a suspension |
+| `PATCH /v1/admin/users/{id}/role` | **Admin-only.** Change a role; forces re-authentication |
 
 Client responsibilities:
 
