@@ -46,6 +46,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   generated. On a `500`, the same id appears in `details.request_id`.
 - Core scaffolding (T0.3): env-driven settings, async SQLAlchemy session
   management, and structured JSON logging with automatic secret redaction.
+- **Transactional email** (T1.2a) — internal only, no endpoint. Verification and
+  password-reset messages over Resend. A send failure never propagates to the
+  caller, so registration behaves identically whether or not email is working.
+  Delivery not yet verified against a live provider.
 - **Authentication endpoints** (T1.2) — the first real API surface. See `/docs`.
   - `POST /v1/auth/register` — founder or investor. **Returns `202` with the same
     body whether or not the address was already registered**, so the endpoint
