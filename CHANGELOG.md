@@ -46,6 +46,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   generated. On a `500`, the same id appears in `details.request_id`.
 - Core scaffolding (T0.3): env-driven settings, async SQLAlchemy session
   management, and structured JSON logging with automatic secret redaction.
+- **Immutable audit log** (T1.1a) — the `audit_log` table, append-only and enforced
+  by database triggers that reject UPDATE, DELETE, and TRUNCATE. Not yet exposed
+  through any endpoint; `identity.service.record_action()` is the internal entry
+  point other modules call. No API change.
 - **Schema baseline** (T1.1) — Alembic configured and the first migration applied
   (`0001_baseline`, enabling `pgvector`). No tables yet. Adds the optional
   `DATABASE_MIGRATION_URL` setting for Neon's direct endpoint. No API change.

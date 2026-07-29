@@ -6,14 +6,20 @@ for every test.
 """
 
 import asyncio
+import os
 import sys
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app.core import db
 from app.core.config import Settings, get_settings
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # Disabled at import time, not inside a fixture: test modules import
 # `app.main` at module scope, which reads settings before any fixture runs.
@@ -86,3 +92,75 @@ def client() -> Iterator[TestClient]:
 
     with TestClient(app) as test_client:
         yield test_client
+
+
+# ---------------------------------------------------------------------------
+# Database-backed tests
+# ---------------------------------------------------------------------------
+#
+# `isolated_env` deliberately hides the developer's .env from the application,
+# so the connection string has to be read here, explicitly and once, before any
+# test runs. Parsed by hand rather than through a library so this file adds no
+# dependency of its own.
+#
+# `TEST_DATABASE_URL` should point at a throwaway database -- a Neon branch is
+# ideal. It falls back to `DATABASE_URL`, which is safe because every session
+# below is rolled back: a database test can never leave a row behind.
+
+
+def _read_env_file(name: str) -> str | None:
+    env_file = REPO_ROOT / ".env"
+    if not env_file.exists():
+        return None
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        if key.strip() == name:
+            return value.strip().strip('"').strip("'") or None
+    return None
+
+
+def _resolve_test_database_url() -> str | None:
+    for name in ("TEST_DATABASE_URL", "DATABASE_URL"):
+        value = os.environ.get(name) or _read_env_file(name)
+        if value:
+            for prefix in ("postgresql://", "postgres://"):
+                if value.startswith(prefix):
+                    return "postgresql+psycopg://" + value[len(prefix) :]
+            return value
+    return None
+
+
+TEST_DATABASE_URL = _resolve_test_database_url()
+
+requires_database = pytest.mark.skipif(
+    TEST_DATABASE_URL is None,
+    reason="no TEST_DATABASE_URL or DATABASE_URL configured",
+)
+
+
+@pytest.fixture
+async def db_session() -> AsyncIterator[AsyncSession]:
+    """A session inside a transaction that is always rolled back.
+
+    Nothing a test writes survives it -- which is what makes running against a
+    real database acceptable, and is the only way to test a table that refuses
+    DELETE and TRUNCATE.
+    """
+    assert TEST_DATABASE_URL is not None
+    engine = create_async_engine(
+        TEST_DATABASE_URL,
+        poolclass=NullPool,
+        connect_args={"prepare_threshold": None},
+    )
+    async with engine.connect() as connection:
+        transaction = await connection.begin()
+        session = AsyncSession(bind=connection, expire_on_commit=False)
+        try:
+            yield session
+        finally:
+            await session.close()
+            await transaction.rollback()
+    await engine.dispose()
