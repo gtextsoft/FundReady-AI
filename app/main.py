@@ -22,7 +22,7 @@ app = FastAPI(
         "REST API for the FundReady platform. All resources live under "
         f"`{API_V1_PREFIX}`. Timestamps are ISO 8601 UTC, currencies are ISO 4217 "
         "codes, and money is expressed in integer minor units. Errors use the "
-        "envelope `{\"error\": {\"code\", \"message\", \"details\"}}`."
+        'envelope `{"error": {"code", "message", "details"}}`.'
     ),
     openapi_url="/openapi.json",
     docs_url="/docs",

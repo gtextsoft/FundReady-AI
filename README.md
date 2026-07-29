@@ -51,9 +51,29 @@ alembic upgrade head                     # apply migrations
 # Quality
 pytest                                   # all tests
 pytest tests/security                    # security-critical tests
+pytest -m security                       # security-marked tests anywhere
 ruff check . && ruff format .            # lint + format
 mypy app                                 # type-check
 ```
+
+## Quality gates & CI
+
+`.github/workflows/ci.yml` runs on every push and pull request, and nothing
+merges red (`CLAUDE.md` §7):
+
+| Gate | Command | Notes |
+|---|---|---|
+| Lint | `ruff check .` | Includes `flake8-bandit` security lints and a ban on `print` |
+| Format | `ruff format --check .` | Line length 88 |
+| Types | `mypy app` | **strict** on application code; relaxed for tests |
+| Tests | `pytest` | Markers: `security`, `integration` |
+| Secrets | `gitleaks` | Scans full git history; pinned binary, no licence required |
+
+Run all four locally before pushing — they are exactly what CI runs.
+
+> **Also switch on GitHub's native secret scanning + push protection** in the
+> repository's Settings → Code security. Gitleaks catches secrets in CI *after*
+> the push; push protection blocks them at the push itself. Both are wanted.
 
 ## API documentation
 

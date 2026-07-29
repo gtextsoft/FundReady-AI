@@ -12,3 +12,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - Repository scaffold: module/layer structure per `ARCHITECTURE.md`, `pyproject.toml`,
   `.env.example`, README (T0.1). No API endpoints yet.
+- Tooling and CI (T0.2): ruff (lint + format), mypy in strict mode, pytest, and a
+  gitleaks secret scan, all wired into a GitHub Actions workflow that runs on every
+  push and pull request. No API change.

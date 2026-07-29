@@ -9,7 +9,7 @@ Legend: `[ ]` todo · `[x]` done · `[~]` in progress
 ## Phase 0 — Project setup
 
 - [x] **T0.1 Scaffold repo** to the layout in `ARCHITECTURE.md`; add `pyproject.toml`/`requirements.txt`, `.env.example`, `README`. *Done when: structure exists and the app imports cleanly.*
-- [ ] **T0.2 Tooling & CI** — ruff, mypy, pytest configured; CI runs lint + types + tests + secret scan on every push. *Done when: CI is green on an empty test.*
+- [x] **T0.2 Tooling & CI** — ruff, mypy, pytest configured; CI runs lint + types + tests + secret scan on every push. *Done when: CI is green on an empty test.* — all four gates verified green **locally**; CI run itself is unverified until the repo has a remote (see note below).
 - [ ] **T0.3 Core scaffolding** — `core/config.py` (env-driven), `core/db.py` (session), `core/errors.py` (error envelope + handlers), `core/logging.py`, a `/v1/health` endpoint. *Done when: health returns 200 and errors use the envelope.*
 - [ ] **T0.4 Auth foundation** — token verification dependency, `current_user`, role/tier extraction, RBAC dependency. *Done when: a protected test route rejects missing/invalid tokens with 401 and wrong-role with 403.*
 
@@ -61,6 +61,11 @@ Legend: `[ ]` todo · `[x]` done · `[~]` in progress
 - [ ] **T5.6 API docs polish** — complete OpenAPI, exported collection, and `CHANGELOG` for the mobile developer.
 
 ---
+
+### Open follow-ups
+- [ ] **Push to a remote and confirm CI is actually green** — closes the last part of T0.2. The workflow at `.github/workflows/ci.yml` has never executed; only its commands have been verified, locally.
+- [ ] **Confirm the Supabase JWT signing method** (JWKS endpoint vs shared secret) — `AUTH.md` §3.2 leaves it open; blocks T0.4.
+- [ ] **Missing document:** `saci-audit-platform-backend-spec.md` is referenced by `CLAUDE.md` §1 and §10 but is not in the repo — needed before Phase 2.
 
 ### Backlog / open questions (resolve before the dependent task)
 - [ ] Confirm founder report visibility (full actionable audit vs summary) — affects T2.7, T4.2.
