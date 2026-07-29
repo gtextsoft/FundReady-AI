@@ -108,8 +108,48 @@ running:
 - OpenAPI JSON — `/openapi.json`
 
 All resources live under `/v1`. Timestamps are ISO 8601 UTC, currencies are ISO 4217
-codes, and money is expressed in integer minor units. Errors always use the envelope
-`{"error": {"code", "message", "details"}}`.
+codes, and money is expressed in integer minor units.
+
+### Errors
+
+Every error response — without exception — uses this envelope:
+
+```json
+{
+  "error": {
+    "code": "forbidden",
+    "message": "You do not have access to this resource.",
+    "details": null
+  }
+}
+```
+
+**Branch on `code`.** It is stable and will not be renamed. `message` is
+human-facing prose that may change at any time, so never parse it. `details` is
+optional structured context and **never contains submitted values** — a rejected
+password or financial figure is not echoed back.
+
+| `code` | HTTP | Meaning | Client should |
+|---|---|---|---|
+| `unauthenticated` | 401 | Missing, invalid, or expired token | Refresh the token, retry **once** |
+| `forbidden` | 403 | Authenticated but not permitted (role, condition, ownership, or tier) | **Do not retry.** Surface the appropriate state |
+| `not_found` | 404 | Absent — or present but not visible to this caller | Do not retry |
+| `method_not_allowed` | 405 | Wrong HTTP method for the path | Fix the call |
+| `conflict` | 409 | Conflicts with current state | Re-read state, then decide |
+| `payload_too_large` | 413 | Upload exceeds the size limit | Reduce and retry |
+| `validation_error` | 422 | Request failed schema validation | Fix the request. `details.fields[]` gives `field`, `reason`, `type` |
+| `rate_limited` | 429 | Too many requests | Back off, then retry |
+| `internal_error` | 500 | Unexpected failure | Retry with backoff. `details.request_id` identifies the log line |
+| `service_unavailable` | 503 | A dependency is unavailable | Retry with backoff |
+
+A `403` never means "retry with a different id" — an id belonging to another
+tenant returns `404`, deliberately, so the API does not confirm that it exists.
+
+### Request correlation
+
+Every response carries an `X-Request-ID` header. Send your own to have it
+honoured and echoed back; otherwise one is generated. Quote it in a support
+report and we can find the exact log line.
 
 ## Layout
 

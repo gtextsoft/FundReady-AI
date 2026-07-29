@@ -15,3 +15,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Tooling and CI (T0.2): ruff (lint + format), mypy in strict mode, pytest, and a
   gitleaks secret scan, all wired into a GitHub Actions workflow that runs on every
   push and pull request. No API change.
+- **`GET /v1/health`** (T0.3) — unauthenticated liveness check returning
+  `{status, version, environment}`. The first endpoint on the API.
+- **Error envelope** (T0.3) — every error response now returns
+  `{"error": {"code", "message", "details"}}` with a stable, documented `code`.
+  The full code table is in the README; the envelope is published in OpenAPI.
+- **`X-Request-ID` header** (T0.3) — present on every response, including errors.
+  A client-supplied value is honoured when it is a safe token, otherwise one is
+  generated. On a `500`, the same id appears in `details.request_id`.
+- Core scaffolding (T0.3): env-driven settings, async SQLAlchemy session
+  management, and structured JSON logging with automatic secret redaction.

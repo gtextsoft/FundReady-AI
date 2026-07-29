@@ -25,13 +25,17 @@ def test_app_metadata() -> None:
 
 
 def test_api_is_versioned() -> None:
-    """Resources live under /v1 (CLAUDE.md section 6)."""
+    """Every documented resource lives under /v1 (CLAUDE.md section 6).
+
+    Asserted against the OpenAPI document rather than the route table: the
+    document is the contract the mobile developer builds against, and the route
+    table also holds internal container objects with no meaningful path.
+    """
     assert API_V1_PREFIX == "/v1"
 
-    for route in fastapi_app.routes:
-        path = getattr(route, "path", "")
-        if path in {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}:
-            continue  # documentation endpoints are deliberately unversioned
+    paths = fastapi_app.openapi()["paths"]
+    assert paths, "expected at least one documented endpoint"
+    for path in paths:
         assert path.startswith(API_V1_PREFIX), f"unversioned route: {path}"
 
 
