@@ -46,6 +46,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   generated. On a `500`, the same id appears in `details.request_id`.
 - Core scaffolding (T0.3): env-driven settings, async SQLAlchemy session
   management, and structured JSON logging with automatic secret redaction.
+- **Schema baseline** (T1.1) — Alembic configured and the first migration applied
+  (`0001_baseline`, enabling `pgvector`). No tables yet. Adds the optional
+  `DATABASE_MIGRATION_URL` setting for Neon's direct endpoint. No API change.
 - **Auth foundation** (T0.4) — access-token verification and the role dependencies.
   No endpoint is protected yet, so there is no client-visible change, but the
   contract endpoints will follow is now fixed:

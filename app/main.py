@@ -7,7 +7,9 @@ The OpenAPI document is the contract the mobile developer builds against
 (DECISIONS.md D1) -- it is served at `/openapi.json` with Swagger UI at `/docs`.
 """
 
+import asyncio
 import logging
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -28,6 +30,13 @@ from app.core.logging import (
 API_V1_PREFIX = "/v1"
 
 logger = logging.getLogger(__name__)
+
+if sys.platform == "win32":
+    # psycopg's async mode cannot run on Windows' default ProactorEventLoop.
+    # Set at import time, before the server creates its loop. A no-op off
+    # Windows, so production (Linux) is unaffected -- this exists purely so the
+    # service is runnable on a Windows development machine.
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 @asynccontextmanager

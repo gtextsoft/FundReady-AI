@@ -15,7 +15,7 @@ Legend: `[ ]` todo · `[x]` done · `[~]` in progress
 
 ## Phase 1 — Foundations
 
-- [ ] **T1.1 Alembic setup** and base migration. *Done when: `alembic upgrade head` runs on a clean DB.*
+- [x] **T1.1 Alembic setup** and base migration. *Done when: `alembic upgrade head` runs on a clean DB.* — verified against the live Neon database in **both** directions (`upgrade head` and `downgrade base`); `0001_baseline` enables `pgvector`.
 - [ ] **T1.1a Immutable audit log** — `audit_log` model (`actor_id`, `action`, `target_type`, `target_id`, `metadata`, `created_at`) + append-only service helper, used by every admin and auth-sensitive action from T1.2 onward. *Done when: an action writes a row and the table rejects UPDATE and DELETE at the database level — immutability enforced, not merely intended.*
 - [ ] **T1.2 Identity + auth module** — user model, roles (founder/investor/admin), self-built auth per `AUTH.md` (Argon2id hashing, JWT access+refresh, refresh rotation with reuse detection → family revocation). *Done when: users can register, log in, and refresh; a replayed refresh token kills the session family; roles persist.*
 - [ ] **T1.2a Minimal transactional email** — one `send_email` in `modules/notifications/` over Resend's HTTP API via `httpx` (no SDK). Verification + reset templates only; T5.3 adds the rest. *Done when: a verification email is really delivered, and a send failure is logged without leaking recipient PII.*

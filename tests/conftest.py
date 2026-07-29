@@ -5,6 +5,8 @@ clear the cache on both sides of itself. `isolated_env` does that automatically
 for every test.
 """
 
+import asyncio
+import sys
 from collections.abc import Iterator
 
 import pytest
@@ -17,6 +19,11 @@ from app.core.config import Settings, get_settings
 # `app.main` at module scope, which reads settings before any fixture runs.
 # Without this, a developer's real .env could decide whether tests pass.
 Settings.model_config["env_file"] = None
+
+if sys.platform == "win32":
+    # psycopg's async mode cannot run on Windows' default ProactorEventLoop.
+    # Mirrors the guard in app/main.py so database-backed tests work here too.
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 # Environment variables the settings object reads. Cleared before each test so
 # a developer's real .env cannot change a test outcome.

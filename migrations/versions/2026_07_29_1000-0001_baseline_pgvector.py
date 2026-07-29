@@ -1,0 +1,28 @@
+"""Baseline: enable the pgvector extension.
+
+The schema baseline. No tables yet -- `users` arrives with T1.2 and
+`audit_log` with T1.1a. This migration exists so there is a real, runnable
+head, and so the vector extension is in place before T2.8 stores embeddings
+(DECISIONS.md D4: pgvector inside Postgres, no separate vector database).
+
+Revision ID: 0001_baseline
+Revises:
+Create Date: 2026-07-29
+"""
+
+from collections.abc import Sequence
+
+from alembic import op
+
+revision: str = "0001_baseline"
+down_revision: str | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+
+def upgrade() -> None:
+    op.execute("CREATE EXTENSION IF NOT EXISTS vector")
+
+
+def downgrade() -> None:
+    op.execute("DROP EXTENSION IF EXISTS vector")

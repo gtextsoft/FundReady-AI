@@ -1,5 +1,7 @@
 """Settings behaviour, including the guards that keep secrets out of output."""
 
+from pathlib import Path
+
 import pytest
 from pydantic import SecretStr, ValidationError
 
@@ -75,6 +77,35 @@ def test_unknown_setting_is_rejected() -> None:
     """A key nothing claims is a typo or drift -- fail, do not ignore."""
     with pytest.raises(ValidationError):
         Settings(totally_unknown_setting="x")  # type: ignore[call-arg]
+
+
+class TestEnvExampleStaysCurrent:
+    """`.env.example` is the operator's only inventory of what must be set.
+
+    Settings reject unknown keys, so a stale example file does not merely
+    mislead -- copying it produces a service that refuses to start.
+    """
+
+    @staticmethod
+    def _documented_keys() -> set[str]:
+        example = Path(__file__).resolve().parents[2] / ".env.example"
+        return {
+            line.split("=", 1)[0].strip()
+            for line in example.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#") and "=" in line
+        }
+
+    def test_no_undocumented_settings(self) -> None:
+        fields = {name.upper() for name in Settings.model_fields}
+
+        assert not fields - self._documented_keys(), "add these to .env.example"
+
+    def test_no_stale_keys(self) -> None:
+        fields = {name.upper() for name in Settings.model_fields}
+
+        assert not self._documented_keys() - fields, (
+            "these keys no longer exist and would stop the service from starting"
+        )
 
 
 class TestProductionGuards:

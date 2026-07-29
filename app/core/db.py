@@ -49,23 +49,36 @@ _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
 
 
-def _async_database_url(settings: Settings) -> str:
-    """Resolve DATABASE_URL and force the async driver.
+def resolve_database_url(
+    settings: Settings | None = None, *, for_migrations: bool = False
+) -> str:
+    """Resolve the connection URL and force the psycopg dialect.
 
-    Accepts the plain `postgresql://` form that Neon hands out and rewrites it
-    to the psycopg async dialect, so operators are not required to know the
-    driver suffix.
+    Accepts the plain `postgresql://` form Neon hands out and rewrites it to
+    `postgresql+psycopg://`, so operators are not required to know the driver
+    suffix. The same dialect serves both modes -- `create_async_engine` runs it
+    async, `create_engine` runs it sync.
+
+    `for_migrations` prefers `DATABASE_MIGRATION_URL` (Neon's direct endpoint)
+    and falls back to `DATABASE_URL`. DDL through a transaction-mode pooler is
+    not what the pooler is for.
     """
-    if settings.database_url is None:
+    settings = settings or get_settings()
+
+    secret = settings.database_url
+    if for_migrations and settings.database_migration_url is not None:
+        secret = settings.database_migration_url
+    if secret is None:
         raise ConfigurationError
-    url = settings.database_url.get_secret_value().strip()
+
+    url = secret.get_secret_value().strip()
     if not url:
         raise ConfigurationError
 
-    async_prefix = "postgresql+psycopg://"
+    dialect = "postgresql+psycopg://"
     for prefix in ("postgresql://", "postgres://"):
         if url.startswith(prefix):
-            return async_prefix + url[len(prefix) :]
+            return dialect + url[len(prefix) :]
     return url
 
 
@@ -77,11 +90,17 @@ def get_engine() -> AsyncEngine:
     """
     global _engine
     if _engine is None:
-        settings = get_settings()
         _engine = create_async_engine(
-            _async_database_url(settings),
+            resolve_database_url(),
             pool_pre_ping=True,  # Neon scales to zero; revive stale connections
             echo=False,  # never log SQL: statements carry PII and financials
+            connect_args={
+                # Neon's pooled endpoint is PgBouncer in transaction mode, where
+                # psycopg's automatic server-side prepared statements can fail
+                # intermittently once a connection is reused. Disabling them
+                # costs little and removes the whole failure class.
+                "prepare_threshold": None,
+            },
         )
     return _engine
 
@@ -136,5 +155,6 @@ __all__ = [
     "get_engine",
     "get_session",
     "get_session_factory",
+    "resolve_database_url",
     "reset_engine_cache",
 ]

@@ -87,6 +87,10 @@ class Settings(BaseSettings):
 
     # -- Database (Neon: serverless Postgres + pgvector) --------------------
     database_url: SecretStr | None = None
+    # Optional: Neon's direct (non-pooled) endpoint. The pooler is PgBouncer in
+    # transaction mode, which is right for the app but not the recommended
+    # target for DDL. Falls back to `database_url` when unset.
+    database_migration_url: SecretStr | None = None
 
     # -- Authentication (self-built -- AUTH.md) -----------------------------
     # Signs and verifies our own access tokens. One service does both, so a
