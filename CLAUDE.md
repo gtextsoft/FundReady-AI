@@ -34,7 +34,7 @@ FundReady is the **backend + AI** for a two-sided, SACI-brokered platform. Found
 ## 4. Security & data protection — CRITICAL, never violate
 
 - **Authorize every endpoint.** Never trust a client-supplied role, tier, `user_id`, or `startup_id`. Derive identity from the verified auth token and check ownership server-side. Prevent IDOR.
-- **Tenant isolation.** A founder must never read another founder's data. Enforce with Postgres row-level security **and** service-layer checks — defense in depth.
+- **Tenant isolation.** A founder must never read another founder's data. Enforce with app-layer ownership checks as the primary wall (self-built auth has no managed `auth.uid()`), plus optional Postgres RLS via a per-transaction user setting as a second wall — defense in depth.
 - **Report tiers are enforced server-side, per tier, via dedicated serializers — never by trusting the client to hide fields:**
   - **Investor →** summary only. The **full report is revealed ONLY by a SACI admin action** (at the meeting). No code path exposes a full report to an investor otherwise.
   - **Founder →** their own actionable audit + tasks. Never another startup's data. Never SACI's internal notes/positioning.

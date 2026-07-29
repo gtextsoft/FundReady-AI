@@ -45,7 +45,7 @@ SECRET_STRINGS = [
         id="api-key-assignment",
     ),
     pytest.param(
-        "connecting to postgresql://svc:s3cr3tpw@db.supabase.co:5432/postgres",
+        "connecting to postgresql://svc:s3cr3tpw@ep-cool-name.neon.tech:5432/main",
         "s3cr3tpw",
         id="database-url-credentials",
     ),

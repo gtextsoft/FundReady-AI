@@ -18,9 +18,22 @@ Format: **Decision → Why → Constraint (what this means for the code).**
 **Why:** best fit for AI orchestration and financial computation; auto-generates OpenAPI for the mobile dev.
 **Constraint:** don't switch languages/frameworks without a decision entry.
 
-### D4 — Supabase (Postgres + Auth + Storage + pgvector); pgvector for search
-**Why:** one low-cost vendor covers four needs; row-level security gives tenant isolation; pgvector avoids paying for a separate vector DB.
-**Constraint:** don't add a separate vector database (Pinecone, etc.) or a second auth system without a decision entry.
+### D4 — Neon (serverless Postgres + pgvector) · self-built FastAPI auth · Cloudflare R2 for files
+> **Revised 2026-07-29.** Supersedes the original D4 (Supabase for Postgres + Auth + Storage + pgvector), preserved at the bottom of this entry.
+
+**Why:** an à la carte stack was chosen over a single-vendor BaaS for **full control of the custom auth/role/tier/broker logic** — the report-tier and brokerage rules (D8) are the heart of the product and don't fit a managed auth provider's model — and to avoid vendor lock-in. Cost stays comparable; every piece sits on a cheap or free tier. Neon scales to zero and carries pgvector, so search needs no separate vector database. Neon is a database, not a file store, so uploads go to R2, which has zero egress fees — the right economics for a file-heavy workload.
+
+**Constraint:**
+- **Do not reintroduce Supabase, or any managed auth provider.** Not Better Auth either (TypeScript-only; this is a Python service).
+- **Do not add a separate vector database** (Pinecone, etc.). pgvector inside Neon covers it.
+- **Files are never stored in Postgres.** Decks, financials, and evidence live in R2 and are served via signed, expiring URLs.
+- Auth is ours to build and ours to get right: Argon2id password hashing, our own JWT access tokens, rotating refresh tokens with reuse detection. See `AUTH.md`.
+- Changing any of these three is a new decision entry, not a refactor.
+
+**Previously (superseded 2026-07-29):**
+> **D4 — Supabase (Postgres + Auth + Storage + pgvector); pgvector for search.**
+> *Why:* one low-cost vendor covers four needs; row-level security gives tenant isolation; pgvector avoids paying for a separate vector DB.
+> *Constraint:* don't add a separate vector database (Pinecone, etc.) or a second auth system without a decision entry.
 
 ### D5 — Stripe as the payment gateway, billed through the UK/US entity; no Stripe Connect in v1
 **Why:** Stripe doesn't onboard Nigeria-registered businesses directly. The platform mainly *collects* money (subscriptions + product fees) into SACI's account rather than paying out to many sellers, so Connect isn't needed yet.
@@ -54,9 +67,21 @@ Format: **Decision → Why → Constraint (what this means for the code).**
 **Why:** audits must stay explainable after the rubric changes.
 **Constraint:** record `rubricVersion` (and prompt version) on every `AuditRun`. Never mutate a published rubric version in place — add a new one.
 
-### D13 — Tenant isolation via RLS + service-layer checks (defense in depth)
-**Why:** founders' data is sensitive and competitive; one bug shouldn't expose it.
-**Constraint:** both layers required — don't rely on RLS alone or app checks alone. Security tests cover this path.
+### D13 — Tenant isolation: app-layer ownership checks are the PRIMARY wall; RLS via a per-transaction GUC is an OPTIONAL second wall
+> **Revised 2026-07-29.** Follows from the D4 revision and supersedes the original D13, preserved at the bottom of this entry.
+
+**Why:** founders' data is sensitive and competitive; one bug must not expose it. The original design leaned on Postgres RLS keyed to a managed `auth.uid()`. With self-built auth (D4) that function does not exist — the database has no independent notion of who the caller is, because the application is the only thing that verified the token. RLS can therefore no longer be the first line of defence: it can only enforce what the application tells it. So the ordering inverts.
+
+**Constraint:**
+- **The app-layer ownership check is mandatory on every object access.** A founder reads and writes only rows they own; an investor acts only on interests and meetings they are party to. This is enforced in the **service layer**, never in a router, and never inferred from an id supplied by the client.
+- **RLS is optional and secondary.** Where it is used, the caller's identity is passed per transaction via a Postgres setting (`SET LOCAL app.current_user_id = ...`) and policies read it with `current_setting(...)`. Because the application sets that value, RLS is a **backstop against a missing app-layer check, not a substitute for one.**
+- A missing app-layer check is a security bug even if RLS would have caught it.
+- `tests/security` must prove a founder cannot read another founder's rows **by any path** — including with RLS disabled, since RLS is not the primary wall.
+
+**Previously (superseded 2026-07-29):**
+> **D13 — Tenant isolation via RLS + service-layer checks (defense in depth).**
+> *Why:* founders' data is sensitive and competitive; one bug shouldn't expose it.
+> *Constraint:* both layers required — don't rely on RLS alone or app checks alone. Security tests cover this path.
 
 ### D14 — Long audits run as idempotent background jobs
 **Why:** audits are slow and token-heavy; they must not block the API or double-charge on retry.

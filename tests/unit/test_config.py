@@ -9,13 +9,17 @@ from app.core.config import Environment, Settings, SettingsError, get_settings
 PRODUCTION_ENV = {
     "APP_ENV": "production",
     "DATABASE_URL": "postgresql://user:dbpassword1@host/db",
-    "SUPABASE_URL": "https://project.supabase.co",
-    "SUPABASE_SERVICE_ROLE_KEY": "service-role-key-value",
+    "JWT_SECRET_KEY": "jwt-signing-key-value-long-enough-to-pass-32",
+    "MFA_SECRET_ENCRYPTION_KEY": "mfa-encryption-key-value",
+    "R2_ACCOUNT_ID": "r2-account-id-value",
+    "R2_ACCESS_KEY_ID": "r2-access-key-value",
+    "R2_SECRET_ACCESS_KEY": "r2-secret-key-value",
+    "R2_BUCKET_DOCUMENTS": "fundready-documents",
+    "R2_BUCKET_EVIDENCE": "fundready-evidence",
     "REDIS_URL": "redis://:redispassword1@host:6379",
     "ANTHROPIC_API_KEY": "anthropic-key-value",
     "STRIPE_SECRET_KEY": "stripe-key-value",
     "STRIPE_WEBHOOK_SECRET": "webhook-secret-value",
-    "SUPABASE_JWT_SECRET": "jwt-secret-value",
 }
 
 
@@ -40,7 +44,7 @@ def test_defaults_to_development() -> None:
 
 
 def test_development_boots_without_secrets() -> None:
-    """Development must run before Supabase, Stripe, and Redis exist."""
+    """Development must run before Neon, R2, Stripe, and Redis exist."""
     settings = Settings()
 
     assert settings.database_url is None
@@ -85,7 +89,13 @@ class TestProductionGuards:
         "missing",
         [
             "DATABASE_URL",
-            "SUPABASE_SERVICE_ROLE_KEY",
+            "JWT_SECRET_KEY",
+            "MFA_SECRET_ENCRYPTION_KEY",
+            "R2_ACCOUNT_ID",
+            "R2_ACCESS_KEY_ID",
+            "R2_SECRET_ACCESS_KEY",
+            "R2_BUCKET_DOCUMENTS",
+            "R2_BUCKET_EVIDENCE",
             "REDIS_URL",
             "ANTHROPIC_API_KEY",
             "STRIPE_SECRET_KEY",
@@ -135,29 +145,30 @@ class TestProductionGuards:
             if value != "production":
                 assert value not in message
 
-    def test_jwt_verification_method_must_be_unambiguous(
+    def test_short_jwt_secret_is_rejected(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        env = _production()
-        env.pop("SUPABASE_JWT_SECRET")
-        with pytest.raises(SettingsError, match="exactly one"):
-            _load(monkeypatch, env)
+        """A short signing key makes every access token forgeable offline."""
+        with pytest.raises(SettingsError, match="at least 32 characters"):
+            _load(monkeypatch, _production(JWT_SECRET_KEY="too-short"))
 
-        with pytest.raises(SettingsError, match="exactly one"):
-            _load(
-                monkeypatch,
-                _production(SUPABASE_JWKS_URL="https://project/.well-known/jwks.json"),
-            )
+    @pytest.mark.parametrize(
+        ("setting", "value", "match"),
+        [
+            ("ARGON2_MEMORY_COST_KIB", "8192", "ARGON2_MEMORY_COST_KIB"),
+            ("ARGON2_TIME_COST", "1", "ARGON2_TIME_COST"),
+        ],
+    )
+    def test_argon2_below_the_owasp_floor_is_rejected(
+        self, monkeypatch: pytest.MonkeyPatch, setting: str, value: str, match: str
+    ) -> None:
+        with pytest.raises(SettingsError, match=match):
+            _load(monkeypatch, _production(**{setting: value}))
 
-    def test_either_verification_method_alone_is_accepted(
+    def test_development_may_run_cheaper_argon2(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        by_secret = _load(monkeypatch, _production())
-        assert by_secret.supabase_jwt_secret is not None
+        """Test suites would crawl at production cost; production may not."""
+        settings = _load(monkeypatch, {"ARGON2_MEMORY_COST_KIB": "8192"})
 
-        env = _production(SUPABASE_JWKS_URL="https://project/.well-known/jwks.json")
-        env.pop("SUPABASE_JWT_SECRET")
-        monkeypatch.delenv("SUPABASE_JWT_SECRET", raising=False)
-        by_jwks = _load(monkeypatch, env)
-
-        assert by_jwks.supabase_jwks_url.endswith("jwks.json")
+        assert settings.argon2_memory_cost_kib == 8192

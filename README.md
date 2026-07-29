@@ -18,7 +18,9 @@ and the only party that reveals a full report.
 | Layer | Choice |
 |---|---|
 | Language / framework | Python + FastAPI |
-| Database, auth, storage, vectors | Supabase (Postgres, Auth, Storage, pgvector) |
+| Database + vectors | Neon (serverless Postgres + pgvector) |
+| Authentication | Self-built — Argon2id, JWT access + rotating refresh tokens |
+| File storage | Cloudflare R2 (S3-compatible) — never in Postgres |
 | Migrations | Alembic |
 | Background jobs | Redis + RQ worker |
 | AI | Claude API, via `app/ai/` |
@@ -175,7 +177,11 @@ Request path is strictly **router → service → repository**. See `ARCHITECTUR
 - **Financial figures are computed in code**, in `app/modules/audit/finance.py` —
   never by the LLM (`DECISIONS.md` D9).
 - **Identity comes from the verified token only.** Client-supplied role, tier,
-  or ids are never trusted; ownership is checked on every object access.
+  or ids are never trusted. **Ownership is checked in the service layer on every
+  object access** — with self-built auth that is the primary tenant-isolation
+  wall, and Postgres RLS is only an optional backstop (`DECISIONS.md` D13).
+- **Uploads live in Cloudflare R2**, never in Postgres, and are served through
+  signed, expiring URLs.
 - **Secrets live in the environment**, never in code, logs, or git.
 
 ## Documentation

@@ -1,12 +1,13 @@
 """Database engine, session, and declarative base.
 
-Async SQLAlchemy 2.0 over psycopg 3. The workload is dominated by waiting on
-I/O -- Claude, Stripe, Supabase -- which is where async pays.
+Async SQLAlchemy 2.0 over psycopg 3, against Neon. The workload is dominated by
+waiting on I/O -- Claude, Stripe, the database -- which is where async pays.
 
-Connections use a least-privilege role and carry the end-user JWT so Postgres
-row-level security applies (AUTH.md section 10, DECISIONS.md D13). The Supabase
-service-role key bypasses RLS and is used only by trusted server code, never on
-a request path serving an end user.
+Connections use a least-privilege role. Tenant isolation is enforced **in the
+service layer** (DECISIONS.md D13); Postgres RLS is an optional second wall, and
+where it is used the caller is passed per transaction with
+`SET LOCAL app.current_user_id` -- never plain `SET`, which would leak one
+user's identity into another request over a pooled connection.
 
 Schema changes only ever happen through Alembic migrations
 (ARCHITECTURE.md section 6) -- `Base.metadata.create_all` is never called.
@@ -51,8 +52,8 @@ _session_factory: async_sessionmaker[AsyncSession] | None = None
 def _async_database_url(settings: Settings) -> str:
     """Resolve DATABASE_URL and force the async driver.
 
-    Accepts the plain `postgresql://` form that Supabase hands out and rewrites
-    it to the psycopg async dialect, so operators are not required to know the
+    Accepts the plain `postgresql://` form that Neon hands out and rewrites it
+    to the psycopg async dialect, so operators are not required to know the
     driver suffix.
     """
     if settings.database_url is None:
@@ -79,7 +80,7 @@ def get_engine() -> AsyncEngine:
         settings = get_settings()
         _engine = create_async_engine(
             _async_database_url(settings),
-            pool_pre_ping=True,  # survive a Supabase connection being recycled
+            pool_pre_ping=True,  # Neon scales to zero; revive stale connections
             echo=False,  # never log SQL: statements carry PII and financials
         )
     return _engine

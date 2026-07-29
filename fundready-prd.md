@@ -115,7 +115,8 @@ Chosen to keep **fixed** cost near zero at MVP and scale on usage. The main vari
 |---|---|---|
 | Backend framework | FastAPI (Python) | Open-source; ideal for AI + financial computation; async and lightweight |
 | Hosting (API + workers) | Render or Railway low tier; Hetzner VPS for lowest cost | Cheap tiers, simple deploys; move to a VPS to cut cost further as usage grows |
-| Database + Auth + Storage + Vector | Supabase (Postgres, Auth, Storage, pgvector) | One vendor covers four needs; generous free tier; row-level security gives tenant isolation for free |
+| Database + vectors | Neon (serverless Postgres + pgvector) | Cheap serverless Postgres, scales to zero; pgvector covers search — no separate vector DB |
+| Authentication | Self-built in FastAPI (JWT + Argon2id + refresh rotation); optionally `fastapi-users` | Full control of role/tier/broker logic; no provider lock-in |
 | Vector search | pgvector inside Postgres | Avoids a separate paid vector DB (e.g. Pinecone) |
 | Async jobs / queue | Upstash Redis + Python worker (RQ/Celery) | Serverless Redis with a free tier; runs long audits off the request path |
 | LLM / AI | Claude API | Pay-per-token; control cost with model tiering (cheaper model for chat, strong model for audits), prompt caching, and batching |
@@ -124,16 +125,16 @@ Chosen to keep **fixed** cost near zero at MVP and scale on usage. The main vari
 | Payments & billing | **Stripe** (Checkout + Billing) | No monthly base; per-transaction only; Billing handles founder subscriptions |
 | Investor KYC | Stripe Identity | Pay-per-verification; same vendor as payments |
 | Meetings / scheduling | Cal.com (open-source) or Google Calendar API | Free / self-hostable |
-| Doc & evidence storage | Supabase Storage or Cloudflare R2 | R2 has zero egress fees — cheapest for file-heavy workloads |
+| Doc & evidence storage | Cloudflare R2 | S3-compatible, zero egress fees — cheapest for file-heavy workloads (files are not stored in Postgres) |
 | Monitoring | Sentry free tier + platform logs | Enough for MVP |
 
-**Alternative to Supabase** if you prefer best-of-breed: Neon (serverless Postgres, scales to zero) + Clerk (auth) + Cloudflare R2 (storage). Supabase is recommended first because consolidating into one vendor means fewer bills and less integration work.
+**On bundling:** a single-vendor BaaS (e.g. Supabase) was considered to cut the number of services, but the team chose an à la carte stack — Neon (DB + vectors) + self-built auth + Cloudflare R2 (files) — for full control of the custom auth/role/tier logic and to avoid lock-in. Cost stays comparable; all sit on cheap/free tiers. Neon is a database, not a file store — uploads go to R2.
 
 **Rough cost profile:** at MVP, most services sit on free tiers — expect near-zero fixed monthly cost. Once live, cost scales mainly with Claude token usage (audits are the heaviest calls, so tier and cache aggressively), Stripe's per-transaction fee, and storage volume. This stack can run an MVP for very little and grow without a rebuild.
 
 ## 8. Non-functional requirements
 
-- **Isolation:** founders must never access each other's data — enforced at the data layer (e.g. Postgres RLS).
+- **Isolation:** founders must never access each other's data — enforced by app-layer ownership checks (primary), with optional Postgres RLS as a second wall.
 - **Security:** least-privilege access; encryption at rest and in transit; immutable audit log on every report reveal and admin action.
 - **Privacy / cross-border:** operating across NG/UAE/UK/US (and China in the group) means differing data rules — decide data residency deliberately (China's rules are strict).
 - **Reliability:** audits run as idempotent background jobs; retriable; provisional status rather than false verdicts on failure.

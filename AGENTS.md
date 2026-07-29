@@ -20,7 +20,9 @@ Do not skip ahead in `TASKS.md`. Do not "improve" decisions recorded in `DECISIO
 ## 2. Stack
 
 - **Language/framework:** Python + FastAPI
-- **DB / auth / storage / vectors:** Supabase (Postgres, Auth, Storage, pgvector)
+- **Database + vectors:** Neon (serverless Postgres + pgvector)
+- **Auth:** self-built in FastAPI — Argon2id hashing, our own JWT access + rotating refresh tokens (optionally `fastapi-users`). No managed auth provider.
+- **File storage:** Cloudflare R2 (S3-compatible) — decks, financials, evidence. **Never in Postgres.**
 - **Migrations:** Alembic
 - **Background jobs:** Redis + worker (RQ/Celery)
 - **AI:** Claude API (via `app/ai/`)
@@ -66,7 +68,8 @@ mypy app                                 # type-check
 - **Formats:** timestamps ISO 8601 in UTC; currency as ISO 4217 codes; money as integer minor units. Apply everywhere.
 - **Errors:** raise typed exceptions; the global handler returns `{ "error": { "code", "message", "details" } }`. Never leak stack traces.
 - **API:** REST under `/v1`; plural resource nouns; correct status codes; additive changes preferred; breaking changes need a new version + `CHANGELOG` entry.
-- **Auth:** identity comes from the verified token only. Every endpoint authorizes and checks ownership. Never trust client-supplied role/tier/ids.
+- **Auth:** identity comes from the verified token only. Every endpoint authorizes and checks ownership **in the service layer** — that is the primary tenant-isolation wall (D13). Never trust client-supplied role/tier/ids.
+- **Files:** uploads go to R2 and are served via signed, expiring URLs. Postgres stores metadata and object keys only, never file bytes.
 - **Secrets:** env/secret-manager only. Never in code, logs, or git. Keep `.env.example` complete but valueless.
 - **DB:** schema changes only via Alembic. Repositories hold queries; services hold logic.
 - **AI:** all model calls via `app/ai/client.py`; structured JSON output validated before use; prompts and rubrics are versioned; financial numbers computed in `finance.py`, not by the model.

@@ -9,15 +9,15 @@ Legend: `[ ]` todo · `[x]` done · `[~]` in progress
 ## Phase 0 — Project setup
 
 - [x] **T0.1 Scaffold repo** to the layout in `ARCHITECTURE.md`; add `pyproject.toml`/`requirements.txt`, `.env.example`, `README`. *Done when: structure exists and the app imports cleanly.*
-- [x] **T0.2 Tooling & CI** — ruff, mypy, pytest configured; CI runs lint + types + tests + secret scan on every push. *Done when: CI is green on an empty test.* — all four gates verified green **locally**; CI run itself is unverified until the repo has a remote (see note below).
-- [x] **T0.3 Core scaffolding** — `core/config.py` (env-driven), `core/db.py` (session), `core/errors.py` (error envelope + handlers), `core/logging.py`, a `/v1/health` endpoint. *Done when: health returns 200 and errors use the envelope.* — verified against a running uvicorn server, not only the test client.
+- [x] **T0.2 Tooling & CI** — ruff, mypy, pytest configured; CI runs lint + types + tests + secret scan on every push. *Done when: CI is green on an empty test.*
+- [x] **T0.3 Core scaffolding** — `core/config.py` (env-driven), `core/db.py` (session), `core/errors.py` (error envelope + handlers), `core/logging.py`, a `/v1/health` endpoint. *Done when: health returns 200 and errors use the envelope.*
 - [ ] **T0.4 Auth foundation** — token verification dependency, `current_user`, role/tier extraction, RBAC dependency. *Done when: a protected test route rejects missing/invalid tokens with 401 and wrong-role with 403.*
 
 ## Phase 1 — Foundations
 
 - [ ] **T1.1 Alembic setup** and base migration. *Done when: `alembic upgrade head` runs on a clean DB.*
-- [ ] **T1.2 Identity module** — user model, roles (founder/investor/admin), signup/login (or Supabase Auth integration). *Done when: users can be created and authenticated; roles persist.*
-- [ ] **T1.3 Tenant isolation** — Postgres RLS policies + service-layer ownership checks. *Done when: `tests/security` prove a founder cannot read another founder's rows via any path.*
+- [ ] **T1.2 Identity + auth module** — user model, roles (founder/investor/admin), self-built auth per `AUTH.md` (Argon2id hashing, JWT access+refresh, refresh rotation). *Done when: users can register, log in, and refresh; roles persist.*
+- [ ] **T1.3 Tenant isolation** — app-layer ownership checks (primary) + optional Postgres RLS via a per-transaction user setting (GUC). *Done when: `tests/security` prove a founder cannot read another founder's rows via any path.*
 - [ ] **T1.4 Startup Profile** — model + schemas; create/update endpoints with ownership checks; `source`/`confidence` per field and `missingFields`. *Done when: a founder can create/update only their own profile.*
 - [ ] **T1.5 Document upload** — signed upload/download URLs to object storage; type/size validation; scan hook. *Done when: uploads are stored out of the DB and served via expiring URLs.*
 
@@ -63,8 +63,8 @@ Legend: `[ ]` todo · `[x]` done · `[~]` in progress
 ---
 
 ### Open follow-ups
-- [ ] **Push to a remote and confirm CI is actually green** — closes the last part of T0.2. The workflow at `.github/workflows/ci.yml` has never executed; only its commands have been verified, locally.
-- [ ] **Confirm the Supabase JWT signing method** (JWKS endpoint vs shared secret) — `AUTH.md` §3.2 leaves it open; blocks T0.4.
+- [ ] **Push to a remote and confirm CI is actually green** — closes the last part of T0.2. `.github/workflows/ci.yml` has never executed; only its commands have been verified, locally.
+- [ ] **Retire the Supabase settings in `core/config.py` and `.env.example`** — replace with Neon + R2 keys and self-built JWT signing (T0.3a).
 - [ ] **Missing document:** `saci-audit-platform-backend-spec.md` is referenced by `CLAUDE.md` §1 and §10 but is not in the repo — needed before Phase 2.
 
 ### Backlog / open questions (resolve before the dependent task)

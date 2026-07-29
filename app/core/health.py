@@ -1,7 +1,7 @@
 """Liveness endpoint.
 
 Deliberately shallow. This is what a load balancer polls, so it must not touch
-the database, Redis, or any external service: a transient Supabase blip should
+the database, Redis, or any external service: a transient database blip should
 not read as "this process is dead" and get the platform restarted. It is also
 unauthenticated, so it reveals nothing beyond the deployed version.
 

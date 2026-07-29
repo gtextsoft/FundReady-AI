@@ -9,6 +9,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Stack change (`DECISIONS.md` D4, D13), 2026-07-29** — Neon (serverless Postgres +
+  pgvector) replaces Supabase; authentication is now self-built in FastAPI (Argon2id,
+  our own JWT access + rotating refresh tokens); uploads go to Cloudflare R2 and never
+  to Postgres. Tenant isolation is now enforced primarily by service-layer ownership
+  checks, with Postgres RLS as an optional second wall via a per-transaction setting.
+  `AUTH.md` was rewritten accordingly. **No API endpoint changed** — no client impact
+  yet, but the auth endpoints in `AUTH.md` §16 are what the mobile client will target.
+- **`.env` keys changed** — the `SUPABASE_*` and `STORAGE_BUCKET_*` keys are gone,
+  replaced by `JWT_*`, `ARGON2_*`, `MFA_SECRET_ENCRYPTION_KEY`, and `R2_*`. Because
+  settings reject unknown keys, an old `.env` will refuse to start: re-copy from
+  `.env.example`.
+
 ### Added
 - Repository scaffold: module/layer structure per `ARCHITECTURE.md`, `pyproject.toml`,
   `.env.example`, README (T0.1). No API endpoints yet.

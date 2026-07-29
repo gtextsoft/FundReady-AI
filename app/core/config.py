@@ -15,9 +15,9 @@ Two deliberate choices:
 
 from enum import StrEnum
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Any, Final, Literal
 
-from pydantic import SecretStr, ValidationError
+from pydantic import BeforeValidator, SecretStr, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -35,6 +35,28 @@ class Environment(StrEnum):
     DEVELOPMENT = "development"
     STAGING = "staging"
     PRODUCTION = "production"
+
+
+# Security floors enforced in production (AUTH.md sections 3.1, 4.1).
+MIN_JWT_SECRET_LENGTH: Final = 32
+MIN_ARGON2_MEMORY_COST_KIB: Final = 19456  # OWASP minimum
+MIN_ARGON2_TIME_COST: Final = 2
+
+
+def _blank_to_none(value: Any) -> Any:
+    """Treat an empty environment value as unset.
+
+    `.env.example` ships every key with an empty value, so a copied file would
+    otherwise fail to parse on the first optional number it meets -- `FOO=` is
+    an empty string, not a missing key.
+    """
+    if isinstance(value, str) and not value.strip():
+        return None
+    return value
+
+
+OptionalInt = Annotated[int | None, BeforeValidator(_blank_to_none)]
+"""An integer setting that may be left blank in `.env`."""
 
 
 def _is_blank(value: SecretStr | str | None) -> bool:
@@ -63,23 +85,38 @@ class Settings(BaseSettings):
     # pydantic-settings would otherwise try to JSON-decode a list-typed field.
     cors_allowed_origins: str = ""
 
-    # -- Database -----------------------------------------------------------
+    # -- Database (Neon: serverless Postgres + pgvector) --------------------
     database_url: SecretStr | None = None
 
-    # -- Supabase (auth + storage) -----------------------------------------
-    supabase_url: str = ""
-    supabase_anon_key: SecretStr | None = None
-    # SERVER-ONLY: bypasses row-level security (AUTH.md section 10).
-    supabase_service_role_key: SecretStr | None = None
-    # Exactly one of these is used, depending on the project's signing method
-    # (AUTH.md section 3 -- open item, confirmed before T0.4).
-    supabase_jwks_url: str = ""
-    supabase_jwt_secret: SecretStr | None = None
-    supabase_jwt_audience: str = "authenticated"
+    # -- Authentication (self-built -- AUTH.md) -----------------------------
+    # Signs and verifies our own access tokens. One service does both, so a
+    # symmetric key is sufficient; `jwt_key_id` allows rotation and the
+    # algorithm is pinned here rather than read from a token header.
+    jwt_secret_key: SecretStr | None = None
+    jwt_algorithm: Literal["HS256", "HS384", "HS512"] = "HS256"
+    jwt_key_id: str = "k1"
+    jwt_issuer: str = "fundready"
+    jwt_audience: str = "fundready-api"
+    access_token_ttl_minutes: int = 15
+    refresh_token_ttl_days: int = 30
 
-    # -- Object storage -----------------------------------------------------
-    storage_bucket_documents: str = ""
-    storage_bucket_evidence: str = ""
+    # Argon2id cost, tunable per environment because memory cost is real RAM
+    # on a small host (AUTH.md section 3.1). Production floors are enforced by
+    # `validate_settings`.
+    argon2_memory_cost_kib: int = 65536
+    argon2_time_cost: int = 3
+    argon2_parallelism: int = 1
+
+    # Encrypts TOTP secrets at rest, so a database leak does not defeat MFA.
+    mfa_secret_encryption_key: SecretStr | None = None
+
+    # -- Object storage (Cloudflare R2 -- never Postgres) -------------------
+    r2_account_id: str = ""
+    r2_endpoint_url: str = ""
+    r2_access_key_id: SecretStr | None = None
+    r2_secret_access_key: SecretStr | None = None
+    r2_bucket_documents: str = ""
+    r2_bucket_evidence: str = ""
     storage_signed_url_ttl_seconds: int = 900
 
     # -- Queue --------------------------------------------------------------
@@ -92,8 +129,8 @@ class Settings(BaseSettings):
     anthropic_api_key: SecretStr | None = None
     ai_model_audit: str = ""
     ai_model_chat: str = ""
-    ai_max_output_tokens: int | None = None
-    ai_daily_budget_tokens_per_user: int | None = None
+    ai_max_output_tokens: OptionalInt = None
+    ai_daily_budget_tokens_per_user: OptionalInt = None
 
     # -- Stripe -------------------------------------------------------------
     stripe_secret_key: SecretStr | None = None
@@ -127,8 +164,13 @@ class Settings(BaseSettings):
 
         required: dict[str, SecretStr | str | None] = {
             "DATABASE_URL": self.database_url,
-            "SUPABASE_URL": self.supabase_url,
-            "SUPABASE_SERVICE_ROLE_KEY": self.supabase_service_role_key,
+            "JWT_SECRET_KEY": self.jwt_secret_key,
+            "MFA_SECRET_ENCRYPTION_KEY": self.mfa_secret_encryption_key,
+            "R2_ACCOUNT_ID": self.r2_account_id,
+            "R2_ACCESS_KEY_ID": self.r2_access_key_id,
+            "R2_SECRET_ACCESS_KEY": self.r2_secret_access_key,
+            "R2_BUCKET_DOCUMENTS": self.r2_bucket_documents,
+            "R2_BUCKET_EVIDENCE": self.r2_bucket_evidence,
             "REDIS_URL": self.redis_url,
             "ANTHROPIC_API_KEY": self.anthropic_api_key,
             "STRIPE_SECRET_KEY": self.stripe_secret_key,
@@ -136,22 +178,12 @@ class Settings(BaseSettings):
         }
         return sorted(name for name, value in required.items() if _is_blank(value))
 
-    def has_unambiguous_jwt_verification(self) -> bool:
-        """True when exactly one JWT verification method is configured.
-
-        Neither configured means every authenticated request fails; both
-        configured means an ambiguous verification path (AUTH.md section 3).
-        """
-        jwks = not _is_blank(self.supabase_jwks_url)
-        secret = not _is_blank(self.supabase_jwt_secret)
-        return jwks != secret
-
 
 def validate_settings(settings: Settings) -> None:
     """Enforce the production requirements, raising only setting *names*.
 
     Development is allowed to boot half-configured so the app runs before
-    Supabase, Stripe, and Redis exist. Production is not: a missing secret must
+    Neon, Stripe, and Redis exist. Production is not: a missing secret must
     stop the process rather than surface later as a confusing runtime error.
     """
     if not settings.is_production:
@@ -163,11 +195,22 @@ def validate_settings(settings: Settings) -> None:
             f"missing required settings in production: {', '.join(missing)}"
         )
 
-    if not settings.has_unambiguous_jwt_verification():
+    # We sign our own tokens now, so key strength is ours to guarantee. A short
+    # secret makes every access token forgeable offline.
+    key = settings.jwt_secret_key
+    if key is not None and len(key.get_secret_value()) < MIN_JWT_SECRET_LENGTH:
         raise SettingsError(
-            "set exactly one of SUPABASE_JWKS_URL or SUPABASE_JWT_SECRET "
-            "to match the project's JWT signing method"
+            f"JWT_SECRET_KEY must be at least {MIN_JWT_SECRET_LENGTH} characters"
         )
+
+    # Argon2id floors from OWASP (AUTH.md section 3.1). Development may run
+    # cheaper for speed; production may not.
+    if settings.argon2_memory_cost_kib < MIN_ARGON2_MEMORY_COST_KIB:
+        raise SettingsError(
+            f"ARGON2_MEMORY_COST_KIB must be at least {MIN_ARGON2_MEMORY_COST_KIB}"
+        )
+    if settings.argon2_time_cost < MIN_ARGON2_TIME_COST:
+        raise SettingsError(f"ARGON2_TIME_COST must be at least {MIN_ARGON2_TIME_COST}")
 
 
 def _describe_without_values(error: ValidationError) -> str:

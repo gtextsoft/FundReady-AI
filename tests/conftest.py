@@ -13,6 +13,11 @@ from fastapi.testclient import TestClient
 from app.core import db
 from app.core.config import Settings, get_settings
 
+# Disabled at import time, not inside a fixture: test modules import
+# `app.main` at module scope, which reads settings before any fixture runs.
+# Without this, a developer's real .env could decide whether tests pass.
+Settings.model_config["env_file"] = None
+
 # Environment variables the settings object reads. Cleared before each test so
 # a developer's real .env cannot change a test outcome.
 _SETTINGS_ENV_VARS = (
@@ -21,14 +26,23 @@ _SETTINGS_ENV_VARS = (
     "API_BASE_URL",
     "CORS_ALLOWED_ORIGINS",
     "DATABASE_URL",
-    "SUPABASE_URL",
-    "SUPABASE_ANON_KEY",
-    "SUPABASE_SERVICE_ROLE_KEY",
-    "SUPABASE_JWKS_URL",
-    "SUPABASE_JWT_SECRET",
-    "SUPABASE_JWT_AUDIENCE",
-    "STORAGE_BUCKET_DOCUMENTS",
-    "STORAGE_BUCKET_EVIDENCE",
+    "JWT_SECRET_KEY",
+    "JWT_ALGORITHM",
+    "JWT_KEY_ID",
+    "JWT_ISSUER",
+    "JWT_AUDIENCE",
+    "ACCESS_TOKEN_TTL_MINUTES",
+    "REFRESH_TOKEN_TTL_DAYS",
+    "ARGON2_MEMORY_COST_KIB",
+    "ARGON2_TIME_COST",
+    "ARGON2_PARALLELISM",
+    "MFA_SECRET_ENCRYPTION_KEY",
+    "R2_ACCOUNT_ID",
+    "R2_ENDPOINT_URL",
+    "R2_ACCESS_KEY_ID",
+    "R2_SECRET_ACCESS_KEY",
+    "R2_BUCKET_DOCUMENTS",
+    "R2_BUCKET_EVIDENCE",
     "STORAGE_SIGNED_URL_TTL_SECONDS",
     "REDIS_URL",
     "QUEUE_NAME",
@@ -51,8 +65,6 @@ def isolated_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Give each test a clean environment and a fresh settings cache."""
     for name in _SETTINGS_ENV_VARS:
         monkeypatch.delenv(name, raising=False)
-    # Never read the developer's real .env during tests.
-    monkeypatch.setitem(Settings.model_config, "env_file", None)
     get_settings.cache_clear()
     db.reset_engine_cache()
     yield

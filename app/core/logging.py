@@ -59,7 +59,7 @@ _REDACTION_PATTERNS: Final[tuple[tuple[re.Pattern[str], str], ...]] = (
     ),
     # A bare bearer token anywhere in the message.
     (re.compile(r"(?i)\bbearer\s+[\w.\-+/=]+"), f"Bearer {REDACTED}"),
-    # A JWT, which is what a leaked Supabase access token looks like.
+    # A JWT, which is what a leaked access token of ours looks like.
     (re.compile(r"\beyJ[\w-]{5,}\.[\w-]+\.[\w-]*"), REDACTED),
     # Provider key shapes: Stripe (sk_live_, whsec_), Anthropic (sk-ant-).
     (re.compile(r"(?i)\b(?:sk|pk|rk|whsec)[_-][\w-]{8,}"), REDACTED),
