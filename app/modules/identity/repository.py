@@ -9,13 +9,14 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Any, cast
 
-from sqlalchemy import ColumnElement, CursorResult, select, update
+from sqlalchemy import ColumnElement, CursorResult, delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import AccountStatus, Role
 from app.modules.identity.models import (
     AuditLog,
     AuthToken,
+    MfaRecoveryCode,
     RefreshToken,
     TokenPurpose,
     User,
@@ -223,3 +224,38 @@ class AuthTokenRepository:
         )
         await self._session.flush()
         return cast("CursorResult[Any]", result).rowcount
+
+
+class MfaRecoveryCodeRepository:
+    """Single-use MFA recovery codes."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def replace_all(
+        self, *, user_id: uuid.UUID, code_hashes: Sequence[str]
+    ) -> None:
+        """Discard any existing codes and store a fresh set.
+
+        Re-enrolling must not leave the previous device's codes usable.
+        """
+        await self._session.execute(
+            delete(MfaRecoveryCode).where(MfaRecoveryCode.user_id == user_id)
+        )
+        for code_hash in code_hashes:
+            self._session.add(MfaRecoveryCode(user_id=user_id, code_hash=code_hash))
+        await self._session.flush()
+
+    async def list_unused(self, *, user_id: uuid.UUID) -> Sequence[MfaRecoveryCode]:
+        return (
+            await self._session.scalars(
+                select(MfaRecoveryCode).where(
+                    MfaRecoveryCode.user_id == user_id,
+                    MfaRecoveryCode.used_at.is_(None),
+                )
+            )
+        ).all()
+
+    async def mark_used(self, code: MfaRecoveryCode, *, at: datetime) -> None:
+        code.used_at = at
+        await self._session.flush()

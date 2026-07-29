@@ -169,6 +169,7 @@ Per `DECISIONS.md` **D8** (SECURITY INVARIANT) — unchanged by the stack move:
 The admin role is the highest-value target — it can reveal any full report — so it is treated accordingly:
 
 - **MFA required** for all admin accounts. Founders/investors: optional but supported.
+- Enrolling requires being logged in, so an admin who has not yet enrolled **is** issued tokens — but `require_role(ADMIN)` refuses every admin capability until `mfa_enabled` is true. The second factor gates the *power*, not the session; there is no window in which admin actions are reachable without it.
 - **No self-service admin signup**; provisioned by an existing admin; creation logged.
 - **Every admin action is written to the immutable audit log** (who, what, target, when) — especially report reveals, tier changes, and user/role changes.
 - Consider IP allow-listing or a separate admin surface later; v1 enforces MFA + logging.
@@ -300,7 +301,9 @@ Enums:
 |---|---|
 | `POST /v1/auth/register` | Create a founder or investor account |
 | `POST /v1/auth/login` | Email + password → tokens, or an MFA challenge |
-| `POST /v1/auth/mfa/verify` | Complete an MFA challenge → tokens |
+| `POST /v1/auth/mfa/enroll` | Issue a TOTP secret + `otpauth://` URI. Does **not** enable MFA |
+| `POST /v1/auth/mfa/confirm` | Confirm with one code → enables MFA, returns 10 recovery codes (shown once) |
+| `POST /v1/auth/mfa/verify` | Complete an MFA challenge with a TOTP **or** recovery code → tokens |
 | `POST /v1/auth/refresh` | Rotate the refresh token → new token pair |
 | `POST /v1/auth/logout` | Revoke the current refresh token family |
 | `POST /v1/auth/verify-email` | Confirm an email with the emailed token |

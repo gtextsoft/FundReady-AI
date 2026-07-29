@@ -13,6 +13,7 @@ purchase, and so on -- rather than reaching for the repository themselves.
 """
 
 import logging
+import secrets
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -32,13 +33,19 @@ from app.core.security import (
     CurrentUser,
     Role,
     create_access_token,
+    decode_mfa_challenge_token,
+    decrypt_mfa_secret,
+    encrypt_mfa_secret,
+    generate_mfa_secret,
     generate_opaque_token,
     generate_refresh_token,
     hash_opaque_token,
     hash_password,
     hash_refresh_token,
+    mfa_provisioning_uri,
     verify_dummy_password,
     verify_password,
+    verify_totp,
 )
 from app.modules.identity.models import (
     AuditAction,
@@ -51,6 +58,7 @@ from app.modules.identity.models import (
 from app.modules.identity.repository import (
     AuditLogRepository,
     AuthTokenRepository,
+    MfaRecoveryCodeRepository,
     RefreshTokenRepository,
     UserRepository,
 )
@@ -387,6 +395,7 @@ async def load_current_user(
         role=user.role,
         status=user.status,
         email_verified=user.email_verified,
+        mfa_enabled=user.mfa_enabled,
         session_valid_after=user.session_valid_after,
     )
 
@@ -563,3 +572,147 @@ async def reset_password(
     )
     await session.flush()
     return user
+
+
+# ---------------------------------------------------------------------------
+# MFA (AUTH.md section 9.1)
+# ---------------------------------------------------------------------------
+
+RECOVERY_CODE_COUNT: Final = 10
+RECOVERY_CODE_BYTES: Final = 5  # 10 hex chars, shown as XXXXX-XXXXX
+
+
+@dataclass(frozen=True, slots=True)
+class MfaEnrolment:
+    """What the client needs to finish enrolling. Not yet active."""
+
+    secret: str
+    provisioning_uri: str
+
+
+def _format_recovery_code(raw: str) -> str:
+    return f"{raw[:5]}-{raw[5:]}".upper()
+
+
+def generate_recovery_codes() -> list[str]:
+    """Ten codes, returned once and never recoverable afterwards."""
+    return [
+        _format_recovery_code(secrets.token_hex(RECOVERY_CODE_BYTES))
+        for _ in range(RECOVERY_CODE_COUNT)
+    ]
+
+
+async def start_mfa_enrolment(
+    session: AsyncSession, user: User, *, settings: Settings | None = None
+) -> MfaEnrolment:
+    """Issue a secret to enrol against, without enabling anything.
+
+    `mfa_enabled` stays false until a code proves the authenticator actually
+    holds the secret -- otherwise a mistyped setup locks the user out of their
+    own account (AUTH.md section 9.1).
+    """
+    settings = settings or get_settings()
+    secret = generate_mfa_secret()
+    user.mfa_secret_encrypted = encrypt_mfa_secret(secret, settings)
+    user.mfa_enabled = False
+    await session.flush()
+
+    return MfaEnrolment(
+        secret=secret,
+        provisioning_uri=mfa_provisioning_uri(secret, user.email, settings.jwt_issuer),
+    )
+
+
+async def confirm_mfa_enrolment(
+    session: AsyncSession, user: User, code: str, *, settings: Settings | None = None
+) -> list[str]:
+    """Enable MFA once a code checks out, and return the recovery codes.
+
+    The returned codes are the only copy -- they are stored hashed.
+    """
+    settings = settings or get_settings()
+    if user.mfa_secret_encrypted is None:
+        raise InvalidRequestError("Start enrolment before confirming it.")
+
+    secret = decrypt_mfa_secret(user.mfa_secret_encrypted, settings)
+    step = verify_totp(secret, code, not_before_step=user.mfa_last_used_step)
+    if step is None:
+        raise InvalidRequestError("That code is not valid.")
+
+    user.mfa_enabled = True
+    user.mfa_last_used_step = step
+
+    codes = generate_recovery_codes()
+    await MfaRecoveryCodeRepository(session).replace_all(
+        user_id=user.id,
+        code_hashes=[hash_password(code_value, settings) for code_value in codes],
+    )
+    await record_action(
+        session,
+        AuditAction.USER_MFA_ENABLED,
+        actor_id=user.id,
+        target_type="user",
+        target_id=user.id,
+    )
+    await session.flush()
+    return codes
+
+
+async def _consume_recovery_code(
+    session: AsyncSession, user: User, code: str, now: datetime
+) -> bool:
+    """Spend a recovery code, if the value matches an unused one."""
+    candidate = code.strip().upper()
+    repository = MfaRecoveryCodeRepository(session)
+    for stored in await repository.list_unused(user_id=user.id):
+        correct, _ = verify_password(stored.code_hash, candidate)
+        if correct:
+            await repository.mark_used(stored, at=now)
+            await record_action(
+                session,
+                AuditAction.USER_MFA_RECOVERY_CODE_USED,
+                actor_id=user.id,
+                target_type="user",
+                target_id=user.id,
+            )
+            return True
+    return False
+
+
+async def verify_mfa_challenge(
+    session: AsyncSession, challenge_token: str, code: str
+) -> TokenPair:
+    """Complete a login that stopped at the second factor.
+
+    Accepts a TOTP code or a recovery code. Every failure returns the same
+    error: which kind of credential was wrong is not the caller's business.
+    """
+    user_id = decode_mfa_challenge_token(challenge_token)
+    user = await UserRepository(session).get_by_id(user_id)
+    if user is None or not user.mfa_enabled or user.mfa_secret_encrypted is None:
+        raise _invalid_mfa("no_enrolment")
+    if user.status is AccountStatus.SUSPENDED:
+        raise ForbiddenError("This account is suspended.")
+
+    now = datetime.now(UTC)
+    step = verify_totp(
+        decrypt_mfa_secret(user.mfa_secret_encrypted),
+        code,
+        not_before_step=user.mfa_last_used_step,
+    )
+    if step is not None:
+        user.mfa_last_used_step = step
+    elif not await _consume_recovery_code(session, user, code, now):
+        # Committed for the same reason as a failed password: the caller raises
+        # next, and the rollback would discard a spent recovery code.
+        await session.commit()
+        raise _invalid_mfa("wrong_code")
+
+    user.last_login_at = now
+    await session.flush()
+    return await issue_tokens(session, user)
+
+
+def _invalid_mfa(reason: str) -> UnauthenticatedError:
+    logger.info("mfa verification failed", extra={"context": {"reason": reason}})
+    return UnauthenticatedError("That code is not valid.")

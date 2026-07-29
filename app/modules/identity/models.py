@@ -10,7 +10,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, String, false, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, String, false, func
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -46,6 +46,8 @@ class AuditAction(StrEnum):
     # string literal as a credential. These are event names, not secrets.
     USER_PASSWORD_RESET = "user.password_reset"  # noqa: S105
     USER_SESSIONS_REVOKED = "user.sessions_revoked"
+    USER_MFA_ENABLED = "user.mfa_enabled"
+    USER_MFA_RECOVERY_CODE_USED = "user.mfa_recovery_code_used"
     REFRESH_TOKEN_REUSE_DETECTED = "user.refresh_token_reuse_detected"  # noqa: S105
 
     # Admin actions (AUTH.md section 9 -- all of these are logged)
@@ -141,9 +143,15 @@ class User(Base):
 
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    # Columns land here; the TOTP logic arrives with T1.2c.
     mfa_enabled: Mapped[bool] = mapped_column(default=False, server_default=false())
+    # Encrypted, not hashed: a TOTP secret has to be read back to verify a
+    # code (AUTH.md section 9.1).
     mfa_secret_encrypted: Mapped[str | None] = mapped_column(String(255))
+    # The last TOTP step consumed. Rejecting codes from this step or earlier
+    # is what stops an intercepted code being replayed inside its own
+    # 30-second window. Not in AUTH.md section 15's list; section 9.1
+    # requires the behaviour, so the column is added and the doc updated.
+    mfa_last_used_step: Mapped[int | None] = mapped_column(BigInteger)
 
     # Both are trusted from Stripe only -- never from a client (AUTH.md 8).
     kyc_status: Mapped[KycStatus] = mapped_column(
@@ -277,3 +285,27 @@ class AuthToken(Base):
 
     def __repr__(self) -> str:
         return f"<AuthToken {self.id} purpose={self.purpose} user={self.user_id}>"
+
+
+class MfaRecoveryCode(Base):
+    """A single-use way back in when the authenticator device is gone.
+
+    Stored Argon2id-hashed, exactly like a password: these are credentials, and
+    ten of them are a standing bypass of the second factor if leaked
+    (AUTH.md section 9.1).
+    """
+
+    __tablename__ = "mfa_recovery_codes"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    code_hash: Mapped[str] = mapped_column(String(255))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"<MfaRecoveryCode {self.id} user={self.user_id} used={self.used_at}>"

@@ -30,6 +30,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   settings reject unknown keys, an old `.env` will refuse to start: re-copy from
   `.env.example`.
 
+### Breaking
+- **`POST /v1/auth/login` response shape changed (T1.2c).** It now returns a
+  discriminated result instead of a bare token pair, because a user with MFA
+  cannot be handed tokens on the password step alone:
+  ```json
+  {"status": "authenticated", "tokens": {"access_token": "...", "refresh_token": "...",
+   "token_type": "bearer", "expires_in": 900}, "mfa_token": null}
+  ```
+  ```json
+  {"status": "mfa_required", "tokens": null, "mfa_token": "<5-minute challenge>"}
+  ```
+  **Branch on `status`.** Tokens moved from the top level into `tokens`. Done now
+  rather than after launch: the mobile app does not call `/v1/auth/login` yet, so
+  the cost is zero today and only grows.
+
 ### Added
 - Repository scaffold: module/layer structure per `ARCHITECTURE.md`, `pyproject.toml`,
   `.env.example`, README (T0.1). No API endpoints yet.
@@ -46,6 +61,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   generated. On a `500`, the same id appears in `details.request_id`.
 - Core scaffolding (T0.3): env-driven settings, async SQLAlchemy session
   management, and structured JSON logging with automatic secret redaction.
+- **Two-factor authentication** (T1.2c) — TOTP, mandatory for admins.
+  - `POST /v1/auth/mfa/enroll` — returns a base32 secret and an `otpauth://` URI
+    for a QR code. **Does not enable MFA.**
+  - `POST /v1/auth/mfa/confirm` — one valid code enables MFA and returns **ten
+    recovery codes, shown once**. They are stored hashed and cannot be shown
+    again. Re-enrolling invalidates the previous set.
+  - `POST /v1/auth/mfa/verify` — exchanges the login `mfa_token` plus a TOTP code
+    **or** one recovery code for tokens. A code cannot be replayed within its own
+    30-second window, and a recovery code is spent permanently.
+  - **Admins:** an admin who has not enrolled can log in but every admin
+    capability returns `403` until they do — enrolling requires a session, so the
+    second factor gates the power rather than the login.
 - **Email verification and password reset** (T1.2b).
   - `POST /v1/auth/verify-email` — confirms the address and activates the account.
     The token arrives on a link pointing at **your app**, not this API: mail

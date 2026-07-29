@@ -22,6 +22,11 @@ from app.core.security import AccountStatus, KycStatus, Role, SubscriptionStatus
 
 __all__ = [
     "AccountStatus",
+    "LoginResponse",
+    "MfaConfirmRequest",
+    "MfaEnrolmentResponse",
+    "MfaRecoveryCodesResponse",
+    "MfaVerifyRequest",
     "PasswordResetConfirmRequest",
     "PasswordResetRequest",
     "KycStatus",
@@ -151,3 +156,58 @@ class PasswordResetConfirmRequest(_Request):
     password: Password = Field(
         description="The new password. At least 12 characters.",
     )
+
+
+class LoginResponse(BaseModel):
+    """The outcome of a login attempt.
+
+    **Branch on `status`.** `authenticated` means `tokens` is present and the
+    session is live. `mfa_required` means the password was accepted but a second
+    factor is outstanding: `mfa_token` is present instead, and must be sent to
+    `POST /v1/auth/mfa/verify` together with the code. `mfa_token` is not an
+    access token and grants nothing on its own.
+    """
+
+    status: Literal["authenticated", "mfa_required"]
+    tokens: TokenPairResponse | None = Field(
+        default=None, description="Present when `status` is `authenticated`."
+    )
+    mfa_token: str | None = Field(
+        default=None,
+        description="Present when `status` is `mfa_required`. Expires in 5 minutes.",
+    )
+
+
+class MfaVerifyRequest(_Request):
+    """Complete an MFA login with a TOTP code or a recovery code."""
+
+    mfa_token: str = Field(max_length=2048)
+    code: str = Field(
+        max_length=32,
+        description="Six-digit authenticator code, or one recovery code.",
+    )
+
+
+class MfaEnrolmentResponse(BaseModel):
+    """A secret to enrol against. MFA is **not** active until confirmed."""
+
+    secret: str = Field(description="Base32 TOTP secret, for manual entry.")
+    provisioning_uri: str = Field(
+        description="`otpauth://` URI to render as a QR code.",
+    )
+
+
+class MfaConfirmRequest(_Request):
+    """Prove the authenticator holds the secret, then enable MFA."""
+
+    code: str = Field(max_length=32, description="Six-digit authenticator code.")
+
+
+class MfaRecoveryCodesResponse(BaseModel):
+    """Shown exactly once.
+
+    The codes are stored hashed, so they cannot be shown again. Each works
+    once, and using one is audit-logged.
+    """
+
+    recovery_codes: list[str]

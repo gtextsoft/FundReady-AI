@@ -23,6 +23,7 @@ The rules that matter, and why they are here rather than at each call site:
   token already in the wild (AUTH.md section 11).
 """
 
+import base64
 import hashlib
 import logging
 import secrets
@@ -35,8 +36,12 @@ from functools import lru_cache
 from typing import Any, Final, Protocol
 
 import jwt
+import pyotp
 from argon2 import PasswordHasher, Type
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
+from cryptography.fernet import Fernet, InvalidToken
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from app.core.config import Settings, get_settings
 from app.core.errors import ConfigurationError, ForbiddenError, UnauthenticatedError
@@ -83,6 +88,8 @@ class TokenType(StrEnum):
 
     ACCESS = "access"
     REFRESH = "refresh"
+    # Password accepted, second factor outstanding. Never grants access.
+    MFA_CHALLENGE = "mfa_challenge"
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +100,7 @@ class CurrentUser:
     role: Role
     status: AccountStatus
     email_verified: bool = False
+    mfa_enabled: bool = False
     session_valid_after: datetime | None = None
 
 
@@ -355,3 +363,153 @@ def generate_refresh_token() -> str:
 def hash_refresh_token(token: str) -> str:
     """Hash a refresh token for storage."""
     return hash_opaque_token(token)
+
+
+# ---------------------------------------------------------------------------
+# MFA (AUTH.md section 9.1)
+# ---------------------------------------------------------------------------
+
+TOTP_DIGITS: Final = 6
+TOTP_STEP_SECONDS: Final = 30
+# One step either side, for clock drift between the phone and the server.
+TOTP_DRIFT_STEPS: Final = 1
+MFA_CHALLENGE_TTL: Final = timedelta(minutes=5)
+
+
+def _fernet(settings: Settings) -> Fernet:
+    """Build the cipher used for TOTP secrets at rest.
+
+    The configured value is an arbitrary passphrase rather than a pre-formatted
+    Fernet key, so it is stretched with HKDF instead of being truncated or
+    padded -- an operator should not have to know Fernet's key encoding to run
+    this service. Length is enforced in production by `validate_settings`.
+    """
+    if settings.mfa_secret_encryption_key is None:
+        raise ConfigurationError
+    raw = settings.mfa_secret_encryption_key.get_secret_value().encode("utf-8")
+    if not raw.strip():
+        raise ConfigurationError
+
+    derived = HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=None,
+        info=b"fundready-mfa-secret-v1",
+    ).derive(raw)
+    return Fernet(base64.urlsafe_b64encode(derived))
+
+
+def encrypt_mfa_secret(secret: str, settings: Settings | None = None) -> str:
+    """Encrypt a TOTP secret for storage.
+
+    Stored encrypted, not hashed: unlike a password we have to read it back to
+    verify a code. A database leak alone must not hand over second factors
+    (AUTH.md section 9.1).
+    """
+    return _fernet(settings or get_settings()).encrypt(secret.encode()).decode()
+
+
+def decrypt_mfa_secret(payload: str, settings: Settings | None = None) -> str:
+    """Recover a TOTP secret. Raises `ConfigurationError` if it cannot."""
+    try:
+        return _fernet(settings or get_settings()).decrypt(payload.encode()).decode()
+    except InvalidToken:
+        # Wrong key, or tampered ciphertext. Never echo either.
+        logger.error("stored MFA secret could not be decrypted")
+        raise ConfigurationError from None
+
+
+def generate_mfa_secret() -> str:
+    """A fresh base32 TOTP secret."""
+    return pyotp.random_base32()
+
+
+def mfa_provisioning_uri(secret: str, account: str, issuer: str) -> str:
+    """The `otpauth://` URI an authenticator app scans as a QR code."""
+    return pyotp.TOTP(
+        secret, digits=TOTP_DIGITS, interval=TOTP_STEP_SECONDS
+    ).provisioning_uri(name=account, issuer_name=issuer)
+
+
+def verify_totp(
+    secret: str, code: str, *, not_before_step: int | None = None
+) -> int | None:
+    """Check a TOTP code and return the step it matched, or None.
+
+    Returns the matched step so the caller can persist it: `not_before_step`
+    then rejects a code from that step or earlier, which is what stops an
+    intercepted code being replayed inside its own 30-second window
+    (AUTH.md section 9.1).
+
+    Compared with `compare_digest` -- a timing-distinguishable comparison on a
+    six-digit code is worth avoiding.
+    """
+    candidate = code.strip().replace(" ", "")
+    if not candidate.isdigit() or len(candidate) != TOTP_DIGITS:
+        return None
+
+    totp = pyotp.TOTP(secret, digits=TOTP_DIGITS, interval=TOTP_STEP_SECONDS)
+    current = int(datetime.now(UTC).timestamp()) // TOTP_STEP_SECONDS
+
+    for offset in range(-TOTP_DRIFT_STEPS, TOTP_DRIFT_STEPS + 1):
+        step = current + offset
+        if not secrets.compare_digest(totp.at(step * TOTP_STEP_SECONDS), candidate):
+            continue
+        if not_before_step is not None and step <= not_before_step:
+            logger.info("totp rejected", extra={"context": {"reason": "replayed_step"}})
+            return None
+        return step
+    return None
+
+
+def create_mfa_challenge_token(
+    user_id: uuid.UUID, *, settings: Settings | None = None
+) -> str:
+    """Bind the two halves of an MFA login together.
+
+    Password verified, second factor outstanding. Short-lived and typed, so it
+    cannot be used as an access token and `/auth/mfa/verify` cannot be called
+    without having passed the password step first.
+    """
+    settings = settings or get_settings()
+    now = datetime.now(UTC)
+    payload: dict[str, Any] = {
+        "sub": str(user_id),
+        "typ": TokenType.MFA_CHALLENGE.value,
+        "iat": int(now.timestamp()),
+        "exp": int((now + MFA_CHALLENGE_TTL).timestamp()),
+        "iss": settings.jwt_issuer,
+        "aud": settings.jwt_audience,
+        "jti": uuid.uuid4().hex,
+    }
+    return jwt.encode(
+        payload,
+        _signing_key(settings),
+        algorithm=settings.jwt_algorithm,
+        headers={"kid": settings.jwt_key_id},
+    )
+
+
+def decode_mfa_challenge_token(
+    token: str, settings: Settings | None = None
+) -> uuid.UUID:
+    """Verify a challenge token and return its subject."""
+    settings = settings or get_settings()
+    try:
+        payload: dict[str, Any] = jwt.decode(
+            token,
+            _signing_key(settings),
+            algorithms=[settings.jwt_algorithm],
+            audience=settings.jwt_audience,
+            issuer=settings.jwt_issuer,
+            options={"require": ["exp", "iat", "sub", "aud", "iss"]},
+        )
+    except jwt.InvalidTokenError as error:
+        raise _reject(type(error).__name__) from None
+
+    if payload.get("typ") != TokenType.MFA_CHALLENGE.value:
+        raise _reject("wrong_token_type")
+    try:
+        return uuid.UUID(str(payload["sub"]))
+    except (ValueError, KeyError):
+        raise _reject("malformed_subject") from None

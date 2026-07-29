@@ -74,12 +74,16 @@ def add_user(
     role: Role = Role.FOUNDER,
     status: AccountStatus = AccountStatus.ACTIVE,
     session_valid_after: datetime | None = None,
+    mfa_enabled: bool | None = None,
 ) -> CurrentUser:
     user = CurrentUser(
         id=uuid.uuid4(),
         role=role,
         status=status,
         email_verified=status is AccountStatus.ACTIVE,
+        # Admins are assumed enrolled unless a test says otherwise, since
+        # unenrolled is the exceptional case worth spelling out.
+        mfa_enabled=(role is Role.ADMIN) if mfa_enabled is None else mfa_enabled,
         session_valid_after=session_valid_after,
     )
     users[user.id] = user
@@ -411,3 +415,49 @@ class TestNoLeakage:
         }
 
         assert len(messages) == 1
+
+
+class TestAdminSecondFactor:
+    """`AUTH.md` section 9: no admin capability without a second factor.
+
+    Enrolling requires being logged in, so an unenrolled admin is allowed a
+    token -- it just buys them nothing but the enrolment endpoints. The power,
+    not the session, is what MFA gates.
+    """
+
+    def test_an_admin_without_mfa_is_refused(
+        self, settings: Settings, client: TestClient, users: Users
+    ) -> None:
+        admin = add_user(users, role=Role.ADMIN, mfa_enabled=False)
+        token = create_access_token(admin.id, admin.role, settings=settings)
+
+        response = client.get("/admin-only", headers=auth(token))
+
+        assert response.status_code == 403
+        assert error_code(response) == ErrorCode.FORBIDDEN
+
+    def test_an_admin_with_mfa_is_allowed(
+        self, settings: Settings, client: TestClient, users: Users
+    ) -> None:
+        admin = add_user(users, role=Role.ADMIN, mfa_enabled=True)
+        token = create_access_token(admin.id, admin.role, settings=settings)
+
+        assert client.get("/admin-only", headers=auth(token)).status_code == 200
+
+    def test_the_token_still_works_for_non_admin_routes(
+        self, settings: Settings, client: TestClient, users: Users
+    ) -> None:
+        """Otherwise an unenrolled admin could never reach enrolment at all."""
+        admin = add_user(users, role=Role.ADMIN, mfa_enabled=False)
+        token = create_access_token(admin.id, admin.role, settings=settings)
+
+        assert client.get("/any", headers=auth(token)).status_code == 200
+
+    def test_mfa_is_not_required_of_other_roles(
+        self, settings: Settings, client: TestClient, users: Users
+    ) -> None:
+        """Optional for founders and investors (AUTH.md section 9)."""
+        founder = add_user(users, role=Role.FOUNDER, mfa_enabled=False)
+        token = create_access_token(founder.id, founder.role, settings=settings)
+
+        assert client.get("/founder-only", headers=auth(token)).status_code == 200
