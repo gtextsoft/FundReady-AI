@@ -28,11 +28,34 @@ and the only party that reveals a full report.
 
 ## Getting started
 
-```bash
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -e ".[dev]"
-cp .env.example .env                                 # then fill in secrets
+Create the virtual environment:
+
 ```
+python -m venv .venv
+```
+
+Activate it — the script depends on your shell:
+
+| Shell | Command (from the repo root) |
+|---|---|
+| PowerShell | `.\.venv\Scripts\Activate.ps1` |
+| cmd.exe | `.venv\Scripts\activate.bat` |
+| Git Bash | `source .venv/Scripts/activate` |
+| macOS / Linux | `source .venv/bin/activate` |
+
+> If PowerShell blocks the script with an execution-policy error:
+> `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`.
+> Confirm activation with `python -c "import sys; print(sys.prefix)"` — it
+> should print the `.venv` path.
+
+Then install and configure:
+
+```
+pip install -e ".[dev]"
+copy .env.example .env      # macOS/Linux: cp .env.example .env
+```
+
+Fill in the secrets in `.env`. It is git-ignored and must never be committed.
 
 `pyproject.toml` is the single dependency manifest — there is no
 `requirements.txt`.
