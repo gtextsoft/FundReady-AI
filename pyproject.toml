@@ -80,6 +80,9 @@ select = [
 [tool.ruff.lint.per-file-ignores]
 # Tests may assert, use hardcoded credentials in fixtures, and bind all interfaces.
 "tests/**" = ["S101", "S105", "S106", "S104", "ARG"]
+# Operator CLIs print to a terminal by design. The T20 ban exists to keep stray
+# prints out of the *service*, where they bypass redaction and structured logs.
+"scripts/**" = ["T201"]
 
 [tool.ruff.lint.flake8-tidy-imports]
 # Modules talk to each other through public service functions only

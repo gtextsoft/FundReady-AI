@@ -13,7 +13,13 @@ from sqlalchemy import ColumnElement, CursorResult, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import AccountStatus, Role
-from app.modules.identity.models import AuditLog, RefreshToken, User
+from app.modules.identity.models import (
+    AuditLog,
+    AuthToken,
+    RefreshToken,
+    TokenPurpose,
+    User,
+)
 
 
 class AuditLogRepository:
@@ -154,4 +160,66 @@ class RefreshTokenRepository:
         await self._session.flush()
         # `execute` is typed as returning Result, but an UPDATE always yields a
         # CursorResult, which is what carries rowcount.
+        return cast("CursorResult[Any]", result).rowcount
+
+
+class AuthTokenRepository:
+    """Single-use email tokens: verification and password reset."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def create(
+        self,
+        *,
+        user_id: uuid.UUID,
+        purpose: TokenPurpose,
+        token_hash: str,
+        expires_at: datetime,
+    ) -> AuthToken:
+        token = AuthToken(
+            user_id=user_id,
+            purpose=purpose,
+            token_hash=token_hash,
+            expires_at=expires_at,
+        )
+        self._session.add(token)
+        await self._session.flush()
+        return token
+
+    async def get(self, *, token_hash: str, purpose: TokenPurpose) -> AuthToken | None:
+        """Look up by hash **and** purpose.
+
+        Both, always: a verification token must not be usable as a password
+        reset just because the hash matches.
+        """
+        result: AuthToken | None = await self._session.scalar(
+            select(AuthToken).where(
+                AuthToken.token_hash == token_hash, AuthToken.purpose == purpose
+            )
+        )
+        return result
+
+    async def mark_used(self, token: AuthToken, *, at: datetime) -> None:
+        token.used_at = at
+        await self._session.flush()
+
+    async def consume_outstanding(
+        self, *, user_id: uuid.UUID, purpose: TokenPurpose, at: datetime
+    ) -> int:
+        """Burn every unused token of this purpose for this user.
+
+        A completed reset must invalidate any other reset links already sent --
+        otherwise an older email remains a live way in.
+        """
+        result = await self._session.execute(
+            update(AuthToken)
+            .where(
+                AuthToken.user_id == user_id,
+                AuthToken.purpose == purpose,
+                AuthToken.used_at.is_(None),
+            )
+            .values(used_at=at)
+        )
+        await self._session.flush()
         return cast("CursorResult[Any]", result).rowcount

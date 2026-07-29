@@ -20,7 +20,7 @@ from typing import Any, Final
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.core.errors import (
     ForbiddenError,
     InvalidRequestError,
@@ -32,18 +32,29 @@ from app.core.security import (
     CurrentUser,
     Role,
     create_access_token,
+    generate_opaque_token,
     generate_refresh_token,
+    hash_opaque_token,
     hash_password,
     hash_refresh_token,
     verify_dummy_password,
     verify_password,
 )
-from app.modules.identity.models import AuditAction, AuditLog, RefreshToken, User
+from app.modules.identity.models import (
+    AuditAction,
+    AuditLog,
+    AuthToken,
+    RefreshToken,
+    TokenPurpose,
+    User,
+)
 from app.modules.identity.repository import (
     AuditLogRepository,
+    AuthTokenRepository,
     RefreshTokenRepository,
     UserRepository,
 )
+from app.modules.notifications import service as notifications
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +166,9 @@ async def register_user(
         target_id=user.id,
         details={"role": role.value},
     )
+    # Only for a genuinely new account. Sending on a duplicate would tell the
+    # caller the address exists, which is precisely what returning None avoids.
+    await send_verification_email(session, user)
     return user
 
 
@@ -375,3 +389,177 @@ async def load_current_user(
         email_verified=user.email_verified,
         session_valid_after=user.session_valid_after,
     )
+
+
+# ---------------------------------------------------------------------------
+# Email verification and password reset (AUTH.md sections 3.2, 12)
+# ---------------------------------------------------------------------------
+
+VERIFICATION_TTL: Final = timedelta(hours=24)
+PASSWORD_RESET_TTL: Final = timedelta(hours=1)
+
+
+def _link(path: str, token: str, settings: Settings) -> str:
+    """Build a link the *client* handles, not this API.
+
+    Mail security scanners prefetch every URL in a message. A GET endpoint here
+    would have its single-use token consumed before the recipient ever clicked,
+    so the link points at the app, which extracts the token and POSTs it back.
+    """
+    base = settings.app_link_base_url.rstrip("/")
+    return f"{base}/{path}?token={token}"
+
+
+async def issue_auth_token(
+    session: AsyncSession, user: User, purpose: TokenPurpose, ttl: timedelta
+) -> str:
+    """Create a single-use token and return its raw value.
+
+    Only the hash is persisted, so this return value is the only moment the
+    token exists in readable form -- hand it straight to the message that
+    carries it.
+    """
+    raw = generate_opaque_token()
+    await AuthTokenRepository(session).create(
+        user_id=user.id,
+        purpose=purpose,
+        token_hash=hash_opaque_token(raw),
+        expires_at=datetime.now(UTC) + ttl,
+    )
+    return raw
+
+
+def _invalid_link() -> InvalidRequestError:
+    """One message for absent, expired, already-used, and wrong-purpose.
+
+    Distinguishing them would tell a holder of a bad token which kind of bad it
+    is, and whether the account exists at all.
+    """
+    return InvalidRequestError("This link is invalid or has expired.")
+
+
+async def _consume(
+    session: AsyncSession, raw_token: str, purpose: TokenPurpose
+) -> tuple[AuthToken, User]:
+    """Validate a token and return it with its user, or raise."""
+    now = datetime.now(UTC)
+    tokens = AuthTokenRepository(session)
+
+    # Purpose is part of the lookup, so a verification token cannot be
+    # presented as a password reset.
+    stored = await tokens.get(token_hash=hash_opaque_token(raw_token), purpose=purpose)
+    if stored is None:
+        logger.info("auth token rejected", extra={"context": {"reason": "unknown"}})
+        raise _invalid_link()
+    if stored.used_at is not None:
+        logger.info(
+            "auth token rejected", extra={"context": {"reason": "already_used"}}
+        )
+        raise _invalid_link()
+    if stored.expires_at <= now:
+        logger.info("auth token rejected", extra={"context": {"reason": "expired"}})
+        raise _invalid_link()
+
+    user = await UserRepository(session).get_by_id(stored.user_id)
+    if user is None:
+        raise _invalid_link()
+    return stored, user
+
+
+async def send_verification_email(
+    session: AsyncSession, user: User, *, settings: Settings | None = None
+) -> None:
+    """Issue a verification token and email the link.
+
+    Failure to send is logged, not raised: registration must behave identically
+    whether or not the email provider is reachable.
+    """
+    settings = settings or get_settings()
+    raw = await issue_auth_token(
+        session, user, TokenPurpose.EMAIL_VERIFICATION, VERIFICATION_TTL
+    )
+    await notifications.send_verification_email(
+        user.email, _link("verify-email", raw, settings), settings=settings
+    )
+
+
+async def verify_email(session: AsyncSession, raw_token: str) -> User:
+    """Confirm an address and activate the account."""
+    stored, user = await _consume(session, raw_token, TokenPurpose.EMAIL_VERIFICATION)
+    now = datetime.now(UTC)
+
+    await AuthTokenRepository(session).mark_used(stored, at=now)
+    user.email_verified_at = now
+    # Only lift a *pending* account. Verifying an address must never quietly
+    # un-suspend someone an admin has suspended.
+    if user.status is AccountStatus.PENDING_VERIFICATION:
+        user.status = AccountStatus.ACTIVE
+
+    await record_action(
+        session,
+        AuditAction.USER_EMAIL_VERIFIED,
+        actor_id=user.id,
+        target_type="user",
+        target_id=user.id,
+    )
+    await session.flush()
+    return user
+
+
+async def request_password_reset(
+    session: AsyncSession, email: str, *, settings: Settings | None = None
+) -> None:
+    """Begin a reset. Returns nothing, whether or not the account exists.
+
+    The caller responds identically either way (AUTH.md section 12) -- this
+    endpoint must not become a way to test which addresses are registered.
+    """
+    settings = settings or get_settings()
+    user = await UserRepository(session).get_by_email(normalise_email(email))
+    if user is None:
+        return
+
+    raw = await issue_auth_token(
+        session, user, TokenPurpose.PASSWORD_RESET, PASSWORD_RESET_TTL
+    )
+    await notifications.send_password_reset_email(
+        user.email, _link("reset-password", raw, settings), settings=settings
+    )
+
+
+async def reset_password(
+    session: AsyncSession, raw_token: str, new_password: str
+) -> User:
+    """Complete a reset and end every existing session.
+
+    A password reset is what someone does when they believe their account is
+    compromised, so it has to evict whoever might already be in: every refresh
+    token is revoked and `session_valid_after` is bumped, which also kills
+    access tokens already issued (AUTH.md section 11).
+    """
+    stored, user = await _consume(session, raw_token, TokenPurpose.PASSWORD_RESET)
+    validate_password(new_password, user.email)
+    now = datetime.now(UTC)
+
+    user.password_hash = hash_password(new_password)
+    user.session_valid_after = now
+    user.failed_login_count = 0
+    user.locked_until = None
+
+    revoked = await RefreshTokenRepository(session).revoke_all_for_user(user.id, at=now)
+    await AuthTokenRepository(session).mark_used(stored, at=now)
+    # Any other reset link already in an inbox is now dead too.
+    await AuthTokenRepository(session).consume_outstanding(
+        user_id=user.id, purpose=TokenPurpose.PASSWORD_RESET, at=now
+    )
+
+    await record_action(
+        session,
+        AuditAction.USER_PASSWORD_RESET,
+        actor_id=user.id,
+        target_type="user",
+        target_id=user.id,
+        details={"sessions_revoked": revoked},
+    )
+    await session.flush()
+    return user

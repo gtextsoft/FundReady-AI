@@ -10,6 +10,7 @@ from app.core.config import Environment, Settings, SettingsError, get_settings
 # Secret-looking values, so a leak into an error message is unmistakable.
 PRODUCTION_ENV = {
     "APP_ENV": "production",
+    "APP_LINK_BASE_URL": "https://app.fundready.test",
     "DATABASE_URL": "postgresql://user:dbpassword1@host/db",
     "JWT_SECRET_KEY": "jwt-signing-key-value-long-enough-to-pass-32",
     "MFA_SECRET_ENCRYPTION_KEY": "mfa-encryption-key-value",
@@ -120,6 +121,7 @@ class TestProductionGuards:
         "missing",
         [
             "DATABASE_URL",
+            "APP_LINK_BASE_URL",
             "JWT_SECRET_KEY",
             "MFA_SECRET_ENCRYPTION_KEY",
             "R2_ACCOUNT_ID",

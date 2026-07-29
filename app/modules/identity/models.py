@@ -229,3 +229,51 @@ class RefreshToken(Base):
 
     def __repr__(self) -> str:
         return f"<RefreshToken {self.id} user={self.user_id} family={self.family_id}>"
+
+
+class TokenPurpose(StrEnum):
+    """What a single-use auth token is allowed to do.
+
+    Checked on every lookup. Without it a verification token would also work as
+    a password reset -- an attacker who obtains the weaker one gets the
+    stronger capability for free.
+    """
+
+    EMAIL_VERIFICATION = "email_verification"
+    # noqa: an enum member naming a flow, not a credential.
+    PASSWORD_RESET = "password_reset"  # noqa: S105
+
+
+class AuthToken(Base):
+    """A single-use, expiring token sent by email (AUTH.md sections 12, 15).
+
+    Only the SHA-256 hash is stored; the raw value exists once, in the message
+    that carried it. Consumed by setting `used_at` -- rows are kept rather than
+    deleted so a replay can be told apart from a token that never existed.
+    """
+
+    __tablename__ = "auth_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    purpose: Mapped[TokenPurpose] = mapped_column(
+        SAEnum(
+            TokenPurpose,
+            native_enum=False,
+            length=32,
+            name="token_purpose",
+            values_callable=_by_value,
+        ),
+        index=True,
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"<AuthToken {self.id} purpose={self.purpose} user={self.user_id}>"

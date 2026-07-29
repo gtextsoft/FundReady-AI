@@ -71,13 +71,14 @@ async def send_email(
         # completed without a provider account. The URL only -- never the
         # recipient -- so the no-PII-in-logs rule holds even here.
         if not settings.is_production:
-            # In the message itself, not a structured field: the whole point is
-            # that a developer can read the link, and `extra` is invisible under
-            # a plain formatter. The URL only -- never the recipient.
+            # No link here, deliberately. An earlier version logged the body so
+            # local flows could be completed -- and `core.logging.RedactionFilter`
+            # correctly scrubbed the `token=` out of it, because a verification
+            # token *is* a credential. Rather than exempt ourselves from our own
+            # control, local flows use `scripts/issue_dev_token.py`.
             logger.info(
-                "email not configured; not sending. Body follows so local flows "
-                "can still be completed:\n%s",
-                content.text,
+                "email not configured; not sending",
+                extra={"context": {"subject": content.subject}},
             )
             return False
         logger.error("email not configured; message dropped")

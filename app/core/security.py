@@ -324,19 +324,34 @@ def verify_dummy_password(settings: Settings | None = None) -> None:
 # Refresh tokens (AUTH.md section 4.2)
 # ---------------------------------------------------------------------------
 
-REFRESH_TOKEN_BYTES: Final = 32
+OPAQUE_TOKEN_BYTES: Final = 32
+REFRESH_TOKEN_BYTES: Final = OPAQUE_TOKEN_BYTES
+
+
+def generate_opaque_token() -> str:
+    """A high-entropy random token -- used for refresh, verification, reset.
+
+    Not a JWT: these must be revocable, and a value the server stores is the
+    only kind that can be.
+    """
+    return secrets.token_urlsafe(OPAQUE_TOKEN_BYTES)
+
+
+def hash_opaque_token(token: str) -> str:
+    """Hash an opaque token for storage.
+
+    SHA-256 rather than Argon2 on purpose: the token is 256 bits of
+    randomness, so there is nothing to brute-force and a slow hash would only
+    make every use expensive. A database leak still yields nothing usable.
+    """
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def generate_refresh_token() -> str:
-    """A high-entropy opaque token -- not a JWT, so it stays revocable."""
-    return secrets.token_urlsafe(REFRESH_TOKEN_BYTES)
+    """A refresh token (AUTH.md section 4.2)."""
+    return generate_opaque_token()
 
 
 def hash_refresh_token(token: str) -> str:
-    """Hash a refresh token for storage.
-
-    SHA-256 rather than Argon2 on purpose: the token is 256 bits of randomness,
-    so there is nothing to brute-force and a slow hash would only make every
-    refresh expensive. A database leak still yields no usable session.
-    """
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+    """Hash a refresh token for storage."""
+    return hash_opaque_token(token)

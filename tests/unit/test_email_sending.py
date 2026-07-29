@@ -152,16 +152,24 @@ class TestNoRecipientInLogs:
         assert RECIPIENT not in caplog.text
 
     async def test_absent_when_unconfigured(
-        self, caplog: pytest.LogCaptureFixture
+        self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Development logs the link so flows can be completed -- not the address."""
+        """Neither the address nor the link reaches the log.
+
+        An earlier version logged the body in development so local flows could
+        be completed. `RedactionFilter` scrubbed the `token=` out of it -- which
+        was correct, because a verification token is a credential. The link is
+        no longer logged at all; `scripts/issue_dev_token.py` covers local use.
+        """
+        monkeypatch.setenv("APP_ENV", "development")
         get_settings.cache_clear()
 
         with caplog.at_level(logging.DEBUG):
             await service.send_email(RECIPIENT, verification_email(LINK))
 
         assert RECIPIENT not in caplog.text
-        assert LINK in caplog.text
+        assert LINK not in caplog.text
+        assert "not sending" in caplog.text
 
 
 class TestTemplates:

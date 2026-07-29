@@ -16,11 +16,14 @@ from app.modules.identity.repository import UserRepository
 from app.modules.identity.schemas import (
     LoginRequest,
     LogoutRequest,
+    PasswordResetConfirmRequest,
+    PasswordResetRequest,
     RefreshRequest,
     RegisterRequest,
     RegistrationAccepted,
     TokenPairResponse,
     UserResponse,
+    VerifyEmailRequest,
 )
 
 router = APIRouter(tags=["identity"])
@@ -133,3 +136,63 @@ async def read_me(user: AuthenticatedUserDep, session: SessionDep) -> UserRespon
     if record is None:  # pragma: no cover - the token resolved a moment ago
         raise UnauthenticatedError
     return UserResponse.model_validate(record)
+
+
+@router.post(
+    "/auth/verify-email",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Confirm an email address",
+    description=(
+        "Confirms the address and activates the account.\n\n"
+        "The token arrives as a query parameter on the link in the "
+        "verification email, which points at **your** app rather than this "
+        "API: mail security scanners prefetch URLs, and a GET endpoint here "
+        "would have the single-use token consumed before the user clicked. "
+        "Extract the token and POST it.\n\n"
+        "`422` covers unknown, expired, and already-used tokens with one "
+        "message -- do not try to distinguish them."
+    ),
+    responses=error_responses(422),
+)
+async def verify_email(payload: VerifyEmailRequest, session: SessionDep) -> None:
+    await service.verify_email(session, payload.token)
+
+
+@router.post(
+    "/auth/password-reset/request",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=RegistrationAccepted,
+    summary="Begin a password reset",
+    description=(
+        "Sends a reset link if the address has an account.\n\n"
+        "**Always returns `202` with the same body**, whether or not the "
+        "address is registered, so this cannot be used to discover accounts."
+    ),
+    responses=error_responses(422),
+)
+async def request_password_reset(
+    payload: PasswordResetRequest, session: SessionDep
+) -> RegistrationAccepted:
+    await service.request_password_reset(session, payload.email)
+    return RegistrationAccepted(
+        status="pending_verification",
+        message="If that address has an account, a reset link is on its way.",
+    )
+
+
+@router.post(
+    "/auth/password-reset/confirm",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Complete a password reset",
+    description=(
+        "Sets the new password and **ends every existing session**: all refresh "
+        "tokens are revoked and every access token already issued stops "
+        "working. The user must log in again afterwards, on every device.\n\n"
+        "Any other reset link already sent to that address is invalidated too."
+    ),
+    responses=error_responses(422),
+)
+async def confirm_password_reset(
+    payload: PasswordResetConfirmRequest, session: SessionDep
+) -> None:
+    await service.reset_password(session, payload.token, payload.password)

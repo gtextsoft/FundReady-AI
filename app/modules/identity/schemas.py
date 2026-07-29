@@ -22,6 +22,8 @@ from app.core.security import AccountStatus, KycStatus, Role, SubscriptionStatus
 
 __all__ = [
     "AccountStatus",
+    "PasswordResetConfirmRequest",
+    "PasswordResetRequest",
     "KycStatus",
     "LoginRequest",
     "LogoutRequest",
@@ -32,6 +34,7 @@ __all__ = [
     "SubscriptionStatus",
     "TokenPairResponse",
     "UserResponse",
+    "VerifyEmailRequest",
 ]
 
 # Deliberately permissive. Address syntax is not what makes an address real --
@@ -129,3 +132,22 @@ class UserResponse(BaseModel):
     kyc_status: KycStatus
     subscription_status: SubscriptionStatus
     created_at: datetime
+
+
+class VerifyEmailRequest(_Request):
+    """The token from the verification link."""
+
+    token: str = Field(max_length=512)
+
+
+class PasswordResetRequest(_EmailMixin):
+    """Begin a reset. The response is the same whether or not the account exists."""
+
+
+class PasswordResetConfirmRequest(_Request):
+    """Complete a reset with the token from the emailed link."""
+
+    token: str = Field(max_length=512)
+    password: Password = Field(
+        description="The new password. At least 12 characters.",
+    )

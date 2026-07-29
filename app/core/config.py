@@ -81,6 +81,11 @@ class Settings(BaseSettings):
     app_env: Environment = Environment.DEVELOPMENT
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     api_base_url: str = ""
+    # Where emailed links point. Owned by the mobile client (deep link or
+    # universal link), NOT by this API: mail security scanners prefetch every
+    # URL they see, which would consume a single-use token before the user
+    # ever clicked it. The client extracts the token and POSTs it back.
+    app_link_base_url: str = ""
     # Comma-separated. Parsed by `cors_origins`; kept as a string because
     # pydantic-settings would otherwise try to JSON-decode a list-typed field.
     cors_allowed_origins: str = ""
@@ -173,6 +178,7 @@ class Settings(BaseSettings):
 
         required: dict[str, SecretStr | str | None] = {
             "DATABASE_URL": self.database_url,
+            "APP_LINK_BASE_URL": self.app_link_base_url,
             "JWT_SECRET_KEY": self.jwt_secret_key,
             "MFA_SECRET_ENCRYPTION_KEY": self.mfa_secret_encryption_key,
             "R2_ACCOUNT_ID": self.r2_account_id,

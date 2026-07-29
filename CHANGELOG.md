@@ -46,6 +46,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   generated. On a `500`, the same id appears in `details.request_id`.
 - Core scaffolding (T0.3): env-driven settings, async SQLAlchemy session
   management, and structured JSON logging with automatic secret redaction.
+- **Email verification and password reset** (T1.2b).
+  - `POST /v1/auth/verify-email` — confirms the address and activates the account.
+    The token arrives on a link pointing at **your app**, not this API: mail
+    security scanners prefetch URLs and would consume a single-use token before
+    the user clicked. Extract the token and POST it. Set `APP_LINK_BASE_URL`.
+  - `POST /v1/auth/password-reset/request` — **always `202`**, whether or not the
+    address is registered.
+  - `POST /v1/auth/password-reset/confirm` — sets the new password and **ends
+    every session**: all refresh tokens revoked, all access tokens invalidated,
+    and any other reset link already sent is burned. The user re-logs in on every
+    device.
+  - Unknown, expired, already-used, and wrong-purpose tokens all return the same
+    `422` — do not try to distinguish them.
 - **Transactional email** (T1.2a) — internal only, no endpoint. Verification and
   password-reset messages over Resend. A send failure never propagates to the
   caller, so registration behaves identically whether or not email is working.
