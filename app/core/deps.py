@@ -22,7 +22,12 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from app.core.config import Settings, get_settings
 from app.core.db import AsyncSession, get_session
 from app.core.errors import ForbiddenError, UnauthenticatedError
-from app.core.security import CurrentUser, Role, resolve_current_user
+from app.core.security import (
+    AccountStatus,
+    CurrentUser,
+    Role,
+    resolve_current_user,
+)
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 """Process-wide settings."""
@@ -44,11 +49,28 @@ BearerCredentials = Annotated[
 ]
 
 
-async def get_current_user(credentials: BearerCredentials) -> CurrentUser:
-    """The authenticated caller, resolved from the database on every request."""
+async def get_authenticated_user(credentials: BearerCredentials) -> CurrentUser:
+    """The caller behind a valid token, whatever their account status.
+
+    Only `/v1/users/me` should use this. Everything else wants
+    `get_current_user`, which additionally requires an active account -- an
+    unverified user must be able to *see* that they are unverified, and nothing
+    more.
+    """
     if credentials is None or not credentials.credentials.strip():
         raise UnauthenticatedError
     return await resolve_current_user(credentials.credentials)
+
+
+AuthenticatedUserDep = Annotated[CurrentUser, Depends(get_authenticated_user)]
+"""An authenticated caller, possibly still pending email verification."""
+
+
+async def get_current_user(user: AuthenticatedUserDep) -> CurrentUser:
+    """An authenticated caller with an active account -- the normal case."""
+    if user.status is not AccountStatus.ACTIVE:
+        raise ForbiddenError("Verify your email address to continue.")
+    return user
 
 
 CurrentUserDep = Annotated[CurrentUser, Depends(get_current_user)]
@@ -79,6 +101,7 @@ CurrentInvestor = Annotated[CurrentUser, Depends(require_role(Role.INVESTOR))]
 CurrentAdmin = Annotated[CurrentUser, Depends(require_role(Role.ADMIN))]
 
 __all__ = [
+    "AuthenticatedUserDep",
     "CurrentAdmin",
     "CurrentFounder",
     "CurrentInvestor",
@@ -86,6 +109,7 @@ __all__ = [
     "SessionDep",
     "SettingsDep",
     "bearer_scheme",
+    "get_authenticated_user",
     "get_current_user",
     "require_role",
 ]

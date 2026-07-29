@@ -10,6 +10,7 @@ The OpenAPI document is the contract the mobile developer builds against
 import asyncio
 import logging
 import sys
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -19,13 +20,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import __version__
 from app.core import health
 from app.core.config import get_settings
-from app.core.db import dispose_engine
+from app.core.db import dispose_engine, get_session_factory
 from app.core.errors import register_exception_handlers
 from app.core.logging import (
     REQUEST_ID_HEADER,
     RequestContextMiddleware,
     configure_logging,
 )
+from app.core.security import CurrentUser, set_user_loader
+from app.modules.identity import router as identity_router
+from app.modules.identity import service as identity_service
 
 API_V1_PREFIX = "/v1"
 
@@ -33,10 +37,27 @@ logger = logging.getLogger(__name__)
 
 if sys.platform == "win32":
     # psycopg's async mode cannot run on Windows' default ProactorEventLoop.
-    # Set at import time, before the server creates its loop. A no-op off
-    # Windows, so production (Linux) is unaffected -- this exists purely so the
-    # service is runnable on a Windows development machine.
+    # This covers anything that starts its own loop from the default policy --
+    # the RQ worker, scripts, ad-hoc `asyncio.run`.
+    #
+    # It does NOT cover uvicorn, which passes an explicit `loop_factory` and so
+    # ignores the policy: use `python -m app` (see `app/__main__.py`) or
+    # `uvicorn --reload`. A no-op off Windows.
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+
+async def _load_user(user_id: uuid.UUID) -> CurrentUser | None:
+    """Resolve a token subject against the database.
+
+    `core.security` deliberately knows nothing about the identity module -- it
+    calls through the `UserLoader` protocol, and this is where the two are
+    joined. The composition root is the only place allowed to know both.
+
+    A short-lived session of its own, because authentication happens before the
+    request's own session is established.
+    """
+    async with get_session_factory()() as session:
+        return await identity_service.load_current_user(session, user_id)
 
 
 @asynccontextmanager
@@ -44,11 +65,13 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """Configure logging on startup; release pooled connections on shutdown."""
     settings = get_settings()
     configure_logging(settings)
+    set_user_loader(_load_user)
     logger.info(
         "api starting",
         extra={"context": {"environment": settings.app_env, "version": __version__}},
     )
     yield
+    set_user_loader(None)
     await dispose_engine()
 
 
@@ -90,3 +113,4 @@ app.add_middleware(RequestContextMiddleware)
 register_exception_handlers(app)
 
 app.include_router(health.router, prefix=API_V1_PREFIX)
+app.include_router(identity_router.router, prefix=API_V1_PREFIX)

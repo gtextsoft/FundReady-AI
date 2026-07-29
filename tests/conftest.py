@@ -157,7 +157,15 @@ async def db_session() -> AsyncIterator[AsyncSession]:
     )
     async with engine.connect() as connection:
         transaction = await connection.begin()
-        session = AsyncSession(bind=connection, expire_on_commit=False)
+        session = AsyncSession(
+            bind=connection,
+            expire_on_commit=False,
+            # Without this, a `commit()` inside the code under test would commit
+            # the *outer* transaction and the rollback below would have nothing
+            # left to undo -- test rows would survive. Joining as a savepoint
+            # keeps those commits real to the code while still discardable.
+            join_transaction_mode="create_savepoint",
+        )
         try:
             yield session
         finally:

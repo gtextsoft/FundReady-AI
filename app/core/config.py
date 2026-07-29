@@ -91,6 +91,11 @@ class Settings(BaseSettings):
     # transaction mode, which is right for the app but not the recommended
     # target for DDL. Falls back to `database_url` when unset.
     database_migration_url: SecretStr | None = None
+    # Test-only, and never read by the application: a throwaway database (a Neon
+    # branch) that the suite may write to. Declared here solely because settings
+    # reject unknown keys, and this one legitimately lives in `.env` beside the
+    # others -- without a field for it, its presence would stop the service.
+    test_database_url: SecretStr | None = None
 
     # -- Authentication (self-built -- AUTH.md) -----------------------------
     # Signs and verifies our own access tokens. One service does both, so a

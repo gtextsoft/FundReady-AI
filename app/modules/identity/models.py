@@ -10,11 +10,22 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import DateTime, String, func
+from sqlalchemy import DateTime, ForeignKey, String, false, func
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
+from app.core.security import AccountStatus, KycStatus, Role, SubscriptionStatus
+
+
+def _by_value(enum_class: type[StrEnum]) -> list[str]:
+    """Store enum *values* ("founder"), not member names ("FOUNDER").
+
+    SQLAlchemy defaults to names, which would make the database check
+    constraint disagree with every value the API accepts and returns.
+    """
+    return [member.value for member in enum_class]
 
 
 class AuditAction(StrEnum):
@@ -89,3 +100,132 @@ class AuditLog(Base):
 
     def __repr__(self) -> str:
         return f"<AuditLog {self.action} actor={self.actor_id} at={self.created_at}>"
+
+
+class User(Base):
+    """A founder, investor, or SACI admin.
+
+    The source of truth for role and account status: `AUTH.md` section 3.4
+    requires both to be read from here on every request, never from a token
+    claim, so a suspension or role change takes effect immediately.
+    """
+
+    __tablename__ = "users"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+
+    # Stored already normalised (lower-cased, trimmed) by the service, so the
+    # unique index is the actual guarantee against duplicate accounts.
+    email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+
+    role: Mapped[Role] = mapped_column(
+        SAEnum(
+            Role,
+            native_enum=False,
+            length=16,
+            name="user_role",
+            values_callable=_by_value,
+        )
+    )
+    status: Mapped[AccountStatus] = mapped_column(
+        SAEnum(
+            AccountStatus,
+            native_enum=False,
+            length=32,
+            name="account_status",
+            values_callable=_by_value,
+        ),
+        default=AccountStatus.PENDING_VERIFICATION,
+    )
+
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # Columns land here; the TOTP logic arrives with T1.2c.
+    mfa_enabled: Mapped[bool] = mapped_column(default=False, server_default=false())
+    mfa_secret_encrypted: Mapped[str | None] = mapped_column(String(255))
+
+    # Both are trusted from Stripe only -- never from a client (AUTH.md 8).
+    kyc_status: Mapped[KycStatus] = mapped_column(
+        SAEnum(
+            KycStatus,
+            native_enum=False,
+            length=16,
+            name="kyc_status",
+            values_callable=_by_value,
+        ),
+        default=KycStatus.NONE,
+    )
+    subscription_status: Mapped[SubscriptionStatus] = mapped_column(
+        SAEnum(
+            SubscriptionStatus,
+            native_enum=False,
+            length=16,
+            name="subscription_status",
+            values_callable=_by_value,
+        ),
+        default=SubscriptionStatus.NONE,
+    )
+
+    # Bumping this invalidates every access token issued before it, without
+    # waiting for expiry (AUTH.md section 11).
+    session_valid_after: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+
+    failed_login_count: Mapped[int] = mapped_column(default=0, server_default="0")
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    @property
+    def email_verified(self) -> bool:
+        return self.email_verified_at is not None
+
+    def __repr__(self) -> str:
+        # Deliberately no email: __repr__ ends up in tracebacks and logs.
+        return f"<User {self.id} role={self.role} status={self.status}>"
+
+
+class RefreshToken(Base):
+    """One issued refresh token.
+
+    Rotating: each use marks this row `used_at` and issues a successor. If a
+    row that already has `used_at` is presented again, the token was stolen --
+    the whole `family_id` is revoked (AUTH.md section 4.2). That is what limits
+    a stolen token to a single use.
+
+    Only the SHA-256 hash is stored; the raw value exists once, in the response
+    that issued it.
+    """
+
+    __tablename__ = "refresh_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    # Unlike audit_log, a foreign key is right here: sessions are meaningless
+    # once the user is gone, and should go with them.
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    # Every token descended from one login shares this. Revoking it ends the
+    # entire chain, not just the token that was replayed.
+    family_id: Mapped[uuid.UUID] = mapped_column(index=True)
+
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+
+    issued_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    replaced_by_id: Mapped[uuid.UUID | None] = mapped_column()
+
+    def __repr__(self) -> str:
+        return f"<RefreshToken {self.id} user={self.user_id} family={self.family_id}>"

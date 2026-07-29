@@ -23,15 +23,20 @@ The rules that matter, and why they are here rather than at each call site:
   token already in the wild (AUTH.md section 11).
 """
 
+import hashlib
 import logging
+import secrets
 import uuid
 from collections.abc import Awaitable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from typing import Any, Protocol
+from functools import lru_cache
+from typing import Any, Final, Protocol
 
 import jwt
+from argon2 import PasswordHasher, Type
+from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 
 from app.core.config import Settings, get_settings
 from app.core.errors import ConfigurationError, ForbiddenError, UnauthenticatedError
@@ -53,6 +58,24 @@ class AccountStatus(StrEnum):
     PENDING_VERIFICATION = "pending_verification"
     ACTIVE = "active"
     SUSPENDED = "suspended"
+
+
+class KycStatus(StrEnum):
+    """Investor identity verification, trusted from Stripe only (AUTH.md 8)."""
+
+    NONE = "none"
+    PENDING = "pending"
+    VERIFIED = "verified"
+    FAILED = "failed"
+
+
+class SubscriptionStatus(StrEnum):
+    """Founder billing state, trusted from Stripe webhooks only (AUTH.md 8)."""
+
+    NONE = "none"
+    ACTIVE = "active"
+    PAST_DUE = "past_due"
+    CANCELED = "canceled"
 
 
 class TokenType(StrEnum):
@@ -200,11 +223,16 @@ def decode_access_token(
 async def resolve_current_user(
     token: str, settings: Settings | None = None
 ) -> CurrentUser:
-    """Verify a token and resolve it to an authorised, active caller.
+    """Verify a token and resolve it to the caller behind it.
 
-    Order matters (AUTH.md section 5): authenticated, then account status. A
-    suspended user holding a valid token is authenticated but not permitted --
-    403, not 401, because refreshing the token would not help.
+    Order matters (AUTH.md section 5): authenticated first, then account
+    status. A suspended user holding a valid token is authenticated but not
+    permitted -- 403, not 401, because refreshing would not help.
+
+    Suspension is rejected here because it blocks everything (AUTH.md section
+    8). `pending_verification` is *not* rejected here: `/v1/users/me` has to
+    remain reachable so the client can tell the user to verify their email.
+    Requiring an active account is `core.deps.get_current_user`.
     """
     claims = decode_access_token(token, settings)
 
@@ -222,7 +250,93 @@ async def resolve_current_user(
 
     if user.status is AccountStatus.SUSPENDED:
         raise ForbiddenError("This account is suspended.")
-    if user.status is not AccountStatus.ACTIVE:
-        raise ForbiddenError("Verify your email address to continue.")
 
     return user
+
+
+# ---------------------------------------------------------------------------
+# Passwords (AUTH.md section 3.1)
+# ---------------------------------------------------------------------------
+
+# A hash of a fixed dummy password, verified against when the email is unknown
+# so that "no such user" and "wrong password" take the same time. Computed once,
+# lazily, because it costs a full Argon2 hash.
+_dummy_hash: str | None = None
+
+
+@lru_cache(maxsize=4)
+def _hasher(memory_cost: int, time_cost: int, parallelism: int) -> PasswordHasher:
+    return PasswordHasher(
+        memory_cost=memory_cost,
+        time_cost=time_cost,
+        parallelism=parallelism,
+        hash_len=32,
+        salt_len=16,
+        type=Type.ID,  # Argon2id -- not Argon2i or Argon2d
+    )
+
+
+def password_hasher(settings: Settings | None = None) -> PasswordHasher:
+    """The Argon2id hasher, configured from settings so cost is tunable."""
+    settings = settings or get_settings()
+    return _hasher(
+        settings.argon2_memory_cost_kib,
+        settings.argon2_time_cost,
+        settings.argon2_parallelism,
+    )
+
+
+def hash_password(password: str, settings: Settings | None = None) -> str:
+    """Hash a password. The plaintext never leaves this call."""
+    return password_hasher(settings).hash(password)
+
+
+def verify_password(
+    password_hash: str, password: str, settings: Settings | None = None
+) -> tuple[bool, bool]:
+    """Verify a password.
+
+    Returns `(is_correct, needs_rehash)`. `needs_rehash` is true when the stored
+    hash was produced with weaker parameters than are configured now, so login
+    can transparently upgrade it (AUTH.md section 3.1).
+    """
+    hasher = password_hasher(settings)
+    try:
+        hasher.verify(password_hash, password)
+    except (VerifyMismatchError, VerificationError, InvalidHashError):
+        return False, False
+    return True, hasher.check_needs_rehash(password_hash)
+
+
+def verify_dummy_password(settings: Settings | None = None) -> None:
+    """Burn the same time as a real verification, for an unknown email.
+
+    Without this, a failed lookup returns measurably faster than a failed
+    password check, which turns login into an account-existence oracle.
+    """
+    global _dummy_hash
+    if _dummy_hash is None:
+        _dummy_hash = hash_password("dummy-password-for-timing-parity", settings)
+    verify_password(_dummy_hash, "not-the-dummy-password", settings)
+
+
+# ---------------------------------------------------------------------------
+# Refresh tokens (AUTH.md section 4.2)
+# ---------------------------------------------------------------------------
+
+REFRESH_TOKEN_BYTES: Final = 32
+
+
+def generate_refresh_token() -> str:
+    """A high-entropy opaque token -- not a JWT, so it stays revocable."""
+    return secrets.token_urlsafe(REFRESH_TOKEN_BYTES)
+
+
+def hash_refresh_token(token: str) -> str:
+    """Hash a refresh token for storage.
+
+    SHA-256 rather than Argon2 on purpose: the token is 256 bits of randomness,
+    so there is nothing to brute-force and a slow hash would only make every
+    refresh expensive. A database leak still yields no usable session.
+    """
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()

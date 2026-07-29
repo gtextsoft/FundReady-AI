@@ -46,6 +46,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   generated. On a `500`, the same id appears in `details.request_id`.
 - Core scaffolding (T0.3): env-driven settings, async SQLAlchemy session
   management, and structured JSON logging with automatic secret redaction.
+- **Authentication endpoints** (T1.2) — the first real API surface. See `/docs`.
+  - `POST /v1/auth/register` — founder or investor. **Returns `202` with the same
+    body whether or not the address was already registered**, so the endpoint
+    cannot be used to discover who has an account. Do not treat `202` as proof a
+    new account exists. `admin` is rejected: admins are provisioned internally.
+  - `POST /v1/auth/login` — returns `{access_token, refresh_token, token_type,
+    expires_in}`. Every failure is the same `401` with the same message (unknown
+    account, wrong password, or temporary lockout) — do not branch on it. `403`
+    means suspended.
+  - `POST /v1/auth/refresh` — **rotating**: the presented token is consumed and a
+    new pair returned. Store the new refresh token and discard the old one
+    immediately. **Presenting an already-used refresh token is treated as theft:
+    every token from that login is revoked and all access tokens are
+    invalidated.** Never retry a refresh with a token you already exchanged.
+  - `POST /v1/auth/logout` — `204` always, even for an unrecognised token.
+  - `GET /v1/users/me` — the caller's own account. Reachable while
+    `pending_verification` so the client can prompt for verification; every other
+    protected endpoint returns `403` until the email is verified.
 - **Immutable audit log** (T1.1a) — the `audit_log` table, append-only and enforced
   by database triggers that reject UPDATE, DELETE, and TRUNCATE. Not yet exposed
   through any endpoint; `identity.service.record_action()` is the internal entry
