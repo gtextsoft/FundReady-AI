@@ -18,12 +18,14 @@ dependencies = [
     # Config & validation
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
-    # Database & migrations
+    # Database & migrations (Neon: Postgres + pgvector)
     "sqlalchemy>=2.0",
     "alembic>=1.14",
     "psycopg[binary]>=3.2",
     "pgvector>=0.3",
-    # Auth (Supabase JWT verification)
+    # Auth: we issue and verify our own tokens (AUTH.md).
+    # `argon2-cffi` (hashing) and `pyotp` (TOTP MFA) land with T1.2;
+    # `boto3` (Cloudflare R2, S3-compatible) lands with T1.5.
     "pyjwt[crypto]>=2.9",
     # Background jobs
     "redis>=5.2",

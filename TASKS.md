@@ -63,11 +63,14 @@ Legend: `[ ]` todo · `[x]` done · `[~]` in progress
 ---
 
 ### Open follow-ups
+
 - [ ] **Push to a remote and confirm CI is actually green** — closes the last part of T0.2. `.github/workflows/ci.yml` has never executed; only its commands have been verified, locally.
-- [ ] **Retire the Supabase settings in `core/config.py` and `.env.example`** — replace with Neon + R2 keys and self-built JWT signing (T0.3a).
+- [x] **Retire the Supabase settings in `core/config.py` and `.env.example`** — replaced with Neon + R2 keys and self-built JWT signing (T0.3a, done 2026-07-29).
+- [ ] **Approve the auth/storage dependencies** — `argon2-cffi` + `pyotp` (T1.2), `boto3` for R2 (T1.5). All free and open-source; blocked on your go-ahead.
 - [ ] **Missing document:** `saci-audit-platform-backend-spec.md` is referenced by `CLAUDE.md` §1 and §10 but is not in the repo — needed before Phase 2.
 
 ### Backlog / open questions (resolve before the dependent task)
+
 - [ ] Confirm founder report visibility (full actionable audit vs summary) — affects T2.7, T4.2.
 - [ ] Evidence strictness + resubmission limits — affects T3.5.
 - [ ] Data residency across NG/UAE/UK/US/China — affects T1.5, storage.
