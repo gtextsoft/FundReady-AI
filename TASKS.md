@@ -11,7 +11,7 @@ Legend: `[ ]` todo · `[x]` done · `[~]` in progress
 - [x] **T0.1 Scaffold repo** to the layout in `ARCHITECTURE.md`; add `pyproject.toml`/`requirements.txt`, `.env.example`, `README`. *Done when: structure exists and the app imports cleanly.*
 - [x] **T0.2 Tooling & CI** — ruff, mypy, pytest configured; CI runs lint + types + tests + secret scan on every push. *Done when: CI is green on an empty test.*
 - [x] **T0.3 Core scaffolding** — `core/config.py` (env-driven), `core/db.py` (session), `core/errors.py` (error envelope + handlers), `core/logging.py`, a `/v1/health` endpoint. *Done when: health returns 200 and errors use the envelope.*
-- [ ] **T0.4 Auth foundation** — token verification dependency, `current_user`, role/tier extraction, RBAC dependency. *Done when: a protected test route rejects missing/invalid tokens with 401 and wrong-role with 403.*
+- [x] **T0.4 Auth foundation** — token verification dependency, `current_user`, role/tier extraction, RBAC dependency. *Done when: a protected test route rejects missing/invalid tokens with 401 and wrong-role with 403.* — 28 security tests in `tests/security/test_auth_dependencies.py`. Token **issuance** for login/refresh is T1.2; the `UserLoader` protocol is the seam the real repository plugs into.
 
 ## Phase 1 — Foundations
 

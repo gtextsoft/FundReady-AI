@@ -1,27 +1,228 @@
-"""Password hashing, token issue/verification, and the authorization deps.
+"""Token verification and the identity it resolves to.
 
-Authentication is **ours** (DECISIONS.md D4) -- no managed identity provider
-absorbs a mistake here on our behalf. `AUTH.md` is the spec; the essentials:
+Authentication is **ours** (DECISIONS.md D4, D17) -- no managed identity
+provider absorbs a mistake here on our behalf. `AUTH.md` is the spec.
 
-* **Passwords** are hashed with Argon2id at the configured cost, rehashed on
-  login when that cost rises, and verified in constant time. An unknown email
-  still performs a dummy hash so response timing does not reveal whether an
-  account exists.
-* **Access tokens** are short-lived JWTs we sign. Verification checks the
-  signature, `exp`, `iat`, `iss`, `aud`, and `typ` -- and the algorithm is
-  **pinned from settings, never read from the token header** (that is how
-  `alg: none` and algorithm-confusion attacks get in).
-* **Refresh tokens** are opaque random strings stored hashed, rotating on every
-  use. Presenting a used one means theft: revoke the whole family, bump
-  `session_valid_after`, and audit-log it.
-* **Role and account status come from the database on every request**, never
-  from a token claim. That is what makes revocation, suspension, and role
-  changes take effect immediately.
+This module is deliberately free of FastAPI: it decodes a token, resolves the
+caller, and applies the account-level gates. The HTTP wiring lives in
+`core.deps`. Password hashing (Argon2id) and token *issuance* for refresh
+tokens arrive with T1.2.
 
-Provides `require_role(*roles)`, `require_kyc_verified`,
-`require_active_subscription`, and the ownership helpers that prevent IDOR --
-which, with self-built auth, are the *primary* tenant-isolation wall
-(DECISIONS.md D13), not a convenience on top of RLS.
+The rules that matter, and why they are here rather than at each call site:
 
-Implemented in TASKS.md T0.4 / T1.2.
+* **The signing algorithm is pinned from settings and never read from the
+  token header.** Trusting the header is how `alg: none` and algorithm
+  confusion get in -- an attacker rewrites the header and the token verifies.
+* **`typ` is checked.** A refresh token must never be accepted where an access
+  token is expected.
+* **Role and status come from the loader, not the token.** A `role` claim rides
+  along for convenience, but a decision is never made from it -- that is what
+  makes a suspension or role change take effect on the next request instead of
+  whenever the token happens to expire.
+* **`session_valid_after` is honoured**, so bumping it revokes every access
+  token already in the wild (AUTH.md section 11).
 """
+
+import logging
+import uuid
+from collections.abc import Awaitable
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from enum import StrEnum
+from typing import Any, Protocol
+
+import jwt
+
+from app.core.config import Settings, get_settings
+from app.core.errors import ConfigurationError, ForbiddenError, UnauthenticatedError
+
+logger = logging.getLogger(__name__)
+
+
+class Role(StrEnum):
+    """The three roles (AUTH.md section 2)."""
+
+    FOUNDER = "founder"
+    INVESTOR = "investor"
+    ADMIN = "admin"
+
+
+class AccountStatus(StrEnum):
+    """Account lifecycle state (AUTH.md section 15)."""
+
+    PENDING_VERIFICATION = "pending_verification"
+    ACTIVE = "active"
+    SUSPENDED = "suspended"
+
+
+class TokenType(StrEnum):
+    """The `typ` claim. Checked on every decode so the two never cross."""
+
+    ACCESS = "access"
+    REFRESH = "refresh"
+
+
+@dataclass(frozen=True, slots=True)
+class CurrentUser:
+    """The authenticated caller, as resolved from our own records."""
+
+    id: uuid.UUID
+    role: Role
+    status: AccountStatus
+    email_verified: bool = False
+    session_valid_after: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AccessTokenClaims:
+    """The verified contents of an access token."""
+
+    subject: uuid.UUID
+    issued_at: datetime
+    token_id: str
+
+
+class UserLoader(Protocol):
+    """Loads the authoritative user record for a verified token subject.
+
+    T1.2 supplies the repository-backed implementation. Until the `users` table
+    exists this is the seam that keeps `core` from depending on a feature
+    module, and it is what tests substitute.
+    """
+
+    def __call__(self, user_id: uuid.UUID) -> Awaitable[CurrentUser | None]:
+        """Return the user, or None when no such active record exists."""
+        ...
+
+
+_user_loader: UserLoader | None = None
+
+
+def set_user_loader(loader: UserLoader | None) -> None:
+    """Register the loader used to resolve a token subject (or clear it)."""
+    global _user_loader
+    _user_loader = loader
+
+
+def get_user_loader() -> UserLoader:
+    if _user_loader is None:
+        # Refusing to serve is correct: without a loader we could only trust
+        # the token's own claims, which is exactly what we do not do.
+        raise ConfigurationError
+    return _user_loader
+
+
+def _signing_key(settings: Settings) -> str:
+    if settings.jwt_secret_key is None:
+        raise ConfigurationError
+    key = settings.jwt_secret_key.get_secret_value()
+    if not key.strip():
+        raise ConfigurationError
+    return key
+
+
+def create_access_token(
+    user_id: uuid.UUID,
+    role: Role,
+    *,
+    settings: Settings | None = None,
+    issued_at: datetime | None = None,
+    expires_in: timedelta | None = None,
+) -> str:
+    """Mint a short-lived access token (AUTH.md section 4.1)."""
+    settings = settings or get_settings()
+    now = issued_at or datetime.now(UTC)
+    ttl = expires_in or timedelta(minutes=settings.access_token_ttl_minutes)
+
+    payload: dict[str, Any] = {
+        "sub": str(user_id),
+        "typ": TokenType.ACCESS.value,
+        "role": role.value,  # convenience only -- never authoritative
+        "iat": int(now.timestamp()),
+        "exp": int((now + ttl).timestamp()),
+        "iss": settings.jwt_issuer,
+        "aud": settings.jwt_audience,
+        "jti": uuid.uuid4().hex,
+    }
+    return jwt.encode(
+        payload,
+        _signing_key(settings),
+        algorithm=settings.jwt_algorithm,
+        headers={"kid": settings.jwt_key_id},
+    )
+
+
+def _reject(reason: str) -> UnauthenticatedError:
+    """Log why a token was refused -- never the token itself."""
+    logger.info("access token rejected", extra={"context": {"reason": reason}})
+    return UnauthenticatedError("The access token is missing, invalid, or expired.")
+
+
+def decode_access_token(
+    token: str, settings: Settings | None = None
+) -> AccessTokenClaims:
+    """Verify an access token and return its claims.
+
+    Raises `UnauthenticatedError` for every failure mode, with one message, so
+    the response never tells an attacker *which* check failed.
+    """
+    settings = settings or get_settings()
+
+    try:
+        payload: dict[str, Any] = jwt.decode(
+            token,
+            _signing_key(settings),
+            # Pinned. A token whose header claims another algorithm -- or
+            # `none` -- fails here rather than being taken at its word.
+            algorithms=[settings.jwt_algorithm],
+            audience=settings.jwt_audience,
+            issuer=settings.jwt_issuer,
+            options={"require": ["exp", "iat", "sub", "aud", "iss"]},
+        )
+    except jwt.InvalidTokenError as error:
+        raise _reject(type(error).__name__) from None
+
+    if payload.get("typ") != TokenType.ACCESS.value:
+        raise _reject("wrong_token_type")
+
+    try:
+        subject = uuid.UUID(str(payload["sub"]))
+    except (ValueError, KeyError):
+        raise _reject("malformed_subject") from None
+
+    return AccessTokenClaims(
+        subject=subject,
+        issued_at=datetime.fromtimestamp(int(payload["iat"]), tz=UTC),
+        token_id=str(payload.get("jti", "")),
+    )
+
+
+async def resolve_current_user(
+    token: str, settings: Settings | None = None
+) -> CurrentUser:
+    """Verify a token and resolve it to an authorised, active caller.
+
+    Order matters (AUTH.md section 5): authenticated, then account status. A
+    suspended user holding a valid token is authenticated but not permitted --
+    403, not 401, because refreshing the token would not help.
+    """
+    claims = decode_access_token(token, settings)
+
+    user = await get_user_loader()(claims.subject)
+    if user is None:
+        # The account was deleted, or the subject never existed. Same response
+        # either way -- the client learns nothing about which.
+        raise _reject("unknown_subject")
+
+    # Revocation: bumping `session_valid_after` invalidates every token issued
+    # before that moment, without waiting for expiry (AUTH.md section 11).
+    revoked_before = user.session_valid_after
+    if revoked_before is not None and claims.issued_at < revoked_before:
+        raise _reject("session_revoked")
+
+    if user.status is AccountStatus.SUSPENDED:
+        raise ForbiddenError("This account is suspended.")
+    if user.status is not AccountStatus.ACTIVE:
+        raise ForbiddenError("Verify your email address to continue.")
+
+    return user

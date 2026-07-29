@@ -5,16 +5,24 @@ declare. Routers depend on the aliases here rather than reaching into those
 modules directly, so a change to how a session or a current user is obtained is
 a one-line change in one place.
 
-Identity and role dependencies (`CurrentUser`, `require_role`,
-`require_kyc_verified`, `require_active_subscription`) land in T0.4.
+Authorization is layered (AUTH.md section 5): authenticated, then account
+status, then role, then condition, then ownership, then tier. The first three
+live here. **Ownership is checked in the service layer** -- it is the primary
+tenant-isolation wall (DECISIONS.md D13) and cannot be expressed as a
+route-level dependency, because only the service knows which object is being
+reached for.
 """
 
+from collections.abc import Awaitable, Callable
 from typing import Annotated
 
 from fastapi import Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.config import Settings, get_settings
 from app.core.db import AsyncSession, get_session
+from app.core.errors import ForbiddenError, UnauthenticatedError
+from app.core.security import CurrentUser, Role, resolve_current_user
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 """Process-wide settings."""
@@ -22,4 +30,62 @@ SettingsDep = Annotated[Settings, Depends(get_settings)]
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 """A transactional database session, committed on success, rolled back on error."""
 
-__all__ = ["SessionDep", "SettingsDep"]
+# `auto_error=False` so a missing or malformed header raises *our*
+# `UnauthenticatedError` and comes back in the documented error envelope,
+# rather than FastAPI's own untyped 403.
+bearer_scheme = HTTPBearer(
+    auto_error=False,
+    scheme_name="Bearer",
+    description="Access token issued by `POST /v1/auth/login`.",
+)
+
+BearerCredentials = Annotated[
+    HTTPAuthorizationCredentials | None, Depends(bearer_scheme)
+]
+
+
+async def get_current_user(credentials: BearerCredentials) -> CurrentUser:
+    """The authenticated caller, resolved from the database on every request."""
+    if credentials is None or not credentials.credentials.strip():
+        raise UnauthenticatedError
+    return await resolve_current_user(credentials.credentials)
+
+
+CurrentUserDep = Annotated[CurrentUser, Depends(get_current_user)]
+"""Any authenticated, active user."""
+
+
+def require_role(*roles: Role) -> Callable[[CurrentUser], Awaitable[CurrentUser]]:
+    """Restrict an endpoint to the given roles.
+
+    Denials are `403` -- the caller is authenticated, just not permitted, so
+    the mobile client must not retry after refreshing (AUTH.md section 4.3).
+    """
+    allowed = frozenset(roles)
+
+    async def dependency(user: CurrentUserDep) -> CurrentUser:
+        if user.role not in allowed:
+            raise ForbiddenError
+        return user
+
+    return dependency
+
+
+# Single-role aliases for the common cases. Where the permission matrix allows
+# an admin to act on a founder's or investor's behalf, compose explicitly --
+# `require_role(Role.FOUNDER, Role.ADMIN)` -- rather than widening these.
+CurrentFounder = Annotated[CurrentUser, Depends(require_role(Role.FOUNDER))]
+CurrentInvestor = Annotated[CurrentUser, Depends(require_role(Role.INVESTOR))]
+CurrentAdmin = Annotated[CurrentUser, Depends(require_role(Role.ADMIN))]
+
+__all__ = [
+    "CurrentAdmin",
+    "CurrentFounder",
+    "CurrentInvestor",
+    "CurrentUserDep",
+    "SessionDep",
+    "SettingsDep",
+    "bearer_scheme",
+    "get_current_user",
+    "require_role",
+]

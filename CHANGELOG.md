@@ -46,3 +46,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   generated. On a `500`, the same id appears in `details.request_id`.
 - Core scaffolding (T0.3): env-driven settings, async SQLAlchemy session
   management, and structured JSON logging with automatic secret redaction.
+- **Auth foundation** (T0.4) — access-token verification and the role dependencies.
+  No endpoint is protected yet, so there is no client-visible change, but the
+  contract endpoints will follow is now fixed:
+  - Send the access token as `Authorization: Bearer <token>`.
+  - **`401`** = missing, invalid, or expired token → refresh once and retry. Every
+    401 returns the *same* message regardless of cause, so do not branch on it.
+  - **`403`** = authenticated but not permitted (wrong role, suspended account, or
+    email not yet verified) → do not retry.
+  - Role is resolved from our records on every request, never from a token claim,
+    so a suspension or role change takes effect on the next call rather than at
+    token expiry.
