@@ -46,6 +46,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   0–100 percentages.*
 
 ### Added
+- **Audit rubric v1 (T2.6), 2026-07-30.** `audit/rubric/v1` — 11 scored
+  dimensions with explicit criteria, versioned and immutable once published.
+  **No endpoint or contract change:** internal, and not yet reachable from the
+  API (scoring is wired up in T2.7/T2.8).
+  - Seven universal-core dimensions apply to both verdicts; `scalability` is
+    fundability-only; `owner_independence`, `transferability`, and
+    `revenue_durability` are saleability-only.
+  - Every score carries citations to the submitted data. A dimension with
+    nothing to go on returns `insufficient_data` rather than a low score —
+    absent and bad are never collapsed.
+  - When no benchmark matches, the rubric reasons from first principles and
+    lowers confidence. It never invents a band (D11).
+  - Financial figures arrive pre-computed from `audit/finance.py`; the prompt
+    marks them authoritative and forbids recomputation (D9).
+  - Recorded on every AuditRun as `rubric_version` `v1` plus prompt ref
+    `audit_scoring@1`, so a past audit stays explainable (D12).
 - **AI client with model tiering (T2.1), 2026-07-30.** `app/ai/` — the single
   chokepoint for every Claude API call. **No endpoint or contract change:** this
   is internal plumbing the audit engine (T2.4–T2.7) and chat (T4.4) build on,
