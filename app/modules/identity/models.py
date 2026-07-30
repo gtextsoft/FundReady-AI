@@ -6,7 +6,7 @@ only. Every schema change also requires an Alembic migration under
 """
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -188,8 +188,15 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    # `onupdate` is a Python callable, not `func.now()`. A server-side
+    # onupdate leaves the ORM not knowing the new value, so it expires the
+    # attribute and reading it back for a response triggers lazy IO --
+    # which under async SQLAlchemy raises MissingGreenlet. Computing it here
+    # means the value is sent as a parameter and already known.
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=lambda: datetime.now(UTC),
     )
 
     @property

@@ -30,6 +30,7 @@ from app.core.logging import (
 from app.core.security import CurrentUser, set_user_loader
 from app.modules.identity import router as identity_router
 from app.modules.identity import service as identity_service
+from app.modules.intake import router as intake_router
 
 API_V1_PREFIX = "/v1"
 
@@ -114,3 +115,4 @@ register_exception_handlers(app)
 
 app.include_router(health.router, prefix=API_V1_PREFIX)
 app.include_router(identity_router.router, prefix=API_V1_PREFIX)
+app.include_router(intake_router.router, prefix=API_V1_PREFIX)

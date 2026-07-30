@@ -57,6 +57,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   see the `mfa_required` shape and not only the happy path.
 
 ### Added
+- **Startup Profile** (T1.4) — the first founder-owned resource.
+  - `POST /v1/startups` — create your own profile. **Every field is optional**: a
+    founder can start with a name and fill the rest in later, or let extraction do
+    it. `owner_id` comes from the token and is not an accepted request field.
+    `409` if you already have one (one per founder in v1).
+  - `GET /v1/startups/me` — your own profile, without needing its id.
+  - `GET /v1/startups/{id}` and `PATCH /v1/startups/{id}` — **another founder's id
+    returns `404`, not `403`**, so the API never confirms which ids exist. SACI
+    admins can read any profile; investors cannot (they get summaries in T4.2).
+  - `PATCH` is partial and **merges `fields` by name**, so correcting one value
+    does not resend the document and extraction does not overwrite typed input.
+  - Each field carries `source` (`founder` | `document` | `inferred`),
+    `confidence`, and an optional `document_id` — provenance is part of the value,
+    not a parallel structure, because the audit must cite its evidence.
+  - `missing_fields` is **computed on read**, not stored: it depends on the field
+    set and rubric version, so a stored copy would go stale.
+  - **`sector` is free text, not an enum** (`DECISIONS.md` D11 — the platform must
+    accept sectors that do not exist yet). `stage`, `country` (ISO 3166-1 alpha-2)
+    and `currency` (ISO 4217) are indexed for benchmarks and discovery.
+  - The field list is **provisional** pending `saci-audit-platform-backend-spec.md`,
+    which is not in the repo. JSONB storage means changing it needs no migration.
 - Repository scaffold: module/layer structure per `ARCHITECTURE.md`, `pyproject.toml`,
   `.env.example`, README (T0.1). No API endpoints yet.
 - Tooling and CI (T0.2): ruff (lint + format), mypy in strict mode, pytest, and a

@@ -22,8 +22,8 @@ Legend: `[ ]` todo · `[x]` done · `[~]` in progress
 - [x] **T1.2b Email verification + password reset** — single-use, expiring, hashed-at-rest tokens (24 h verify / 1 h reset); uniform responses that do not enumerate accounts. *Done when: a used token is rejected, and completing a reset bumps `session_valid_after` and revokes every refresh token.* — verified live end-to-end. Emailed links point at `APP_LINK_BASE_URL` (client deep link), not this API: mail scanners prefetch URLs and would burn single-use tokens.
 - [x] **T1.2c MFA (TOTP) + admin enforcement** — enrolment confirmed by one code before enabling; secret encrypted at rest; 10 hashed single-use recovery codes. *Done when: an admin cannot obtain tokens without a second factor.* — read as **no admin capability** without a second factor: an unenrolled admin gets a token but `require_role(ADMIN)` refuses everything until enrolled, which resolves the bootstrap circle (enrolling needs a login). `AUTH.md` §9 and §15 updated.
 - [x] **T1.2d Admin user management** — admin-only provisioning of admins, suspend/reactivate, role change; no self-service path to `admin`. *Done when: every action is audit-logged, and `session_valid_after` is bumped where it means something.* — **criterion narrowed**: the original wording was my own paraphrase, not `AUTH.md` §9, which requires only the audit log. Bumping is correct for suspend and role change, a no-op for provision (no session exists), and pointless for reactivate (the suspension already bumped it). First admin comes from `scripts/create_admin.py`.
-- [ ] **T1.3 Tenant isolation** — app-layer ownership checks (primary) + optional Postgres RLS via a per-transaction user setting (GUC). *Done when: `tests/security` prove a founder cannot read another founder's rows via any path, including with RLS disabled.*
-- [ ] **T1.4 Startup Profile** — model + schemas; create/update endpoints with ownership checks; `source`/`confidence` per field and `missingFields`. *Done when: a founder can create/update only their own profile.*
+- [ ] **T1.3 Tenant isolation** — app-layer ownership checks (primary) + optional Postgres RLS via a per-transaction user setting (GUC). *Done when: `tests/security` prove a founder cannot read another founder's rows via any path, including with RLS disabled.* — **next**; T1.4 already carries the service-layer checks and 20 isolation tests, so this task adds the RLS backstop and the reusable ownership helper.
+- [x] **T1.4 Startup Profile** — model + schemas; create/update endpoints with ownership checks; `source`/`confidence` per field and `missingFields`. *Done when: a founder can create/update only their own profile.* — **built before T1.3 by agreement**: isolation had nothing to isolate until owned data existed. Field list in `modules/intake/fields.py` is **provisional** pending the missing backend spec; JSONB storage means correcting it costs no migration.
 - [ ] **T1.5 Document upload** — signed upload/download URLs to **Cloudflare R2** (`boto3`, S3-compatible); type/size validation; scan hook. *Done when: uploads are stored out of the DB and served via expiring URLs.*
 
 ## Phase 2 — Audit engine
@@ -71,9 +71,9 @@ Legend: `[ ]` todo · `[x]` done · `[~]` in progress
 
 ### Open follow-ups
 
-- [ ] **Push to a remote and confirm CI is actually green** — closes the last part of T0.2. `.github/workflows/ci.yml` has never executed; only its commands have been verified, locally.
+- [ ] **Confirm CI is actually green** — the repo now has a remote (`github.com/gtextsoft/FundReady-AI`), so `.github/workflows/ci.yml` should be running. Its result has never been observed; `gh` is not installed locally, so check the Actions tab.
 - [x] **Retire the Supabase settings in `core/config.py` and `.env.example`** — replaced with Neon + R2 keys and self-built JWT signing (T0.3a, done 2026-07-29).
-- [ ] **Approve the auth/storage dependencies** — `argon2-cffi` + `pyotp` (T1.2), `boto3` for R2 (T1.5). All free and open-source; blocked on your go-ahead.
+- [ ] **Approve `boto3`** for Cloudflare R2 (T1.5). `argon2-cffi` and `pyotp` were approved and are installed.
 - [ ] **Missing document:** `saci-audit-platform-backend-spec.md` is referenced by `CLAUDE.md` §1 and §10 but is not in the repo — needed before Phase 2.
 
 ### Backlog / open questions (resolve before the dependent task)
