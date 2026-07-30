@@ -57,12 +57,24 @@ _EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$")
 
 Password = Annotated[str, Field(min_length=12, max_length=256)]
 
+# Control characters only. There is deliberately **no alphabet restriction** --
+# no `[A-Za-z]`, no "letters and hyphens only". This platform registers people
+# in Nigeria, the UAE, the UK, the US, and China, and every such rule rejects
+# real names: diacritics, non-Latin scripts, apostrophes, spaces, and single
+# characters are all legitimate. The only thing filtered is what cannot be part
+# of a name in any script.
+_CONTROL_CHARACTERS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
+PersonName = Annotated[str, Field(min_length=1, max_length=100)]
+
 # Shared example values, so the documentation tells one coherent story instead
 # of a different invented user per endpoint. The `noqa: S105` markers below are
 # flake8-bandit reading the variable names -- these are documentation strings
 # that decode to nothing and verify against nothing.
 EMAIL = "founder@example.com"
 USER_ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+FIRST_NAME = "Amaka"
+LAST_NAME = "Okonkwo"
 PASSWORD_EXAMPLE = "correct-horse-battery-staple"  # noqa: S105
 ACCESS_EXAMPLE = "eyJhbGciOiJIUzI1NiIsImtpZCI6ImsxIn0.eyJzdWIiOiI3Yzll.EXAMPLE"
 REFRESH_EXAMPLE = "N2Q4ZjFhYzQtM2I5ZS00ZjJhLTk4YzEtMGU3YjRkNmE5ZjEy"
@@ -113,7 +125,13 @@ class RegisterRequest(_EmailMixin):
     """
 
     model_config = examples(
-        {"email": EMAIL, "password": PASSWORD_EXAMPLE, "role": "founder"}
+        {
+            "email": EMAIL,
+            "password": PASSWORD_EXAMPLE,
+            "role": "founder",
+            "first_name": FIRST_NAME,
+            "last_name": LAST_NAME,
+        }
     )
 
     password: Password = Field(
@@ -126,6 +144,28 @@ class RegisterRequest(_EmailMixin):
             "mailbox provider."
         ),
     )
+    first_name: PersonName = Field(
+        description="The person's given name. Required for founders and investors.",
+        examples=[FIRST_NAME],
+    )
+    last_name: PersonName = Field(
+        description="The person's family name. Required for founders and investors.",
+        examples=[LAST_NAME],
+    )
+
+    @field_validator("first_name", "last_name", mode="before")
+    @classmethod
+    def _clean_name(cls, value: Any) -> Any:
+        """Trim and strip control characters *before* the length rules apply.
+
+        Order matters: running this first means a whitespace-only name fails
+        `min_length` as blank rather than passing as three spaces, and a name
+        padded past 100 characters by trailing whitespace is accepted on its
+        real length instead of being rejected for the padding.
+        """
+        if isinstance(value, str):
+            return _CONTROL_CHARACTERS.sub("", value).strip()
+        return value
 
 
 class RegistrationAccepted(BaseModel):
@@ -239,6 +279,8 @@ class UserResponse(BaseModel):
                     "id": USER_ID,
                     "email": EMAIL,
                     "role": "founder",
+                    "first_name": FIRST_NAME,
+                    "last_name": LAST_NAME,
                     "status": "pending_verification",
                     "email_verified": False,
                     "kyc_status": "none",
@@ -252,6 +294,12 @@ class UserResponse(BaseModel):
     id: uuid.UUID
     email: str
     role: Role
+    # Nullable for the two populations that never saw the registration form:
+    # accounts created before the column existed, and admins, who are
+    # provisioned by another admin rather than self-registering. A client must
+    # handle `null` -- see the note in `identity.models`.
+    first_name: str | None
+    last_name: str | None
     status: AccountStatus
     email_verified: bool
     kyc_status: KycStatus

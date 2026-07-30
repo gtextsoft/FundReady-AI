@@ -128,6 +128,19 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
 
+    # Collected at self-service registration, so every founder and investor has
+    # them. **Nullable anyway**, for two populations that never went through
+    # that form: accounts created before this column existed, and admins, who
+    # are provisioned by another admin (AUTH.md section 3.2) and whose
+    # provisioning request does not ask for a name. A NOT NULL column would
+    # need a fabricated backfill value for both, and an invented name is worse
+    # than an absent one -- it looks like data.
+    #
+    # PII. Returned only to the account's owner and to SACI admins, and never
+    # written to the audit log or any log line (CLAUDE.md section 4).
+    first_name: Mapped[str | None] = mapped_column(String(100))
+    last_name: Mapped[str | None] = mapped_column(String(100))
+
     role: Mapped[Role] = mapped_column(
         SAEnum(
             Role,

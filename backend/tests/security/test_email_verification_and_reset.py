@@ -58,7 +58,12 @@ async def register(session: AsyncSession) -> tuple[User, str]:
     hold one.
     """
     user = await service.register_user(
-        session, email=unique_email(), password=PASSWORD, role=Role.FOUNDER
+        session,
+        email=unique_email(),
+        password=PASSWORD,
+        role=Role.FOUNDER,
+        first_name="Ada",
+        last_name="Tester",
     )
     assert user is not None
     return user, await issue(session, user, TokenPurpose.EMAIL_VERIFICATION)
@@ -86,7 +91,12 @@ class TestVerification:
 
     async def test_registration_issues_a_token(self, db_session: AsyncSession) -> None:
         user = await service.register_user(
-            db_session, email=unique_email(), password=PASSWORD, role=Role.FOUNDER
+            db_session,
+            email=unique_email(),
+            password=PASSWORD,
+            role=Role.FOUNDER,
+            first_name="Ada",
+            last_name="Tester",
         )
         assert user is not None
 

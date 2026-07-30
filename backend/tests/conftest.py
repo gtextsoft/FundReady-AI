@@ -142,6 +142,28 @@ requires_database = pytest.mark.skipif(
 )
 
 
+# ---------------------------------------------------------------------------
+# Live-API tests
+# ---------------------------------------------------------------------------
+#
+# Read here for the same reason as the database URL: `isolated_env` hides the
+# developer's .env from the application, so a test that genuinely needs the
+# real key has to resolve it explicitly. Mocked transports cannot prove that a
+# request shape is one the API accepts -- only a live call can.
+
+
+def _resolve_anthropic_key() -> str | None:
+    return os.environ.get("ANTHROPIC_API_KEY") or _read_env_file("ANTHROPIC_API_KEY")
+
+
+ANTHROPIC_API_KEY = _resolve_anthropic_key()
+
+requires_anthropic_key = pytest.mark.skipif(
+    ANTHROPIC_API_KEY is None,
+    reason="no ANTHROPIC_API_KEY configured",
+)
+
+
 @pytest.fixture
 async def db_session() -> AsyncIterator[AsyncSession]:
     """A session inside a transaction that is always rolled back.

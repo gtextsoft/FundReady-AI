@@ -10,6 +10,30 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Changed
+- **⚠️ BREAKING — `POST /v1/auth/register` now requires `first_name` and
+  `last_name`, 2026-07-30.** Both are collected for **founders and investors**
+  alike. A registration body without them is rejected with **`422`**.
+  *Client impact: any existing call to this endpoint breaks until the two
+  fields are added.* No API version bump was made — this endpoint has no
+  released consumers yet. **If the mobile client is already calling it, say so
+  and this needs `/v2` instead** (`CLAUDE.md` §6).
+  - Validation is deliberately permissive about **what a name may contain**:
+    1–100 characters, whitespace trimmed, control characters stripped, and **no
+    alphabet restriction**. Diacritics, non-Latin scripts, apostrophes, spaces,
+    hyphens, and single characters are all accepted — `Ọláwálé`, `O'Brien`,
+    `van der Berg`, `李`, and `محمد` are valid. A letters-only rule would reject
+    real names across the regions this platform serves.
+  - `UserResponse` gains `first_name` and `last_name`, and **both are
+    nullable** — admins are provisioned rather than self-registered, and
+    accounts predating this change never supplied one. Clients must handle
+    `null`.
+  - Stored as one pair of columns on `users`, distinguished by the existing
+    `role`, so a founder's name and an investor's name are never confusable.
+    `startup_profiles.name` remains the **company** name and is unchanged.
+  - The name is **not** written to the audit log: that table is append-only, so
+    PII placed there could never be corrected or erased. `actor_id` already
+    records who registered.
+  - Migration `0009_user_names`, verified up and down.
 - **Profile field values are now validated against their declared kind
   (T2.2a), 2026-07-30.** `POST /v1/startups` and `PATCH /v1/startups/{id}`
   return **`422`** naming each offending field when a value contradicts its
@@ -22,6 +46,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   0–100 percentages.*
 
 ### Added
+- **AI client with model tiering (T2.1), 2026-07-30.** `app/ai/` — the single
+  chokepoint for every Claude API call. **No endpoint or contract change:** this
+  is internal plumbing the audit engine (T2.4–T2.7) and chat (T4.4) build on,
+  and nothing in it is reachable from the API yet.
+  - Audits run on the strongest model at high effort, chat on a cheaper model at
+    low effort (D16). `AI_MODEL_AUDIT` / `AI_MODEL_CHAT` override per
+    environment; `AI_MAX_OUTPUT_TOKENS` is a **ceiling** over both tiers.
+  - Responses are validated against a schema before anything downstream sees
+    them. A refusal and a truncation each fail immediately; only a schema
+    mismatch is retried, once. Raw model text never reaches a caller.
+  - Every call returns a usage record with per-user attribution and the full
+    token split, so per-audit cost is visible from day one. **Daily budgets are
+    measured but not yet enforced** — enforcement is T5.5.
+  - Prompt versions are frozen once published and looked up by exact version;
+    there is no "latest", so a re-run reproduces the prompt it originally used
+    (D12). The version is returned on every call for recording on the AuditRun.
+  - Uploaded documents and chat text are fenced as untrusted data with a
+    per-call nonce before entering a prompt.
 - **Benchmark knowledge base (T2.3), 2026-07-30.** Five **admin-only**
   endpoints under `/v1/benchmarks` — create, list, read, update, retire. Bands
   are keyed by **sector × stage × metric × region** and carry quartiles

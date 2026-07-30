@@ -65,7 +65,12 @@ async def make_founder(
     session: AsyncSession, role: Role = Role.FOUNDER
 ) -> tuple[User, CurrentUser]:
     user = await identity.register_user(
-        session, email=unique_email(), password=PASSWORD, role=Role.FOUNDER
+        session,
+        email=unique_email(),
+        password=PASSWORD,
+        role=Role.FOUNDER,
+        first_name="Ada",
+        last_name="Tester",
     )
     assert user is not None
     user.role = role

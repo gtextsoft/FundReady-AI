@@ -141,7 +141,13 @@ def validate_password(password: str, email: str) -> None:
 
 
 async def register_user(
-    session: AsyncSession, *, email: str, password: str, role: Role
+    session: AsyncSession,
+    *,
+    email: str,
+    password: str,
+    role: Role,
+    first_name: str,
+    last_name: str,
 ) -> User | None:
     """Register a founder or investor.
 
@@ -185,7 +191,14 @@ async def register_user(
         password_hash=hash_password(password),
         role=role,
         status=AccountStatus.PENDING_VERIFICATION,
+        first_name=first_name,
+        last_name=last_name,
     )
+    # `details` carries the role and nothing else. The name is PII and the
+    # audit log is append-only and broadly readable by admins -- putting it
+    # here would copy personal data into a record that can never be corrected
+    # or deleted (CLAUDE.md section 4). Who registered is already the
+    # `actor_id`; what they are called is on the user row.
     await record_action(
         session,
         AuditAction.USER_REGISTERED,

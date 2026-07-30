@@ -65,10 +65,16 @@ def unique_email() -> str:
     return f"user-{uuid.uuid4().hex}@example.test"
 
 
+# Spread into every registration body below. The tests that assert a 422 need
+# these too: without them the request is invalid for a *second* reason, and a
+# test checking "admin role is rejected" would pass on a missing name instead.
+NAMES = {"first_name": "Ada", "last_name": "Tester"}
+
+
 async def register(client: AsyncClient, email: str, role: str = "founder") -> None:
     response = await client.post(
         "/v1/auth/register",
-        json={"email": email, "password": PASSWORD, "role": role},
+        json={"email": email, "password": PASSWORD, "role": role, **NAMES},
     )
     assert response.status_code == 202, response.text
 
@@ -93,7 +99,12 @@ class TestRegisterEndpoint:
     async def test_accepts_a_new_founder(self, client: AsyncClient) -> None:
         response = await client.post(
             "/v1/auth/register",
-            json={"email": unique_email(), "password": PASSWORD, "role": "founder"},
+            json={
+                "email": unique_email(),
+                "password": PASSWORD,
+                "role": "founder",
+                **NAMES,
+            },
         )
 
         assert response.status_code == 202
@@ -104,7 +115,7 @@ class TestRegisterEndpoint:
     ) -> None:
         """Byte-for-byte identical, or the endpoint leaks who has an account."""
         email = unique_email()
-        body = {"email": email, "password": PASSWORD, "role": "founder"}
+        body = {"email": email, "password": PASSWORD, "role": "founder", **NAMES}
 
         first = await client.post("/v1/auth/register", json=body)
         second = await client.post("/v1/auth/register", json=body)
@@ -117,7 +128,12 @@ class TestRegisterEndpoint:
     ) -> None:
         response = await client.post(
             "/v1/auth/register",
-            json={"email": unique_email(), "password": PASSWORD, "role": "admin"},
+            json={
+                "email": unique_email(),
+                "password": PASSWORD,
+                "role": "admin",
+                **NAMES,
+            },
         )
 
         assert response.status_code == 422
@@ -130,6 +146,7 @@ class TestRegisterEndpoint:
                 "email": unique_email(),
                 "password": PASSWORD,
                 "role": "founder",
+                **NAMES,
                 "status": "active",  # an attempt to set your own status
             },
         )
@@ -144,7 +161,12 @@ class TestRegisterEndpoint:
 
         response = await client.post(
             "/v1/auth/register",
-            json={"email": unique_email(), "password": rejected, "role": "founder"},
+            json={
+                "email": unique_email(),
+                "password": rejected,
+                "role": "founder",
+                **NAMES,
+            },
         )
 
         assert response.status_code == 422
@@ -226,6 +248,42 @@ class TestMeEndpoint:
         assert body["email"] == email
         assert body["role"] == "founder"
         assert body["status"] == "pending_verification"
+
+    @pytest.mark.parametrize("role", ["founder", "investor"])
+    async def test_the_registered_name_survives_the_round_trip(
+        self, client: AsyncClient, role: str
+    ) -> None:
+        """Registration -> storage -> response, over HTTP.
+
+        The service-level test proves `register_user` saves the name; this
+        proves the router actually hands it over. Dropping
+        `first_name=payload.first_name` in the route would leave every other
+        test passing and silently store `null`.
+        """
+        email = unique_email()
+        response = await client.post(
+            "/v1/auth/register",
+            json={
+                "email": email,
+                "password": PASSWORD,
+                "role": role,
+                "first_name": "Amaka",
+                "last_name": "Okonkwo",
+            },
+        )
+        assert response.status_code == 202, response.text
+        tokens = await login(client, email)
+
+        me = await client.get(
+            "/v1/users/me",
+            headers={"Authorization": f"Bearer {tokens['access_token']}"},
+        )
+
+        assert me.status_code == 200
+        body = me.json()
+        assert body["first_name"] == "Amaka"
+        assert body["last_name"] == "Okonkwo"
+        assert body["role"] == role
 
     async def test_never_exposes_the_password_hash(self, client: AsyncClient) -> None:
         email = unique_email()

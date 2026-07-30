@@ -66,7 +66,12 @@ async def make_user(
     status: AccountStatus = AccountStatus.ACTIVE,
 ) -> User:
     user = await service.register_user(
-        session, email=unique_email(), password=PASSWORD, role=Role.FOUNDER
+        session,
+        email=unique_email(),
+        password=PASSWORD,
+        role=Role.FOUNDER,
+        first_name="Ada",
+        last_name="Tester",
     )
     assert user is not None
     user.role = role
@@ -148,7 +153,12 @@ class TestProvisioning:
     ) -> None:
         with pytest.raises(ForbiddenError):
             await service.register_user(
-                db_session, email=unique_email(), password=PASSWORD, role=Role.ADMIN
+                db_session,
+                email=unique_email(),
+                password=PASSWORD,
+                role=Role.ADMIN,
+                first_name="Ada",
+                last_name="Tester",
             )
 
     async def test_a_duplicate_address_is_a_real_error(

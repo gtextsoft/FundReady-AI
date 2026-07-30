@@ -59,6 +59,8 @@ async def actor_with_role(session: AsyncSession, role: Role) -> CurrentUser:
         email=f"user-{uuid.uuid4().hex}@kanmi-logistics.com",
         password=PASSWORD,
         role=Role.FOUNDER,
+        first_name="Ada",
+        last_name="Tester",
     )
     assert user is not None
     user.role = role

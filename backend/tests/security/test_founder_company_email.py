@@ -74,7 +74,12 @@ def actor_for(user: User) -> CurrentUser:
 async def activated(session: AsyncSession, email: str, role: Role) -> User:
     """A registered, verified account -- the state profile creation requires."""
     user = await identity.register_user(
-        session, email=email, password=PASSWORD, role=role
+        session,
+        email=email,
+        password=PASSWORD,
+        role=role,
+        first_name="Ada",
+        last_name="Tester",
     )
     assert user is not None
     user.status = AccountStatus.ACTIVE
@@ -94,6 +99,8 @@ class TestFoundersNeedACompanyAddress:
                 email=consumer_email(),
                 password=PASSWORD,
                 role=Role.FOUNDER,
+                first_name="Ada",
+                last_name="Tester",
             )
 
     async def test_the_refusal_says_which_field_and_why(
@@ -106,6 +113,8 @@ class TestFoundersNeedACompanyAddress:
                 email=consumer_email(),
                 password=PASSWORD,
                 role=Role.FOUNDER,
+                first_name="Ada",
+                last_name="Tester",
             )
 
         assert refusal.value.status_code == 422
@@ -118,7 +127,12 @@ class TestFoundersNeedACompanyAddress:
         self, db_session: AsyncSession
     ) -> None:
         user = await identity.register_user(
-            db_session, email=company_email(), password=PASSWORD, role=Role.FOUNDER
+            db_session,
+            email=company_email(),
+            password=PASSWORD,
+            role=Role.FOUNDER,
+            first_name="Ada",
+            last_name="Tester",
         )
 
         assert user is not None
@@ -133,6 +147,8 @@ class TestFoundersNeedACompanyAddress:
                 email=f"  Founder-{uuid.uuid4().hex}@GMAIL.COM  ",
                 password=PASSWORD,
                 role=Role.FOUNDER,
+                first_name="Ada",
+                last_name="Tester",
             )
 
     async def test_a_consumer_subdomain_does_not_evade_it(
@@ -144,6 +160,8 @@ class TestFoundersNeedACompanyAddress:
                 email=f"founder-{uuid.uuid4().hex}@mail.gmail.com",
                 password=PASSWORD,
                 role=Role.FOUNDER,
+                first_name="Ada",
+                last_name="Tester",
             )
 
     async def test_no_account_is_left_behind(self, db_session: AsyncSession) -> None:
@@ -152,7 +170,12 @@ class TestFoundersNeedACompanyAddress:
 
         with pytest.raises(InvalidRequestError):
             await identity.register_user(
-                db_session, email=email, password=PASSWORD, role=Role.FOUNDER
+                db_session,
+                email=email,
+                password=PASSWORD,
+                role=Role.FOUNDER,
+                first_name="Ada",
+                last_name="Tester",
             )
 
         assert await UserRepository(db_session).get_by_email(email) is None
@@ -160,7 +183,12 @@ class TestFoundersNeedACompanyAddress:
     async def test_investors_are_not_restricted(self, db_session: AsyncSession) -> None:
         """An angel investing personally has no company domain to give."""
         user = await identity.register_user(
-            db_session, email=consumer_email(), password=PASSWORD, role=Role.INVESTOR
+            db_session,
+            email=consumer_email(),
+            password=PASSWORD,
+            role=Role.INVESTOR,
+            first_name="Ada",
+            last_name="Tester",
         )
 
         assert user is not None

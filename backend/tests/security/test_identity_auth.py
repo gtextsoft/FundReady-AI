@@ -63,7 +63,12 @@ async def make_user(
     password: str = PASSWORD,
 ) -> User:
     user = await service.register_user(
-        session, email=unique_email(), password=password, role=role
+        session,
+        email=unique_email(),
+        password=password,
+        role=role,
+        first_name="Ada",
+        last_name="Tester",
     )
     assert user is not None
     user.status = status
@@ -74,13 +79,79 @@ async def make_user(
 class TestRegistration:
     async def test_creates_a_pending_user(self, db_session: AsyncSession) -> None:
         user = await service.register_user(
-            db_session, email=unique_email(), password=PASSWORD, role=Role.FOUNDER
+            db_session,
+            email=unique_email(),
+            password=PASSWORD,
+            role=Role.FOUNDER,
+            first_name="Ada",
+            last_name="Tester",
         )
 
         assert user is not None
         assert user.status is AccountStatus.PENDING_VERIFICATION
         assert user.role is Role.FOUNDER
         assert user.email_verified is False
+
+    @pytest.mark.parametrize("role", [Role.FOUNDER, Role.INVESTOR])
+    async def test_the_name_is_saved_for_both_roles(
+        self, db_session: AsyncSession, role: Role
+    ) -> None:
+        user = await service.register_user(
+            db_session,
+            email=unique_email(),
+            password=PASSWORD,
+            role=role,
+            first_name="Amaka",
+            last_name="Okonkwo",
+        )
+        assert user is not None
+
+        stored = (
+            await db_session.execute(
+                text("select first_name, last_name, role from users where id = :id"),
+                {"id": user.id},
+            )
+        ).one()
+
+        assert stored.first_name == "Amaka"
+        assert stored.last_name == "Okonkwo"
+        # The row's own role is what distinguishes a founder from an investor;
+        # the name is never stored apart from it.
+        assert stored.role == role.value
+
+    async def test_the_name_is_not_copied_into_the_audit_log(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Names are PII and the audit log is append-only (CLAUDE.md section 4).
+
+        A name written here could never be corrected or erased, and admins can
+        read the log broadly. `actor_id` already says who registered.
+        """
+        user = await service.register_user(
+            db_session,
+            email=unique_email(),
+            password=PASSWORD,
+            role=Role.FOUNDER,
+            first_name="Amaka",
+            last_name="Okonkwo",
+        )
+        assert user is not None
+
+        entries = (
+            (
+                await db_session.execute(
+                    select(AuditLog).where(AuditLog.actor_id == user.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        assert entries, "registration must still be logged"
+        for entry in entries:
+            serialised = str(entry.details)
+            assert "Amaka" not in serialised
+            assert "Okonkwo" not in serialised
 
     async def test_password_is_never_stored_in_plaintext(
         self, db_session: AsyncSession
@@ -104,6 +175,8 @@ class TestRegistration:
             email=f"  {email.upper()}  ",
             password=PASSWORD,
             role=Role.FOUNDER,
+            first_name="Ada",
+            last_name="Tester",
         )
 
         assert user is not None
@@ -115,10 +188,20 @@ class TestRegistration:
         """The endpoint must not become an account-existence oracle."""
         email = unique_email()
         first = await service.register_user(
-            db_session, email=email, password=PASSWORD, role=Role.FOUNDER
+            db_session,
+            email=email,
+            password=PASSWORD,
+            role=Role.FOUNDER,
+            first_name="Ada",
+            last_name="Tester",
         )
         second = await service.register_user(
-            db_session, email=email, password=PASSWORD, role=Role.FOUNDER
+            db_session,
+            email=email,
+            password=PASSWORD,
+            role=Role.FOUNDER,
+            first_name="Ada",
+            last_name="Tester",
         )
 
         assert first is not None
@@ -137,7 +220,12 @@ class TestRegistration:
         """Privilege escalation at the front door."""
         with pytest.raises(ForbiddenError):
             await service.register_user(
-                db_session, email=unique_email(), password=PASSWORD, role=Role.ADMIN
+                db_session,
+                email=unique_email(),
+                password=PASSWORD,
+                role=Role.ADMIN,
+                first_name="Ada",
+                last_name="Tester",
             )
 
     @pytest.mark.parametrize(
@@ -150,7 +238,12 @@ class TestRegistration:
     ) -> None:
         with pytest.raises(InvalidRequestError):
             await service.register_user(
-                db_session, email=unique_email(), password=password, role=Role.FOUNDER
+                db_session,
+                email=unique_email(),
+                password=password,
+                role=Role.FOUNDER,
+                first_name="Ada",
+                last_name="Tester",
             )
 
     async def test_password_may_not_contain_the_email(
@@ -159,7 +252,12 @@ class TestRegistration:
         email = "jonathan@example.test"
         with pytest.raises(InvalidRequestError):
             await service.register_user(
-                db_session, email=email, password="jonathan-password", role=Role.FOUNDER
+                db_session,
+                email=email,
+                password="jonathan-password",
+                role=Role.FOUNDER,
+                first_name="Ada",
+                last_name="Tester",
             )
 
     async def test_registration_is_audit_logged(self, db_session: AsyncSession) -> None:

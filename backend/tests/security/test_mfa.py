@@ -52,7 +52,12 @@ def unique_email() -> str:
 
 async def make_user(session: AsyncSession, role: Role = Role.FOUNDER) -> User:
     user = await service.register_user(
-        session, email=unique_email(), password=PASSWORD, role=role
+        session,
+        email=unique_email(),
+        password=PASSWORD,
+        role=role,
+        first_name="Ada",
+        last_name="Tester",
     )
     assert user is not None
     user.role = role

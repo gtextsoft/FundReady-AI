@@ -120,6 +120,8 @@ async def founder_with_profile(
         email=f"founder-{uuid.uuid4().hex}@kanmi-logistics.com",
         password=PASSWORD,
         role=Role.FOUNDER,
+        first_name="Ada",
+        last_name="Tester",
     )
     assert user is not None
     user.role = role
