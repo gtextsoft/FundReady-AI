@@ -5,10 +5,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '@/components/ui/button';
 import { Eyebrow, Mono, Txt, TxtMed, TxtSemi } from '@/components/ui/text';
 import { C } from '@/theme/tokens';
-import { daysLeftInTrial, hasAccess } from '@/domain/access';
+import { daysLeftInTrial, hasAccess, isPaid } from '@/domain/access';
 import { UNLOCK_PRICE } from '@/domain/pricing';
+import { initials } from '@/lib/format';
 import type { VerificationStatus } from '@/domain/types';
-import { __setTrialEndsAt } from '@/api/mock';
 import { route, SIGN_IN } from '@/lib/routes';
 import { useFounder } from '@/store/founder';
 import { useSession } from '@/store/session';
@@ -24,7 +24,6 @@ export default function FounderProfile() {
   const insets = useSafeAreaInsets();
   const session = useSession((s) => s.session);
   const account = useSession((s) => s.founderAccount);
-  const refreshAccount = useSession((s) => s.refreshAccount);
   const signOut = useSession((s) => s.signOut);
   const resetFounder = useFounder((s) => s.reset);
   const profile = useFounder((s) => s.profile);
@@ -33,6 +32,7 @@ export default function FounderProfile() {
 
   const verification = VERIFICATION_COPY[account.verification];
   const locked = !hasAccess(account);
+  const paid = isPaid(account);
 
   async function out() {
     await signOut();
@@ -52,11 +52,15 @@ export default function FounderProfile() {
       <View className="flex-row items-center gap-3 rounded-[12px] border border-line bg-surface-1 p-[14px]">
         <View className="h-[44px] w-[44px] items-center justify-center rounded-full border border-line-strong bg-surface-3">
           <TxtSemi className="text-[14px] text-ink-muted">
-            {(session?.displayName ?? 'F').slice(0, 2).toUpperCase()}
+            {session?.displayName ? initials(session.displayName) : 'F'}
           </TxtSemi>
         </View>
         <View className="flex-1">
-          <TxtSemi className="text-[15px]">{profile.company || account.companyName || 'Your company'}</TxtSemi>
+          {/* The person first — this is their profile, not the company's. */}
+          <TxtSemi className="text-[15px]">{session?.displayName ?? 'Your profile'}</TxtSemi>
+          <Txt className="text-[12px] text-ink-muted">
+            {profile.company || account.companyName || 'Your company'}
+          </Txt>
           <Txt className="text-[12px] text-ink-dim">{session?.email ?? 'not signed in'}</Txt>
         </View>
         <View className="rounded-[5px] border border-line-strong px-2 py-[3px]">
@@ -100,10 +104,10 @@ export default function FounderProfile() {
       <View className="rounded-[12px] border border-line bg-surface-1 p-[14px]">
         <View className="flex-row items-center justify-between">
           <TxtMed className="text-[13.5px]">
-            {account.paidAt ? 'Unlocked' : locked ? 'Trial ended' : 'Free trial'}
+            {paid ? 'Unlocked' : locked ? 'Trial ended' : 'Free trial'}
           </TxtMed>
-          <Mono className="text-[11px]" style={{ color: account.paidAt ? C.grn : locked ? C.red : C.amb }}>
-            {account.paidAt
+          <Mono className="text-[11px]" style={{ color: paid ? C.grn : locked ? C.red : C.amb }}>
+            {paid
               ? `${UNLOCK_PRICE.label} PAID`
               : locked
                 ? 'LOCKED'
@@ -111,11 +115,11 @@ export default function FounderProfile() {
           </Mono>
         </View>
         <Txt className="mt-2 text-[12px] text-ink-muted" style={{ lineHeight: 18 }}>
-          {account.paidAt
+          {paid
             ? 'One-off payment received. Your access does not expire.'
             : 'Full access during the trial. A single one-off payment keeps it permanently.'}
         </Txt>
-        {!account.paidAt ? (
+        {!paid ? (
           <View className="mt-3">
             <Button
               label={`Unlock for ${UNLOCK_PRICE.label}`}
@@ -129,36 +133,6 @@ export default function FounderProfile() {
       <View className="mt-6">
         <Button label="Sign out" variant="secondary" onPress={out} />
       </View>
-
-      {/* Developer controls — delete with the mock backend. */}
-      {__DEV__ ? (
-        <>
-          <Eyebrow className="mb-[10px] mt-8">DEVELOPER</Eyebrow>
-          <View className="gap-[9px] rounded-[12px] border border-line bg-surface-1 p-[14px]">
-            <Txt className="text-[11.5px] text-ink-dim" style={{ lineHeight: 17 }}>
-              Move the trial boundary to see both sides of the paywall without waiting two weeks.
-            </Txt>
-            <Button
-              label="Expire trial now"
-              variant="secondary"
-              height={38}
-              onPress={async () => {
-                __setTrialEndsAt(new Date(Date.now() - 1000).toISOString());
-                await refreshAccount();
-              }}
-            />
-            <Button
-              label="Restore 14-day trial"
-              variant="secondary"
-              height={38}
-              onPress={async () => {
-                __setTrialEndsAt(new Date(Date.now() + 14 * 86_400_000).toISOString());
-                await refreshAccount();
-              }}
-            />
-          </View>
-        </>
-      ) : null}
     </ScrollView>
   );
 }

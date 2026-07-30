@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api, type Role, type Session } from '@/api';
+import { api, ApiFailure, type Role, type Session } from '@/api';
 import { checkFounderEmail } from '@/domain/email';
 import type { FounderAccount, InvestorAccount } from '@/domain/types';
 import { storage } from '@/lib/storage';
@@ -20,7 +20,13 @@ type SessionState = {
 
   restore(): Promise<void>;
   signIn(email: string, password: string): Promise<Session | null>;
-  signUp(email: string, password: string, role: Role): Promise<Session | null>;
+  signUp(registration: {
+    email: string;
+    password: string;
+    role: Role;
+    firstName: string;
+    lastName: string;
+  }): Promise<Session | null>;
   /** Sign in through the company's own identity provider. */
   signInWithSso(domain: string, role: Role): Promise<Session | null>;
   signOut(): Promise<void>;
@@ -54,13 +60,26 @@ export const useSession = create<SessionState>((set, get) => ({
       set({ status: 'signedOut', session: null });
       return;
     }
+    let session: Session;
     try {
-      const session = JSON.parse(raw) as Session;
-      set({ status: 'signedIn', session, role: session.role });
-      await get().refreshAccount();
+      session = JSON.parse(raw) as Session;
     } catch {
       await storage.remove(KEY);
       set({ status: 'signedOut', session: null });
+      return;
+    }
+
+    set({ status: 'signedIn', session, role: session.role });
+    try {
+      await get().refreshAccount();
+    } catch (e) {
+      // The stored session is only as good as the tokens behind it. If the
+      // server rejects them, sign out rather than showing a shell of an app;
+      // a transport failure keeps the session so a flaky network is survivable.
+      if (e instanceof ApiFailure && (e.code === 'unauthorized' || e.code === 'forbidden')) {
+        await storage.remove(KEY);
+        set({ status: 'signedOut', session: null });
+      }
     }
   },
 
@@ -78,7 +97,7 @@ export const useSession = create<SessionState>((set, get) => ({
     }
   },
 
-  async signUp(email, password, role) {
+  async signUp({ email, password, role, firstName, lastName }) {
     // Founders must sign up on a company domain. Checked here as well as on
     // the server so the answer is instant and costs no round trip.
     if (role === 'founder') {
@@ -91,7 +110,7 @@ export const useSession = create<SessionState>((set, get) => ({
 
     set({ busy: true, error: null });
     try {
-      const session = await api.signUp({ email, password, role });
+      const session = await api.signUp({ email, password, role, firstName, lastName });
       await storage.set(KEY, JSON.stringify(session));
       set({ status: 'signedIn', session, role: session.role, busy: false });
       await get().refreshAccount();
@@ -102,7 +121,9 @@ export const useSession = create<SessionState>((set, get) => ({
         busy: false,
         error: personal
           ? 'Founder accounts need a company email address, not a personal one.'
-          : 'We could not create your account. Try again.',
+          : // The server's own message is the useful one here: it distinguishes
+            // "already registered" from a password the rules rejected.
+            (e instanceof ApiFailure ? e.message : 'We could not create your account. Try again.'),
       });
       return null;
     }

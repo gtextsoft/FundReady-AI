@@ -9,6 +9,7 @@ import { Field } from '@/components/ui/field';
 import { Select } from '@/components/ui/select';
 import { Eyebrow, FieldLabel, Mono, Txt, TxtMed, TxtSemi } from '@/components/ui/text';
 import { C } from '@/theme/tokens';
+import { Unavailable } from '@/components/unavailable';
 import { api } from '@/api';
 import type { CompanyRegistration } from '@/domain/types';
 import { useSession } from '@/store/session';
@@ -49,6 +50,7 @@ export default function VerifyCompany() {
   const [docError, setDocError] = useState(false);
   const [touched, setTouched] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
 
   const inReview = account?.verification === 'in_review';
   const complete = country && legalName.trim() && registrationNumber.trim() && document;
@@ -90,6 +92,9 @@ export default function VerifyCompany() {
       };
       setFounderAccount(await api.submitCompanyRegistration(registration));
       router.back();
+    } catch (e) {
+      // Stay on the screen: navigating back would imply it was submitted.
+      setError(e);
     } finally {
       setBusy(false);
     }
@@ -206,6 +211,8 @@ export default function VerifyCompany() {
         <Txt className="mt-5 text-[11px] text-ink-faint" style={{ lineHeight: 17 }}>
           Your certificate is used only to confirm registration and is never shown to investors.
         </Txt>
+
+        {error ? <Unavailable title="Verification is not live" error={error} className="mt-5" /> : null}
       </ScrollView>
 
       <View className="border-t border-line-soft bg-ground px-[18px] pt-3" style={{ paddingBottom: insets.bottom + 14 }}>

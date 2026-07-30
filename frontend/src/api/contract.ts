@@ -13,9 +13,9 @@ import type {
 /**
  * The complete surface the app needs from the backend.
  *
- * `src/api/mock.ts` implements this against local seed data so the frontend
- * runs standalone. When the real service is ready, add `src/api/http.ts` with
- * the same shape and flip the export in `src/api/index.ts` — no screen changes.
+ * `src/api/http.ts` is the only implementation. Authentication is live; every
+ * other method throws `not_implemented` until its endpoint exists, so a screen
+ * with no data says so rather than showing something made up.
  */
 
 export type Role = 'founder' | 'investor';
@@ -26,10 +26,24 @@ export type Session = {
   email: string;
   /** Chosen at sign-up and fixed thereafter — the two sides never mix. */
   role: Role;
+  firstName: string;
+  lastName: string;
+  /**
+   * "Ada Nwosu" when the account carries a name. Accounts created before names
+   * were collected have none, so this falls back to the email local-part —
+   * a label to address someone by, never an identity claim.
+   */
   displayName: string;
 };
 
 export type Credentials = { email: string; password: string };
+
+/** Everything registration needs beyond the credentials themselves. */
+export type Registration = Credentials & {
+  role: Role;
+  firstName: string;
+  lastName: string;
+};
 
 /**
  * Corporate single sign-on for a company domain. This is not consumer social
@@ -65,7 +79,40 @@ export type CompanySummary = Pick<
   'id' | 'name' | 'tagline' | 'sector' | 'stage' | 'score' | 'mrr' | 'growth' | 'match'
 >;
 
-export type ApiError = { code: 'unauthorized' | 'not_found' | 'validation' | 'network'; message: string };
+export type ApiErrorCode =
+  | 'unauthorized'
+  | 'forbidden'
+  | 'not_found'
+  | 'conflict'
+  | 'validation'
+  | 'rate_limited'
+  | 'server'
+  | 'network'
+  /** The endpoint does not exist yet. Show the feature as unavailable. */
+  | 'not_implemented';
+
+/**
+ * Every failure from the API layer. Screens branch on `code`, never on the
+ * message — `not_implemented` in particular means "this is not built", which
+ * reads very differently to the user than "something went wrong".
+ */
+export class ApiFailure extends Error {
+  readonly code: ApiErrorCode;
+  /** The server's own stable error code from the envelope, when it sent one. */
+  readonly serverCode?: string;
+
+  constructor(code: ApiErrorCode, message: string, serverCode?: string) {
+    super(message);
+    this.name = 'ApiFailure';
+    this.code = code;
+    this.serverCode = serverCode;
+  }
+}
+
+/** True when a feature has no backend behind it yet. */
+export function isUnavailable(error: unknown): error is ApiFailure {
+  return error instanceof ApiFailure && error.code === 'not_implemented';
+}
 
 export type PaymentReceipt = {
   reference: string;
@@ -83,7 +130,7 @@ export interface FundMeApi {
    * checks this too, for an instant answer — but the server is the authority,
    * since the client check can be bypassed.
    */
-  signUp(creds: Credentials & { role: Role }): Promise<Session>;
+  signUp(registration: Registration): Promise<Session>;
   /**
    * Home-realm discovery: given an email domain, say whether it is a personal
    * provider and whether the company runs single sign-on.
@@ -101,6 +148,20 @@ export interface FundMeApi {
    * caller which emails are registered is an account-enumeration leak.
    */
   requestPasswordReset(email: string): Promise<void>;
+
+  // ── email verification ──────────────────────────────────
+  /**
+   * Send (or resend) the verification message to the signed-in address.
+   *
+   * Resolves whether or not anything was sent, for the same anti-enumeration
+   * reason as the reset above.
+   */
+  resendVerificationEmail(): Promise<void>;
+  /**
+   * Complete verification with the token from the email. Single-use and
+   * expiring, so a second attempt with the same token must fail.
+   */
+  confirmEmail(token: string): Promise<void>;
 
   // ── accounts ────────────────────────────────────────────
   /** Trial window, payment state and verification status for the founder. */

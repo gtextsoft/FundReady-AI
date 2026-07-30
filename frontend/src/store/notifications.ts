@@ -6,6 +6,8 @@ type NotificationState = {
   items: AppNotification[];
   callRequests: CallRequest[];
   loading: boolean;
+  /** Why the inbox is empty, when it is empty because nothing served it. */
+  error: unknown;
 
   unreadCount(): number;
   /** Call requests still awaiting the founder's answer. */
@@ -20,6 +22,7 @@ export const useNotifications = create<NotificationState>((set, get) => ({
   items: [],
   callRequests: [],
   loading: false,
+  error: null,
 
   unreadCount() {
     return get().items.filter((n) => !n.read).length;
@@ -30,7 +33,7 @@ export const useNotifications = create<NotificationState>((set, get) => ({
   },
 
   async load(audience) {
-    set({ loading: true });
+    set({ loading: true, error: null });
     try {
       // The founder's inbox needs the call requests themselves, not just the
       // notifications about them, so accept/decline can act in place.
@@ -39,8 +42,8 @@ export const useNotifications = create<NotificationState>((set, get) => ({
         audience === 'founder' ? api.listCallRequests() : Promise.resolve([]),
       ]);
       set({ items, callRequests, loading: false });
-    } catch {
-      set({ loading: false });
+    } catch (error) {
+      set({ items: [], callRequests: [], loading: false, error });
     }
   },
 
@@ -48,7 +51,8 @@ export const useNotifications = create<NotificationState>((set, get) => ({
     const unread = get().items.filter((n) => !n.read).map((n) => n.id);
     if (!unread.length) return;
     set((s) => ({ items: s.items.map((n) => ({ ...n, read: true })) }));
-    await api.markNotificationsRead(unread);
+    // Marking read is not worth surfacing a failure over; the next load wins.
+    await api.markNotificationsRead(unread).catch(() => undefined);
   },
 
   async respondToCall(id, accept) {

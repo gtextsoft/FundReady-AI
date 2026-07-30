@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,10 +11,12 @@ import { Select } from '@/components/ui/select';
 import { Segmented } from '@/components/ui/controls';
 import { Eyebrow, FieldLabel, Mono, Txt, TxtMed, TxtSemi } from '@/components/ui/text';
 import { C } from '@/theme/tokens';
+import { companyNameFromEmail } from '@/domain/email';
 import { ltvCacRatio } from '@/domain/scoring';
 import { FOUNDER_STAGES, ONBOARDING_SECTORS, type RevModel } from '@/domain/types';
 import { FOUNDER_HOME, route } from '@/lib/routes';
 import { isStepValid, useFounder, type Step } from '@/store/founder';
+import { useSession } from '@/store/session';
 
 const MAX_DECK_BYTES = 25 * 1024 * 1024;
 
@@ -29,6 +32,19 @@ export default function Onboarding() {
   const markTouched = useFounder((s) => s.markTouched);
   const uploadDeck = useFounder((s) => s.uploadDeck);
   const failUpload = useFounder((s) => s.failUpload);
+
+  const email = useSession((s) => s.session?.email ?? '');
+
+  // Seed the company name from the sign-up domain so the founder does not
+  // retype what they already told us. Only ever fills a blank field, so it
+  // cannot overwrite something they typed, and it stays fully editable.
+  useEffect(() => {
+    if (profile.company.trim()) return;
+    const suggestion = companyNameFromEmail(email);
+    if (suggestion) setField('company', suggestion);
+    // Runs on the address changing, not on every keystroke in the field.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [email, setField]);
 
   const valid = isStepValid(profile, step);
   const showError = touched && !valid;

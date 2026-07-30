@@ -1,13 +1,12 @@
-import { mockApi } from './mock';
+import { httpApi } from './http';
 import type { FundMeApi } from './contract';
 
 /**
  * Single seam between the app and the backend.
  *
- * Today it resolves to the in-memory mock. When the service is live, add
- * `http.ts` implementing `FundMeApi` against EXPO_PUBLIC_API_URL and swap the
- * export below — every screen already talks to this object only.
+ * Points at the real service, configured by `EXPO_PUBLIC_API_URL`. There is no
+ * mock: the app shows live data or says the feature is not built yet.
  */
-export const api: FundMeApi = mockApi;
+export const api: FundMeApi = httpApi;
 
 export * from './contract';

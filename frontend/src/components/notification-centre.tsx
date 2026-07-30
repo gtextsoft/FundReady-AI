@@ -4,6 +4,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Mono, Txt, TxtSemi } from '@/components/ui/text';
+import { Unavailable } from '@/components/unavailable';
 import { C } from '@/theme/tokens';
 import { notificationColor, relativeTime, type AppNotification } from '@/domain/notifications';
 import { route } from '@/lib/routes';
@@ -21,6 +22,7 @@ export function NotificationCentre({ audience }: { audience: Role }) {
   const load = useNotifications((s) => s.load);
   const markAllRead = useNotifications((s) => s.markAllRead);
   const items = useNotifications((s) => s.items);
+  const error = useNotifications((s) => s.error);
 
   useFocusEffect(
     useCallback(() => {
@@ -43,7 +45,9 @@ export function NotificationCentre({ audience }: { audience: Role }) {
         Alerts
       </TxtSemi>
 
-      {items.length ? (
+      {error ? (
+        <Unavailable title="Alerts are not live" error={error} />
+      ) : items.length ? (
         <View className="gap-[9px]">
           {items.map((n) => (
             <NotificationRow key={n.id} notification={n} audience={audience} />

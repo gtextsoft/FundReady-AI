@@ -7,6 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Button } from '@/components/ui/button';
 import { Mono, Txt, TxtSemi } from '@/components/ui/text';
 import { C } from '@/theme/tokens';
+import { Unavailable } from '@/components/unavailable';
 import { api } from '@/api';
 import { useFounder } from '@/store/founder';
 
@@ -48,14 +49,18 @@ export default function Programmes() {
   const assessment = useFounder((s) => s.assessment);
   const [enrolled, setEnrolled] = useState<string[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   const recommended = assessment?.route ?? null;
 
   async function enrol(key: 'readiness' | 'wealth') {
     setBusy(key);
+    setError(null);
     try {
       await api.enrol(key);
       setEnrolled((e) => [...e, key]);
+    } catch (e) {
+      setError(e);
     } finally {
       setBusy(null);
     }
@@ -77,6 +82,8 @@ export default function Programmes() {
         className="flex-1"
         contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: insets.bottom + 24, gap: 12 }}
         showsVerticalScrollIndicator={false}>
+        {error ? <Unavailable title="Enrolment is not live" error={error} /> : null}
+
         {PROGRAMMES.map((p) => {
           const isRecommended = recommended === p.key;
           const done = enrolled.includes(p.key);

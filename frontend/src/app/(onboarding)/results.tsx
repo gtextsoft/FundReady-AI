@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { ScoreRing } from '@/components/ui/score-ring';
 import { Eyebrow, Mono, Txt, TxtSemi } from '@/components/ui/text';
 import { C } from '@/theme/tokens';
+import { Unavailable } from '@/components/unavailable';
 import { api } from '@/api';
 import type { Assessment, Insight } from '@/domain/types';
 import { FOUNDER_HOME } from '@/lib/routes';
@@ -19,9 +20,11 @@ export default function Results() {
   const stored = useFounder((s) => s.assessment);
   const liveAssessment = useFounder((s) => s.liveAssessment);
 
-  // Falls back to a locally computed assessment if the screen is reached
-  // directly (deep link, reload) before the API round trip has landed.
+  // `stored` is the audit the server returned. There is no audit engine yet
+  // (Phase 2), so in practice this is always the local estimate — which is a
+  // heuristic over the form, not a scored audit, and is labelled as such below.
   const a: Assessment = stored ?? liveAssessment();
+  const provisional = stored === null;
 
   const [openStrengths, setOpenStrengths] = useState(true);
   const [openRisks, setOpenRisks] = useState(true);
@@ -35,13 +38,28 @@ export default function Results() {
         <View>
           <Txt className="text-[12px] text-ink-dim">Assessment complete</Txt>
           <TxtSemi className="text-[19px]" style={{ letterSpacing: -0.5 }}>
-            {profile.company || 'Northwind Labs'}
+            {profile.company || 'Your company'}
           </TxtSemi>
         </View>
         <View className="rounded-[5px] border border-line-strong px-2 py-1">
           <Mono className="text-[10px] text-ink-muted">{profile.sector || 'Unclassified'}</Mono>
         </View>
       </View>
+
+      {provisional ? (
+        <View
+          className="mb-4 rounded-[12px] p-[13px]"
+          style={{ borderWidth: 1, borderStyle: 'dashed', borderColor: C.lineDash }}>
+          <Mono className="text-[9px]" style={{ letterSpacing: 1.2, color: C.amb }}>
+            PROVISIONAL ESTIMATE
+          </Mono>
+          <Txt className="mt-[7px] text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+            Calculated on this device from what you entered. It is not a SACI audit — nothing here has been
+            verified against documents, and no investor can see it. The real scored audit arrives when the
+            audit engine is built.
+          </Txt>
+        </View>
+      ) : null}
 
       <View className="overflow-hidden rounded-[14px] border border-line">
         <LinearGradient colors={['#0f0f0f', '#0a0a0a']} className="items-center px-5 pb-[22px] pt-[26px]">
@@ -203,12 +221,16 @@ function ProgrammeCard({
 }) {
   const [enrolled, setEnrolled] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
 
   async function enrol() {
     setBusy(true);
+    setError(null);
     try {
       await api.enrol(programme);
       setEnrolled(true);
+    } catch (e) {
+      setError(e);
     } finally {
       setBusy(false);
     }
@@ -244,6 +266,8 @@ function ProgrammeCard({
         </View>
 
         <Button label={enrolled ? 'Enrolled ✓' : cta} variant={variant} loading={busy} disabled={enrolled} onPress={enrol} />
+
+        {error ? <Unavailable title="Enrolment is not live" error={error} className="mt-3" /> : null}
       </LinearGradient>
     </View>
   );
