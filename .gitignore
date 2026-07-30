@@ -1,26 +1,29 @@
+# Repository root.
+#
+# `backend/` and `frontend/` each carry their own ignore file, but neither
+# covers the repository root and neither ignores a plain `.env` -- the
+# frontend's only matches `.env*.local`. Without this file a real `.env`
+# sitting anywhere outside `backend/` is untracked *and* unignored, which is
+# one `git add .` away from publishing a database URL.
+
 # Secrets - never commit
 .env
 .env.*
 !.env.example
+!*.env.example
 *.pem
 *.key
 secrets/
 
-# Python
+# Python tooling that lands at the root when tools are run from here
+.venv/
+venv/
 __pycache__/
 *.py[cod]
 *.egg-info/
-build/
-dist/
-.venv/
-venv/
-
-# Tooling caches
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-.coverage
-htmlcov/
 
 # Editors / OS
 .idea/
