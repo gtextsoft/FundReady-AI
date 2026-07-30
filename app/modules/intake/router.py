@@ -12,15 +12,20 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
 
-from app.core.deps import CurrentUserDep, SessionDep, require_role
+from app.core.deps import CurrentUserDep, SessionDep, SettingsDep, require_role
 from app.core.errors import error_responses
 from app.core.security import CurrentUser, Role
 from app.modules.intake import service
+from app.modules.intake.documents import MAX_UPLOAD_BYTES
 from app.modules.intake.models import StartupProfile
 from app.modules.intake.schemas import (
+    DocumentResponse,
+    DownloadTicket,
     ProfileResponse,
     StartupProfileCreate,
     StartupProfileUpdate,
+    UploadRequest,
+    UploadTicket,
 )
 
 router = APIRouter(tags=["intake"])
@@ -139,3 +144,127 @@ async def update_profile(
         session, actor, profile_id, payload.model_dump(exclude_unset=True, mode="json")
     )
     return _serialise(profile)
+
+
+# ---------------------------------------------------------------------------
+# Documents (T1.5)
+# ---------------------------------------------------------------------------
+
+UPLOAD_FLOW = (
+    "\n\n**The upload is three calls, and the bytes never pass through this "
+    "API.** They go straight to object storage, which is why a 25 MB deck "
+    "does not time out:\n\n"
+    "1. `POST /v1/startups/{startup_id}/documents` -> a signed `upload_url`\n"
+    "2. `PUT` the file to that URL with the `Content-Type` you declared, and "
+    "**no** `Authorization` header -- the signature in the URL is the "
+    "credential\n"
+    "3. `POST /v1/documents/{document_id}/complete` -> the server reads the "
+    "object back, checks it, and marks it `ready`\n\n"
+    "A document that never reaches step 3 stays `pending` and is not "
+    "downloadable. Signed URLs expire after `expires_in` seconds "
+    "(15 minutes by default)."
+)
+
+
+@router.post(
+    "/startups/{startup_id}/documents",
+    status_code=status.HTTP_201_CREATED,
+    response_model=UploadTicket,
+    summary="Start a document upload",
+    description=(
+        "Reserves a document and returns a URL to send the file to."
+        + UPLOAD_FLOW
+        + "\n\n`422` if the `content_type` is not on the allowlist -- check "
+        "before uploading rather than after." + OWNERSHIP_NOTE
+    ),
+    responses=error_responses(401, 403, 404, 422),
+)
+async def start_upload(
+    startup_id: uuid.UUID,
+    payload: UploadRequest,
+    actor: CurrentUserDep,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> UploadTicket:
+    document, url = await service.request_upload(
+        session,
+        actor,
+        startup_id,
+        kind=payload.kind,
+        filename=payload.filename,
+        content_type=payload.content_type,
+    )
+    return UploadTicket(
+        document_id=document.id,
+        upload_url=url,
+        expires_in=settings.storage_signed_url_ttl_seconds,
+        max_bytes=MAX_UPLOAD_BYTES,
+    )
+
+
+@router.post(
+    "/documents/{document_id}/complete",
+    response_model=DocumentResponse,
+    summary="Confirm a document upload",
+    description=(
+        "Call this after the `PUT` succeeds. The server reads the object back "
+        "from storage and judges it on what actually arrived -- not on what "
+        "you declared.\n\n"
+        "A file that is missing, empty, larger than `max_bytes`, or of an "
+        "unaccepted type is **deleted from storage** and the document is "
+        "marked `rejected`; `422` carries the reason in `details.reason` "
+        "(`object_missing`, `empty_file`, `file_too_large`, "
+        "`unsupported_content_type`).\n\n"
+        "Safe to retry: calling it again on a `ready` document returns it "
+        "unchanged." + OWNERSHIP_NOTE
+    ),
+    responses=error_responses(401, 403, 404, 422),
+)
+async def complete_upload(
+    document_id: uuid.UUID, actor: CurrentUserDep, session: SessionDep
+) -> DocumentResponse:
+    document = await service.complete_upload(session, actor, document_id)
+    return DocumentResponse.model_validate(document)
+
+
+@router.get(
+    "/startups/{startup_id}/documents",
+    response_model=list[DocumentResponse],
+    summary="List a startup's documents",
+    description=(
+        "Newest first. Includes `pending` and `rejected` documents, so the "
+        "client can show an upload that stalled or was refused." + OWNERSHIP_NOTE
+    ),
+    responses=error_responses(401, 403, 404, 422),
+)
+async def list_documents(
+    startup_id: uuid.UUID, actor: CurrentUserDep, session: SessionDep
+) -> list[DocumentResponse]:
+    documents = await service.list_documents(session, actor, startup_id)
+    return [DocumentResponse.model_validate(document) for document in documents]
+
+
+@router.get(
+    "/documents/{document_id}/download",
+    response_model=DownloadTicket,
+    summary="Get a download URL for a document",
+    description=(
+        "Returns a short-lived URL, not the file. `GET` it directly with no "
+        "`Authorization` header.\n\n"
+        "**Treat the URL as a credential.** Anyone holding it can read the "
+        "file until it expires -- do not log it or persist it.\n\n"
+        "`422` if the document is not `ready`, or if a scan has flagged it."
+        + OWNERSHIP_NOTE
+    ),
+    responses=error_responses(401, 403, 404, 422),
+)
+async def download_document(
+    document_id: uuid.UUID,
+    actor: CurrentUserDep,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> DownloadTicket:
+    url = await service.request_download(session, actor, document_id)
+    return DownloadTicket(
+        download_url=url, expires_in=settings.storage_signed_url_ttl_seconds
+    )

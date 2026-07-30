@@ -9,7 +9,34 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Document upload and download (T1.5), 2026-07-30.** Four endpoints, and
+  **the bytes never pass through this API** — they go straight to Cloudflare R2
+  on a signed URL, which is why a 25 MB deck does not time out:
+  - `POST /v1/startups/{startup_id}/documents` → `201` with a signed
+    `upload_url`, `expires_in`, and `max_bytes`. `422` if `content_type` is not
+    on the allowlist.
+  - `PUT` the file to `upload_url` with the same `Content-Type` you declared
+    and **no** `Authorization` header — the signature *is* the credential.
+  - `POST /v1/documents/{document_id}/complete` → the server reads the object
+    back and judges the **real** size and type. Anything missing, empty, over
+    `max_bytes`, or of an unaccepted type is deleted from storage and marked
+    `rejected`; `422` carries `details.reason`. Safe to retry.
+  - `GET /v1/startups/{startup_id}/documents` → list, newest first.
+  - `GET /v1/documents/{document_id}/download` → a short-lived signed URL.
+  - **Treat both URLs as bearer credentials** for one object: anyone holding
+    one has that access until it expires. Do not log or persist them.
+  - New enums the client depends on: `DocumentKind` (`deck` · `financials` ·
+    `cap_table` · `other`), `DocumentStatus` (`pending` · `ready` ·
+    `rejected`), `ScanStatus` (`pending` · `clean` · `infected` · `skipped`).
+  - **No malware scanner is wired yet**, so uploads settle at `skipped` rather
+    than being reported `clean` — an unscanned file is not a checked one
+    (`TASKS.md` T5.5).
+
 ### Changed
+- **`R2_ENDPOINT_URL` is now required in production.** `core/storage` cannot
+  build a client without it, and a blank endpoint would sign URLs pointing
+  nowhere. Startup fails fast instead. *Deployment change only.*
 - **Founders must register with a company email address (`DECISIONS.md` D20),
   2026-07-30.** `POST /v1/auth/register` with `role: "founder"` and a consumer
   mailbox (`gmail.com`, `outlook.com`, `yahoo.com`, ...) now returns **`422`**

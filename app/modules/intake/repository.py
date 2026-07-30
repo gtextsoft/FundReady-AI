@@ -16,8 +16,9 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.intake.documents import DocumentKind
 from app.modules.intake.fields import Stage
-from app.modules.intake.models import StartupProfile
+from app.modules.intake.models import Document, StartupProfile
 
 
 class StartupProfileRepository:
@@ -58,3 +59,47 @@ class StartupProfileRepository:
         self._session.add(profile)
         await self._session.flush()
         return profile
+
+
+class DocumentRepository:
+    """Read and write document metadata. The bytes are in R2, not here."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get(self, document_id: uuid.UUID) -> Document | None:
+        return await self._session.get(Document, document_id)
+
+    async def list_for_startup(self, startup_id: uuid.UUID) -> list[Document]:
+        """Newest first -- the founder's last upload is the one they are
+        looking for. Unfiltered by owner: that is the service's decision
+        (DECISIONS.md D13), and the caller has already been authorised against
+        the startup this belongs to."""
+        result = await self._session.scalars(
+            select(Document)
+            .where(Document.startup_id == startup_id)
+            .order_by(Document.created_at.desc())
+        )
+        return list(result)
+
+    async def create(
+        self,
+        *,
+        document_id: uuid.UUID,
+        owner_id: uuid.UUID,
+        startup_id: uuid.UUID,
+        kind: DocumentKind,
+        filename: str,
+        storage_key: str,
+    ) -> Document:
+        document = Document(
+            id=document_id,
+            owner_id=owner_id,
+            startup_id=startup_id,
+            kind=kind,
+            filename=filename,
+            storage_key=storage_key,
+        )
+        self._session.add(document)
+        await self._session.flush()
+        return document

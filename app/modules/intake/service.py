@@ -17,19 +17,37 @@ itself lives in `core.ownership` (T1.3) so every founder-owned table that
 follows applies the identical rule.
 """
 
+import logging
 import uuid
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.email_domains import company_name_from_email
-from app.core.errors import ConflictError, NotFoundError
+from app.core.errors import ConflictError, InvalidRequestError, NotFoundError
 from app.core.ownership import owned_or_404
 from app.core.security import CurrentUser, Role
+from app.core.storage import (
+    StoredObject,
+    delete_object,
+    head_object,
+    object_key,
+    signed_download_url,
+    signed_upload_url,
+)
 from app.modules.identity import service as identity
+from app.modules.intake.documents import (
+    MAX_UPLOAD_BYTES,
+    DocumentKind,
+    DocumentStatus,
+    ScanStatus,
+    is_allowed_content_type,
+)
 from app.modules.intake.fields import REQUIRED_COLUMNS, REQUIRED_FIELDS
-from app.modules.intake.models import StartupProfile
-from app.modules.intake.repository import StartupProfileRepository
+from app.modules.intake.models import Document, StartupProfile
+from app.modules.intake.repository import DocumentRepository, StartupProfileRepository
+
+logger = logging.getLogger(__name__)
 
 # One wording for both denials -- "no such profile" and "not yours" must read
 # identically, so the message is fixed here rather than typed per call site
@@ -164,3 +182,198 @@ async def update_profile(
 
     await session.flush()
     return profile
+
+
+# ---------------------------------------------------------------------------
+# Documents (T1.5) -- metadata here, bytes in R2
+# ---------------------------------------------------------------------------
+
+_DOCUMENT_DENIED = "No such document."
+
+
+async def request_upload(
+    session: AsyncSession,
+    actor: CurrentUser,
+    startup_id: uuid.UUID,
+    *,
+    kind: DocumentKind,
+    filename: str,
+    content_type: str,
+) -> tuple[Document, str]:
+    """Reserve a document row and hand back a signed URL to `PUT` it to.
+
+    The row is created **before** the file exists, so the storage key is known
+    to the server and never negotiated with the client. What comes back is a
+    URL that grants exactly one write, to exactly one key, for fifteen minutes.
+
+    `content_type` is checked against the allowlist here and then baked into
+    the signature, so an upload that declares something else is refused by R2
+    rather than by us. It remains a *declaration* -- `complete_upload` reads
+    back what actually landed, and the scan hook is what would notice a PDF
+    that is really a zip.
+
+    Returns the row and the URL. The URL is never persisted: it is a
+    credential, and a credential in a column is a credential in every backup.
+    """
+    profile = owned_or_404(
+        await StartupProfileRepository(session).get(startup_id), actor, message=_DENIED
+    )
+
+    if not is_allowed_content_type(content_type):
+        raise InvalidRequestError(
+            "That file type cannot be uploaded.",
+            {"field": "content_type", "reason": "unsupported_content_type"},
+        )
+
+    document_id = uuid.uuid4()
+    # Scoped by startup, keyed by document. Both server-generated UUIDs -- the
+    # filename never touches the key (`core.storage.object_key`).
+    key = object_key(profile.id, document_id)
+
+    document = await DocumentRepository(session).create(
+        document_id=document_id,
+        owner_id=profile.owner_id,
+        startup_id=profile.id,
+        kind=kind,
+        filename=_safe_filename(filename),
+        storage_key=key,
+    )
+    return document, signed_upload_url(key, content_type=content_type)
+
+
+async def complete_upload(
+    session: AsyncSession, actor: CurrentUser, document_id: uuid.UUID
+) -> Document:
+    """Confirm an upload actually arrived, and decide whether to keep it.
+
+    This is where validation becomes real. Everything before it took the
+    client's word; here the object is read back from R2 and judged on what it
+    is: present at all, within `MAX_UPLOAD_BYTES`, and of an accepted type.
+    A file that fails is **deleted from the bucket** and the row marked
+    `rejected` -- keeping the row so the founder gets a reason rather than
+    watching an upload disappear.
+
+    Idempotent: calling it again on a `ready` document returns it unchanged, so
+    a client that retries after a dropped response does not re-enter the flow.
+    """
+    document = owned_or_404(
+        await DocumentRepository(session).get(document_id),
+        actor,
+        message=_DOCUMENT_DENIED,
+    )
+    if document.status is DocumentStatus.READY:
+        return document
+
+    stored = head_object(document.storage_key)
+    if stored is None:
+        raise InvalidRequestError(
+            "That upload has not arrived yet.",
+            {"field": "document_id", "reason": "object_missing"},
+        )
+
+    rejection = _rejection_reason(stored)
+    if rejection is not None:
+        # Removed before the row is updated: a file that failed validation must
+        # not sit in the bucket waiting for someone to find a way to read it.
+        delete_object(document.storage_key)
+        document.status = DocumentStatus.REJECTED
+        document.size_bytes = stored.size_bytes
+        document.content_type = stored.content_type
+        await session.flush()
+        logger.info("upload rejected", extra={"context": {"reason": rejection}})
+        raise InvalidRequestError(
+            "That upload was rejected.",
+            {"field": "document_id", "reason": rejection},
+        )
+
+    # What R2 reports, not what the client said when it asked for the URL.
+    document.size_bytes = stored.size_bytes
+    document.content_type = stored.content_type
+    document.status = DocumentStatus.READY
+    await session.flush()
+
+    await scan_document(session, document)
+    return document
+
+
+async def scan_document(session: AsyncSession, document: Document) -> None:
+    """The seam a malware scanner plugs into (`CLAUDE.md` section 4).
+
+    **Nothing is scanned yet.** The queue this belongs on lands with T2.8 and
+    the scanner itself with T5.5, so for now this records `skipped` -- which is
+    the honest answer. Marking an unscanned file `clean` would be a lie that
+    later reads as a completed check.
+
+    Deliberately a function rather than a `TODO` at the call site: when the
+    scanner arrives it replaces a body, not a control flow, and every upload
+    already routes through here.
+    """
+    document.scan_status = ScanStatus.SKIPPED
+    await session.flush()
+
+
+async def list_documents(
+    session: AsyncSession, actor: CurrentUser, startup_id: uuid.UUID
+) -> list[Document]:
+    """Every document on a startup the caller owns."""
+    profile = owned_or_404(
+        await StartupProfileRepository(session).get(startup_id), actor, message=_DENIED
+    )
+    return await DocumentRepository(session).list_for_startup(profile.id)
+
+
+async def request_download(
+    session: AsyncSession, actor: CurrentUser, document_id: uuid.UUID
+) -> str:
+    """A short-lived URL that reads one document.
+
+    **The ownership check is the whole security of this endpoint.** What it
+    returns is a bearer credential: anyone holding the URL can read a founder's
+    financials for its lifetime, with no token and no further check. Signing
+    one without `owned_or_404` first would be a straight IDOR, and the leak
+    would outlive the request that caused it.
+
+    Refuses anything not `ready` -- an unvalidated or rejected object is not
+    readable -- and anything the scanner has flagged.
+    """
+    document = owned_or_404(
+        await DocumentRepository(session).get(document_id),
+        actor,
+        message=_DOCUMENT_DENIED,
+    )
+    if document.status is not DocumentStatus.READY:
+        raise InvalidRequestError(
+            "That document is not ready to download.",
+            {"field": "document_id", "reason": document.status.value},
+        )
+    if document.scan_status is ScanStatus.INFECTED:
+        raise InvalidRequestError(
+            "That document did not pass a malware scan.",
+            {"field": "document_id", "reason": "infected"},
+        )
+    return signed_download_url(document.storage_key, filename=document.filename)
+
+
+def _rejection_reason(stored: StoredObject) -> str | None:
+    """Why this object is not acceptable, or `None` if it is."""
+    if stored.size_bytes > MAX_UPLOAD_BYTES:
+        return "file_too_large"
+    if stored.size_bytes == 0:
+        return "empty_file"
+    if not is_allowed_content_type(stored.content_type):
+        return "unsupported_content_type"
+    return None
+
+
+def _safe_filename(filename: str) -> str:
+    """The founder's filename, reduced to something safe to store and echo.
+
+    It is never a path component -- the storage key is built from UUIDs -- but
+    it *is* returned in responses and set as `Content-Disposition` on download,
+    so directory separators, control characters, and leading dots all come off
+    before it is stored rather than at each use.
+    """
+    cleaned = filename.replace("\\", "/").split("/")[-1]
+    cleaned = "".join(character for character in cleaned if character.isprintable())
+    cleaned = cleaned.strip().lstrip(".").strip()
+    return cleaned[:255] or "upload"

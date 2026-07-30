@@ -182,6 +182,11 @@ class Settings(BaseSettings):
             "JWT_SECRET_KEY": self.jwt_secret_key,
             "MFA_SECRET_ENCRYPTION_KEY": self.mfa_secret_encryption_key,
             "R2_ACCOUNT_ID": self.r2_account_id,
+            # Required outright rather than derived from the account id: R2 is
+            # reached through this URL, and `core.storage` refuses to build a
+            # client without it (T1.5). A blank endpoint would sign URLs that
+            # point nowhere, which looks like success until an upload vanishes.
+            "R2_ENDPOINT_URL": self.r2_endpoint_url,
             "R2_ACCESS_KEY_ID": self.r2_access_key_id,
             "R2_SECRET_ACCESS_KEY": self.r2_secret_access_key,
             "R2_BUCKET_DOCUMENTS": self.r2_bucket_documents,

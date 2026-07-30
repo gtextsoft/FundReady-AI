@@ -12,6 +12,12 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.modules.intake.documents import (
+    MAX_UPLOAD_BYTES,
+    DocumentKind,
+    DocumentStatus,
+    ScanStatus,
+)
 from app.modules.intake.fields import (
     FIELDS_BY_NAME,
     FieldSource,
@@ -19,12 +25,19 @@ from app.modules.intake.fields import (
 )
 
 __all__ = [
+    "DocumentKind",
+    "DocumentResponse",
+    "DocumentStatus",
+    "DownloadTicket",
     "FieldSource",
     "ProfileFieldValue",
     "ProfileResponse",
+    "ScanStatus",
     "Stage",
     "StartupProfileCreate",
     "StartupProfileUpdate",
+    "UploadRequest",
+    "UploadTicket",
 ]
 
 Country = Annotated[str, Field(min_length=2, max_length=2)]
@@ -257,3 +270,172 @@ class ProfileConflict(BaseModel):
     )
 
     detail: Literal["You already have a profile."] = "You already have a profile."
+
+
+# ---------------------------------------------------------------------------
+# Documents (T1.5)
+# ---------------------------------------------------------------------------
+
+DOCUMENT_ID_EXAMPLE = "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"
+
+
+class UploadRequest(BaseModel):
+    """Ask for somewhere to put a file.
+
+    Declaring the type up front is what lets the server bake it into the
+    signature, so a mismatched upload is refused by storage rather than
+    discovered afterwards.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    "kind": "deck",
+                    "filename": "kanmi-seed-deck.pdf",
+                    "content_type": "application/pdf",
+                }
+            ]
+        },
+    )
+
+    kind: DocumentKind = Field(
+        description=(
+            "What this file is. Steers extraction (T2.4); your declaration, "
+            "not a verified fact."
+        )
+    )
+    filename: str = Field(
+        min_length=1,
+        max_length=255,
+        description=(
+            "Display name only. It is **never** part of the storage path -- "
+            "directory separators and control characters are stripped before "
+            "it is stored."
+        ),
+    )
+    content_type: str = Field(
+        max_length=120,
+        description=(
+            "MIME type of the file you are about to send. Must be on the "
+            "allowlist, and must match the `Content-Type` header you set on "
+            "the upload or storage will reject it."
+        ),
+    )
+
+
+class UploadTicket(BaseModel):
+    """Where to send the bytes, and for how long.
+
+    The URL is a **credential**: anyone holding it can write that one object
+    until it expires. It is issued once, never stored, and not retrievable
+    again -- ask for a new one if you lose it.
+    """
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "document_id": DOCUMENT_ID_EXAMPLE,
+                    "upload_url": "https://<account>.r2.cloudflarestorage.com/...",
+                    "expires_in": 900,
+                    "max_bytes": MAX_UPLOAD_BYTES,
+                }
+            ]
+        }
+    )
+
+    document_id: uuid.UUID
+    upload_url: str = Field(
+        description=(
+            "`PUT` the file here with the same `Content-Type` you declared. "
+            "Send no authorization header -- the signature is the credential. "
+            "Then call `POST /v1/documents/{document_id}/complete`."
+        )
+    )
+    expires_in: int = Field(description="Seconds until the URL stops working.")
+    max_bytes: int = Field(
+        description=(
+            "Reject anything larger before uploading. The server checks the "
+            "real size afterwards and deletes what does not qualify."
+        )
+    )
+
+
+class DownloadTicket(BaseModel):
+    """A short-lived URL that reads one document."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "download_url": "https://<account>.r2.cloudflarestorage.com/...",
+                    "expires_in": 900,
+                }
+            ]
+        }
+    )
+
+    download_url: str = Field(
+        description=(
+            "`GET` this directly. It is a bearer credential for one file -- "
+            "do not log it, share it, or put it somewhere it outlives its TTL."
+        )
+    )
+    expires_in: int
+
+
+class DocumentResponse(BaseModel):
+    """A document's metadata. The bytes live in object storage."""
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "id": DOCUMENT_ID_EXAMPLE,
+                    "startup_id": "3f2b1c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+                    "kind": "deck",
+                    "filename": "kanmi-seed-deck.pdf",
+                    "content_type": "application/pdf",
+                    "size_bytes": 2418123,
+                    "status": "ready",
+                    "scan_status": "skipped",
+                    "created_at": "2026-07-30T08:00:00Z",
+                    "updated_at": "2026-07-30T08:01:12Z",
+                }
+            ]
+        },
+    )
+
+    id: uuid.UUID
+    startup_id: uuid.UUID
+    kind: DocumentKind
+    filename: str
+    content_type: str | None = Field(
+        description="What storage reported after upload. `null` until confirmed."
+    )
+    size_bytes: int | None = Field(
+        description="Actual bytes stored. `null` until confirmed."
+    )
+    status: DocumentStatus = Field(
+        description=(
+            "`pending` until you call complete; `ready` once confirmed and "
+            "accepted; `rejected` if it failed validation, in which case the "
+            "file was deleted."
+        )
+    )
+    scan_status: ScanStatus = Field(
+        description=(
+            "Malware scan result. **No scanner is wired yet**, so uploads "
+            "settle at `skipped` rather than being reported `clean` "
+            "(TASKS.md T5.5)."
+        )
+    )
+    created_at: datetime
+    updated_at: datetime
+
+    # `owner_id` is deliberately absent: the caller is the owner (or a SACI
+    # admin acting on their behalf), so it carries no information and is one
+    # more internal id on the wire.
