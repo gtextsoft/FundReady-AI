@@ -8,6 +8,7 @@ import { Field } from '@/components/ui/field';
 import { Mark } from '@/components/ui/mark';
 import { Txt, TxtMed, TxtSemi } from '@/components/ui/text';
 import { C } from '@/theme/tokens';
+import { Unavailable } from '@/components/unavailable';
 import { api } from '@/api';
 import { SIGN_IN } from '@/lib/routes';
 
@@ -16,12 +17,17 @@ export default function ForgotPassword() {
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
+  const [error, setError] = useState<unknown>(null);
 
   async function submit() {
     setBusy(true);
+    setError(null);
     try {
       await api.requestPasswordReset(email.trim());
       setSent(true);
+    } catch (e) {
+      // Never claim a link was sent when nothing was sent.
+      setError(e);
     } finally {
       setBusy(false);
     }
@@ -73,6 +79,7 @@ export default function ForgotPassword() {
               <View className="mt-[18px]">
                 <Button label="Send reset link" onPress={submit} loading={busy} />
               </View>
+              {error ? <Unavailable title="Password reset is not live" error={error} className="mt-4" /> : null}
             </>
           )}
 

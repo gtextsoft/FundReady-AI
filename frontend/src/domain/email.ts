@@ -75,6 +75,59 @@ export function isPersonalEmailDomain(domain: string): boolean {
   return [...PERSONAL_DOMAINS].some((known) => d.endsWith(`.${known}`));
 }
 
+/**
+ * Public suffixes that are two labels long, so `acme.co.uk` yields "Acme" and
+ * not "Co". Not the full Public Suffix List — that is a large, churning dataset
+ * and this only needs to cover the markets in `founder/verify.tsx` plus the
+ * common anglophone ones. An unlisted suffix degrades to taking one label,
+ * which is a slightly wrong suggestion, not a broken sign-up.
+ */
+const MULTIPART_SUFFIXES = [
+  'co.uk', 'org.uk', 'ac.uk', 'gov.uk', 'me.uk', 'ltd.uk', 'plc.uk',
+  'com.ng', 'org.ng', 'gov.ng', 'edu.ng',
+  'co.za', 'org.za', 'net.za',
+  'co.ke', 'or.ke', 'go.ke',
+  'com.gh', 'com.au', 'net.au', 'org.au',
+  'com.br', 'com.sg', 'com.my', 'com.hk', 'com.tr', 'com.mx', 'com.ar',
+  'co.in', 'net.in', 'org.in', 'co.jp', 'co.kr', 'co.nz', 'co.il',
+  'com.cn', 'com.pk', 'com.eg', 'com.sa', 'com.ae',
+];
+
+/**
+ * A best-guess company name from an email domain: `ada@northwind-labs.com`
+ * becomes "Northwind Labs".
+ *
+ * This is a **suggestion to save typing**, never an identity claim. The real
+ * legal name is whatever the founder enters and whatever the registry confirms
+ * at verification — this is only a default they can overwrite. Returns an empty
+ * string for personal mailboxes, so nobody is told their company is "Gmail".
+ */
+export function companyNameFromDomain(domain: string): string {
+  const d = domain.trim().toLowerCase().replace(/^www\./, '');
+  if (!d || isPersonalEmailDomain(d)) return '';
+
+  const labels = d.split('.').filter(Boolean);
+  if (labels.length < 2) return '';
+
+  const suffix = MULTIPART_SUFFIXES.find((s) => d.endsWith(`.${s}`));
+  // Drop the public suffix, then take the rightmost remaining label, so a
+  // subdomain like `mail.northwind.com` still resolves to "northwind".
+  const remaining = suffix ? labels.slice(0, -suffix.split('.').length) : labels.slice(0, -1);
+  const name = remaining.at(-1) ?? '';
+  if (!name) return '';
+
+  return name
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+/** Convenience wrapper: the same guess, straight from a full address. */
+export function companyNameFromEmail(email: string): string {
+  return companyNameFromDomain(emailDomain(email));
+}
+
 export type EmailIssue = 'empty' | 'invalid' | 'personal' | null;
 
 export type EmailCheck = { ok: boolean; issue: EmailIssue; message: string | null; domain: string };

@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Divider, MetaPill, Segmented } from '@/components/ui/controls';
 import { Eyebrow, Mono, MonoMed, Txt, TxtMed, TxtSemi } from '@/components/ui/text';
 import { C, scoreColor } from '@/theme/tokens';
+import { Unavailable } from '@/components/unavailable';
 import { api } from '@/api';
 import { investorGate } from '@/domain/access';
 import type { Company } from '@/domain/types';
@@ -28,6 +29,7 @@ export default function CompanyDetail() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [company, setCompany] = useState<Company | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [pane, setPane] = useState<Pane>('metrics');
   const [introBusy, setIntroBusy] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
@@ -40,18 +42,41 @@ export default function CompanyDetail() {
 
   const account = useSession((s) => s.investorAccount);
   const verified = account?.verification === 'verified';
-  const gate = investorGate(account ?? { verification: 'unverified', credentials: null }, 'requestIntroduction');
+  // Absent account means nothing is loaded yet, so assume the most locked state.
+  const gate = investorGate(
+    account ?? { emailVerified: false, verification: 'unverified', credentials: null },
+    'requestIntroduction',
+  );
 
   useEffect(() => {
     let live = true;
     api
       .getCompany(Number(id))
-      .then((c) => live && setCompany(c))
-      .catch(() => live && setCompany(null));
+      .then((c) => {
+        if (!live) return;
+        setCompany(c);
+        setError(null);
+      })
+      .catch((e: unknown) => {
+        if (!live) return;
+        setCompany(null);
+        setError(e);
+      });
     return () => {
       live = false;
     };
   }, [id]);
+
+  if (error) {
+    return (
+      <View className="flex-1 bg-ground px-[18px]" style={{ paddingTop: insets.top + 16 }}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => router.back()} hitSlop={10}>
+          <Txt className="mb-4 text-[19px] text-ink">←</Txt>
+        </Pressable>
+        <Unavailable title="This company could not be loaded" error={error} />
+      </View>
+    );
+  }
 
   if (!company) return <View className="flex-1 bg-ground" />;
 

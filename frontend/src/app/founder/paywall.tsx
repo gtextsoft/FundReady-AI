@@ -7,17 +7,19 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Button } from '@/components/ui/button';
 import { Mono, Txt, TxtSemi } from '@/components/ui/text';
 import { C } from '@/theme/tokens';
-import { daysLeftInTrial, hasAccess, TRIAL_DAYS } from '@/domain/access';
+import { daysLeftInTrial, hasAccess, isPaid, TRIAL_DAYS } from '@/domain/access';
 import { UNLOCK_BENEFITS, UNLOCK_PRICE } from '@/domain/pricing';
+import { Unavailable } from '@/components/unavailable';
 import { api, type PaymentReceipt } from '@/api';
 import { useSession } from '@/store/session';
 
 /**
  * One-off unlock.
  *
- * The purchase call is a stub: a real implementation hands off to a hosted
- * checkout and this screen never touches card details. Everything else here —
- * entitlement state, receipt, the locked/unlocked copy — is already real.
+ * Entitlement state, the trial countdown and the locked/unlocked copy are all
+ * real, read from the account. Taking the payment is not built yet — Stripe
+ * checkout is T3.3/T3.4 — so the button reports that rather than pretending to
+ * charge anyone.
  */
 export default function Paywall() {
   const insets = useSafeAreaInsets();
@@ -25,18 +27,22 @@ export default function Paywall() {
   const refreshAccount = useSession((s) => s.refreshAccount);
   const [busy, setBusy] = useState(false);
   const [receipt, setReceipt] = useState<PaymentReceipt | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   if (!account) return <View className="flex-1 bg-ground" />;
 
-  const paid = account.paidAt !== null || receipt !== null;
+  const paid = isPaid(account) || receipt !== null;
   const locked = !hasAccess(account);
   const days = daysLeftInTrial(account);
 
   async function pay() {
     setBusy(true);
+    setError(null);
     try {
       setReceipt(await api.purchaseUnlock());
       await refreshAccount();
+    } catch (e) {
+      setError(e);
     } finally {
       setBusy(false);
     }
@@ -90,6 +96,8 @@ export default function Paywall() {
             </View>
           ))}
         </View>
+
+        {error ? <Unavailable title="Payments are not live" error={error} className="mt-6" /> : null}
 
         {receipt ? (
           <View

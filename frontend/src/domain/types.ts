@@ -157,17 +157,36 @@ export type InvestorCredentials = {
   linkedinUrl: string;
 };
 
-export type FounderAccount = {
+/**
+ * Founder billing state. Mirrors the server's `subscription_status`, which is
+ * trusted from Stripe webhooks only — never from anything the client reports.
+ */
+export type SubscriptionStatus = 'none' | 'active' | 'past_due' | 'canceled';
+
+/**
+ * Whether the address on the account has been confirmed.
+ *
+ * Distinct from every other verification in this app: it proves the person
+ * controls the mailbox, and it gates the sensitive actions (buying, uploading,
+ * being discovered) per AUTH.md. Company registration and investor credentials
+ * are separate, later checks.
+ */
+export type EmailVerification = { emailVerified: boolean };
+
+export type FounderAccount = EmailVerification & {
   companyName: string;
   verification: VerificationStatus;
   registration: CompanyRegistration | null;
   /** ISO date. Full access until this moment, then the paywall applies. */
   trialEndsAt: string;
-  /** ISO date of the one-off unlock payment, or null if never paid. */
-  paidAt: string | null;
+  /**
+   * Whether access has been paid for. A status rather than a payment date,
+   * because the server reports the subscription's state and not when it began.
+   */
+  subscriptionStatus: SubscriptionStatus;
 };
 
-export type InvestorAccount = {
+export type InvestorAccount = EmailVerification & {
   verification: VerificationStatus;
   credentials: InvestorCredentials | null;
 };

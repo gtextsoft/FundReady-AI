@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { Select } from '@/components/ui/select';
 import { Eyebrow, Mono, Txt, TxtSemi } from '@/components/ui/text';
+import { Unavailable } from '@/components/unavailable';
 import { api } from '@/api';
 import { INVESTOR_TYPES, type InvestorCredentials, type InvestorType } from '@/domain/types';
 import { useSession } from '@/store/session';
@@ -33,6 +34,7 @@ export default function VerifyInvestor() {
   const [linkedinUrl, setLinkedinUrl] = useState(account?.credentials?.linkedinUrl ?? '');
   const [touched, setTouched] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
 
   const complete = investorType && firm.trim() && country && linkedinUrl.trim();
 
@@ -51,6 +53,9 @@ export default function VerifyInvestor() {
       };
       setInvestorAccount(await api.submitInvestorCredentials(credentials));
       router.back();
+    } catch (e) {
+      // Stay on the screen: navigating back would imply it was submitted.
+      setError(e);
     } finally {
       setBusy(false);
     }
@@ -118,6 +123,8 @@ export default function VerifyInvestor() {
               </Txt>
             </View>
           ) : null}
+
+          {error ? <Unavailable title="Verification is not live" error={error} className="mt-4" /> : null}
         </View>
       </ScrollView>
 

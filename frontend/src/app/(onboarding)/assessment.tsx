@@ -42,9 +42,10 @@ export default function AssessmentScreen() {
   useEffect(() => {
     if (submitted.current) return;
     submitted.current = true;
-    submit().catch(() => {
-      /* mock API cannot fail; a real one would surface an error screen here */
-    });
+    // A failure here is not fatal: `submit` already resolves to null when the
+    // audit engine does not exist, and the results screen falls back to its
+    // clearly-labelled provisional estimate either way.
+    submit().catch(() => undefined);
   }, [submit]);
 
   useEffect(() => {
@@ -86,7 +87,7 @@ export default function AssessmentScreen() {
       </View>
 
       <Mono className="mb-[14px] text-[10px] text-ink-faint" style={{ letterSpacing: 1.5 }}>
-        ASSESSING {(company || 'Northwind Labs').toUpperCase()}
+        ASSESSING {(company || 'your company').toUpperCase()}
       </Mono>
 
       <View className="min-h-[52px] items-center justify-start">
