@@ -53,6 +53,11 @@ Role is coarse. The real access decision layers conditions on top (§5).
 - **Email verification is required before any sensitive action** — buying, uploading, discovery, interest. Browsing one's own empty account is permitted while unverified.
 - **Admin: no self-service.** Admins are provisioned only by an existing admin, and that creation is itself audit-logged (§9).
 - Registration responses are **identical whether or not the email already exists** — otherwise the endpoint is an account-enumeration oracle. The differing behaviour is in the email that gets sent, not the API response.
+- **Founders must register with a company email address** (`DECISIONS.md` **D20**). A consumer mailbox provider (`gmail.com`, `outlook.com`, `yahoo.com`, …) is refused with `422` and `details.reason = "consumer_email_domain"`. Investors are **not** restricted — an angel investing personally has no company domain, and the KYC gate (§8) is what establishes who they are.
+  - This rejection is **explicit, not uniform**, and that does not contradict the bullet above. The uniform response protects *account existence*; this answer is about the **domain the caller just typed**, which they already know, and reveals nothing about who has an account. Answering uniformly would be worse: the founder would wait for a verification email that was never going to arrive.
+  - The check runs **before** the duplicate lookup, so a refused signup writes nothing and a corrected retry is not a duplicate.
+  - **The blocklist is a heuristic, not verification.** It recognises the providers people actually use; it cannot enumerate every one, and passing it proves nothing about corporate identity — anyone can buy a domain. What *is* verified is control of the mailbox, because the account stays `pending_verification` until the emailed link is clicked. Never treat "has a company domain" as proof that a company exists or that this person belongs to it.
+  - The verified domain also supplies the **initial company name** on the Startup Profile (`DECISIONS.md` D20). That value is a prefill the founder can change, never an authoritative company name.
 
 ### 3.3 Login
 

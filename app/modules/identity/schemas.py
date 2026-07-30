@@ -106,6 +106,10 @@ class RegisterRequest(_EmailMixin):
 
     `admin` is intentionally absent: admins are provisioned by an existing
     admin and never through self-service (AUTH.md section 3.2).
+
+    A founder's address must be a company one (AUTH.md section 3.2). Enforced
+    in the service, not here, because the rule depends on `role` and belongs
+    with the rest of the registration policy.
     """
 
     model_config = examples(
@@ -116,7 +120,11 @@ class RegisterRequest(_EmailMixin):
         description="At least 12 characters. Must not contain your email address.",
     )
     role: Literal[Role.FOUNDER, Role.INVESTOR] = Field(
-        description="`founder` or `investor`. Admin accounts cannot be self-created.",
+        description=(
+            "`founder` or `investor`. Admin accounts cannot be self-created. "
+            "A `founder` must use a company email address, not a consumer "
+            "mailbox provider."
+        ),
     )
 
 

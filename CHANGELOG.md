@@ -10,6 +10,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Changed
+- **Founders must register with a company email address (`DECISIONS.md` D20),
+  2026-07-30.** `POST /v1/auth/register` with `role: "founder"` and a consumer
+  mailbox (`gmail.com`, `outlook.com`, `yahoo.com`, ...) now returns **`422`**
+  with `details = {"field": "email", "reason": "consumer_email_domain"}` —
+  branch on `reason` and show it against the email input. Investors are
+  unaffected. **This rejection is explicit rather than uniform**, unlike the
+  duplicate-address case: it concerns the domain the caller just typed, so it
+  reveals nothing about who holds an account. *Client impact: the founder
+  signup form needs this error path.*
+- **`POST /v1/startups` fills in `name` from the company email domain
+  (`DECISIONS.md` D20), 2026-07-30.** Omit `name` and `founder@acme.com`
+  yields `Acme`. A `name` you send is never overwritten, and the derived value
+  is editable through `PATCH /v1/startups/{id}` like any other field — it is a
+  prefill, not a verified company name. When nothing sensible can be read the
+  field stays `null` and appears in `missing_fields`. *Additive; no existing
+  request breaks.*
+- **`POST /v1/startups` is now restricted to founders and admins,
+  2026-07-30.** It previously accepted any active account, so an **investor
+  could create a startup profile** — `AUTH.md` §5's permission matrix has
+  always denied that. Investors now get **`403`**. *No founder client is
+  affected.*
 - **Tenant isolation consolidated into one check (T1.3), 2026-07-30.** The ownership
   rule that was private to `intake` now lives in `core/ownership.py`, so every
   founder-owned table that follows (documents T1.5, tasks T3.1, evidence T3.5)

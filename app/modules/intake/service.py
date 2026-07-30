@@ -22,9 +22,11 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.email_domains import company_name_from_email
 from app.core.errors import ConflictError, NotFoundError
 from app.core.ownership import owned_or_404
-from app.core.security import CurrentUser
+from app.core.security import CurrentUser, Role
+from app.modules.identity import service as identity
 from app.modules.intake.fields import REQUIRED_COLUMNS, REQUIRED_FIELDS
 from app.modules.intake.models import StartupProfile
 from app.modules.intake.repository import StartupProfileRepository
@@ -66,6 +68,35 @@ def missing_fields(profile: StartupProfile) -> list[str]:
     return sorted(absent)
 
 
+async def _name_from_company_domain(
+    session: AsyncSession, actor: CurrentUser
+) -> str | None:
+    """The company name implied by this founder's verified email domain.
+
+    **Founders only** (`DECISIONS.md` D20). They are the only role required to
+    hold a company address, so they are the only role whose domain means
+    anything here. An admin may also create a profile (`AUTH.md` section 5),
+    and deriving from *their* address would put a SACI domain on a startup.
+
+    Safe to trust as far as it goes, because the domain is *verified*: an
+    account sits at `pending_verification` until the emailed link is clicked,
+    and every endpoint behind `CurrentUserDep` requires an active account. So
+    the founder demonstrably controls a mailbox at this domain.
+
+    What it is not is authoritative. `acme.com` gives "Acme", which is a
+    convenience so the founder does not retype what the platform already knows
+    -- and which they can change at any time through the update endpoint.
+
+    `None` (leaving the field empty, and listed in `missing_fields`) whenever
+    nothing sensible can be read: better an obvious gap than a wrong name that
+    reads as though someone confirmed it.
+    """
+    if actor.role is not Role.FOUNDER:
+        return None
+    email = await identity.get_user_email(session, actor.id)
+    return company_name_from_email(email) if email else None
+
+
 async def create_profile(
     session: AsyncSession, actor: CurrentUser, payload: dict[str, Any]
 ) -> StartupProfile:
@@ -74,10 +105,17 @@ async def create_profile(
     `owner_id` comes from the verified token, never from the request body -- a
     client-supplied owner is how one founder's data ends up under another's
     account (CLAUDE.md section 4).
+
+    When no name is given, one is read off the founder's company email domain
+    (`DECISIONS.md` D20). Only when it is *absent*: a name the founder typed is
+    never replaced by a guess.
     """
     profiles = StartupProfileRepository(session)
     if await profiles.get_for_owner(actor.id) is not None:
         raise ConflictError("You already have a startup profile.")
+
+    if not payload.get("name"):
+        payload["name"] = await _name_from_company_domain(session, actor)
 
     return await profiles.create(
         owner_id=actor.id,

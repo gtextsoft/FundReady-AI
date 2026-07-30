@@ -123,3 +123,17 @@ Making it real needs a second Postgres role (`NOBYPASSRLS`, least privilege, not
 - The app-layer ownership check (`core/ownership.py`) is, for now, the **only** tenant-isolation wall. D13 already called it the primary one; until T5.7 there is nothing behind it. Treat a missing ownership check accordingly.
 - **T5.7 provisions the role and adds the policies migration.** Enabling RLS without a `NOBYPASSRLS` connection role is not a partial win, it is a false one.
 - Any future test asserting RLS enforcement must run as a non-owner, non-bypassing role, or it proves nothing.
+
+### D20 — Founders register on a company email; the domain seeds the company name
+*Recorded 2026-07-30. New scope, requested by the product owner; not in the PRD.*
+
+**Why:** a company address is a cheap signal that a founder is registering a real business rather than browsing, and the domain is a free, already-verified source for the one profile field the platform would otherwise ask them to type first. Verification is real: an account sits at `pending_verification` until the emailed link is clicked, so by the time any profile exists the founder has demonstrably controlled a mailbox at that domain.
+
+**Constraint:**
+- **Founders only.** Investors are exempt — an angel investing personally has no company domain, and `AUTH.md` §8's KYC gate is what establishes an investor's identity.
+- The refusal is **explicit** (`422`, `details.reason = "consumer_email_domain"`), not folded into registration's uniform response. The uniform response exists to hide *account existence*; this answer concerns the domain the caller just typed and leaks nothing. Answering uniformly would leave a founder waiting for an email that would never arrive.
+- Checked **before** the duplicate lookup, so a refused signup writes nothing.
+- **The blocklist is a heuristic, not a security control.** It cannot enumerate every consumer provider, and passing it proves nothing about corporate identity — a domain costs a few pounds. Never treat "has a company domain" as verification that a company exists or that this person belongs to it.
+- The derived company name is a **prefill**. It is written only when the founder supplies no name, never overwrites one they did supply, and is `None` rather than a guess when nothing sensible can be read. Nothing downstream may treat it as a legal name.
+
+**The tradeoff, accepted knowingly:** this product's own vocabulary includes `Stage.IDEA` and `PRE_SEED` (`intake/fields.py`), and the PRD's premise is converting not-yet-ready startups. Idea-stage founders frequently have no company domain, and a hard block at registration turns them away at the one step where a rejected user simply leaves. The alternative considered was requiring the company address at **profile creation** instead, which preserves the funnel and still guarantees every profile has a verified company domain behind it. The owner chose the hard block at registration. **If signup conversion for early-stage founders disappoints, moving the check to profile creation is the first thing to try** — the rule is one call in `register_user` and the derivation is untouched by the move.

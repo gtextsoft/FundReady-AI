@@ -22,6 +22,7 @@ from typing import Any, Final
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
+from app.core.email_domains import is_consumer_domain
 from app.core.errors import (
     ConflictError,
     ForbiddenError,
@@ -149,6 +150,10 @@ async def register_user(
     requires it: any difference here turns registration into an
     account-existence oracle. Telling the real owner that someone tried is the
     job of the email, which arrives with T1.2a.
+
+    **Founders must use a company address** (`DECISIONS.md` D20). Investors are
+    not held to it: an angel investing personally has no company domain to give,
+    and the KYC gate in T4.1 is what establishes who they are.
     """
     if role not in SELF_SERVICE_ROLES:
         # The message does not name the admin role: that would advertise its
@@ -156,6 +161,19 @@ async def register_user(
         raise ForbiddenError("That account type cannot be created here.")
 
     normalised = normalise_email(email)
+
+    # Refused before the duplicate check, and openly rather than through the
+    # uniform response above. The two are not in tension: this answer is about
+    # the *domain*, which the caller already knows, and reveals nothing about
+    # whether any account exists. Saying "that address is fine, but silently
+    # nothing happened" would be the worse outcome -- the founder would sit
+    # waiting for an email that was never going to arrive.
+    if role is Role.FOUNDER and is_consumer_domain(normalised):
+        raise InvalidRequestError(
+            "Use your company email address to register as a founder.",
+            {"field": "email", "reason": "consumer_email_domain"},
+        )
+
     validate_password(password, normalised)
 
     users = UserRepository(session)
@@ -400,6 +418,26 @@ async def load_current_user(
         mfa_enabled=user.mfa_enabled,
         session_valid_after=user.session_valid_after,
     )
+
+
+async def get_user_email(session: AsyncSession, user_id: uuid.UUID) -> str | None:
+    """This user's address, for another module that needs the domain.
+
+    `intake` reads the company name off a founder's verified domain (D20) and
+    cannot reach `UserRepository` itself (`ARCHITECTURE.md` section 3), so the
+    lookup is exposed here rather than the repository being shared.
+
+    Deliberately narrow: it returns the address and nothing else. A general
+    "give me the user" accessor across module boundaries is how another
+    module's code starts depending on this one's model, and how fields nobody
+    audited start travelling.
+
+    The caller is trusted server code. This performs **no** authorization --
+    callers pass a `user_id` they have already established a right to, which in
+    `intake`'s case is the caller's own id from the verified token.
+    """
+    user = await UserRepository(session).get_by_id(user_id)
+    return user.email if user is not None else None
 
 
 # ---------------------------------------------------------------------------

@@ -50,6 +50,13 @@ router = APIRouter(tags=["identity"])
         "registered.** That is deliberate -- a different response would let "
         "anyone test which addresses have accounts. Do not treat `202` as "
         "proof that a new account was created.\n\n"
+        "**Founders must register with a company email address.** A consumer "
+        "mailbox (`gmail.com`, `outlook.com`, `yahoo.com`, ...) is refused "
+        'with `422` and `details.reason = "consumer_email_domain"` -- show '
+        "that against the email field. Investors are not restricted. The "
+        "domain also becomes the starting company name on the startup "
+        "profile, so this rejection is explicit rather than uniform: there is "
+        "no account to enumerate, only the domain the caller just typed.\n\n"
         "`admin` is not an accepted role: admins are provisioned internally."
     ),
     responses=error_responses(403, 422),

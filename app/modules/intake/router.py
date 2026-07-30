@@ -8,11 +8,13 @@ No business logic, no database access, no LLM calls.
 """
 
 import uuid
+from typing import Annotated
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 
-from app.core.deps import CurrentUserDep, SessionDep
+from app.core.deps import CurrentUserDep, SessionDep, require_role
 from app.core.errors import error_responses
+from app.core.security import CurrentUser, Role
 from app.modules.intake import service
 from app.modules.intake.models import StartupProfile
 from app.modules.intake.schemas import (
@@ -22,6 +24,13 @@ from app.modules.intake.schemas import (
 )
 
 router = APIRouter(tags=["intake"])
+
+# Composed rather than `CurrentFounder`, because the permission matrix
+# (AUTH.md section 5) grants "create/edit own startup" to founders *and*
+# admins. `core.deps` asks for exactly this composition rather than widening
+# the single-role aliases. An investor is refused: they reach startups through
+# the summary tier in T4.2, never by owning one.
+FounderOrAdmin = Annotated[CurrentUser, Depends(require_role(Role.FOUNDER, Role.ADMIN))]
 
 OWNERSHIP_NOTE = (
     "\n\nYou can only reach your own profile. Another founder's id returns "
@@ -58,12 +67,18 @@ def _serialise(profile: StartupProfile) -> ProfileResponse:
         "let document extraction do it. `missing_fields` on the response says "
         "what an audit will still need.\n\n"
         "The owner is taken from your token, never from the request body.\n\n"
+        "**If you omit `name`, it is filled in from your company email "
+        "domain** -- `founder@acme.com` gives `Acme`. It is a starting point, "
+        "not a verified company name: send `name` yourself to set it exactly, "
+        "or correct it later with `PATCH /startups/{id}`. A name you do send "
+        "is never overwritten.\n\n"
+        "Founders (and SACI admins) only. `403` for an investor.\n\n"
         "`409` if you already have a profile: one per founder in v1."
     ),
     responses=error_responses(401, 403, 409, 422),
 )
 async def create_profile(
-    payload: StartupProfileCreate, actor: CurrentUserDep, session: SessionDep
+    payload: StartupProfileCreate, actor: FounderOrAdmin, session: SessionDep
 ) -> ProfileResponse:
     profile = await service.create_profile(
         session, actor, payload.model_dump(exclude_unset=True, mode="json")
