@@ -34,6 +34,7 @@ __all__ = [
     "MatchQuality",
     "Stage",
     "higher_is_better",
+    "quartile_position",
 ]
 
 # Wildcards, stored as ordinary values so a lookup is a plain equality match and

@@ -59,6 +59,12 @@ class BenchmarkMatch:
     quality: MatchQuality
 
 
+# What identifies the cell a band belongs to. Changing any of them relocates a
+# benchmark to a place nobody curated it for, so they are refused on update
+# rather than being quietly applied.
+_KEY_FIELDS: frozenset[str] = frozenset({"sector", "stage", "metric", "region"})
+
+
 def _require_admin(actor: CurrentUser) -> None:
     """Only SACI writes benchmarks (`AUTH.md` section 5)."""
     if actor.role is not Role.ADMIN:
@@ -213,8 +219,21 @@ async def update_benchmark(
     The **key is immutable**: sector, stage, metric, and region identify which
     cell this is, and editing them would silently move a band somewhere it was
     never curated for. Retire the row and create the right one instead.
+
+    That is enforced *here* rather than left to `BenchmarkUpdate` not declaring
+    the fields. The schema stops an HTTP caller, but this is a public service
+    function -- T2.6 and any admin tooling reach it with a plain dict, and a
+    stated invariant nothing checks is worse than no claim at all.
     """
     _require_admin(actor)
+
+    immutable = _KEY_FIELDS & payload.keys()
+    if immutable:
+        raise InvalidRequestError(
+            "A benchmark's key cannot be changed. Retire this band and create "
+            "the one you want instead.",
+            {"field": sorted(immutable)[0], "reason": "immutable_key"},
+        )
 
     benchmark = await BenchmarkRepository(session).get(benchmark_id)
     if benchmark is None:

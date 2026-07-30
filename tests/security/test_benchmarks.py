@@ -140,6 +140,7 @@ class TestEveryWriteIsLogged:
         entries = await AuditLogRepository(db_session).list_for_target(
             target_type="benchmark", target_id=str(created.id)
         )
+        assert entries, "an admin write must reach the audit log"
         assert any(
             entry.action == AuditAction.BENCHMARK_CREATED.value for entry in entries
         )
@@ -153,6 +154,7 @@ class TestEveryWriteIsLogged:
         entries = await AuditLogRepository(db_session).list_for_target(
             target_type="benchmark", target_id=str(created.id)
         )
+        assert entries, "an admin write must reach the audit log"
         assert any(
             entry.action == AuditAction.BENCHMARK_RETIRED.value for entry in entries
         )
@@ -305,6 +307,33 @@ class TestBandIntegrity:
 
         with pytest.raises(ConflictError):
             await service.create_benchmark(db_session, admin, band())
+
+    async def test_the_key_cannot_be_moved(self, db_session: AsyncSession) -> None:
+        """Sector, stage, metric and region say which cell a band is. Editing
+        one relocates a curated band somewhere nobody curated it for.
+
+        Enforced in the service, not only by the request schema -- this is a
+        public function T2.6 reaches with a plain dict.
+        """
+        admin = await actor_with_role(db_session, Role.ADMIN)
+        created = await service.create_benchmark(db_session, admin, band())
+
+        with pytest.raises(InvalidRequestError):
+            await service.update_benchmark(
+                db_session, admin, created.id, {"region": "KE"}
+            )
+
+        assert created.region == "NG", "the row must be untouched"
+
+    async def test_values_can_still_be_revised(self, db_session: AsyncSession) -> None:
+        admin = await actor_with_role(db_session, Role.ADMIN)
+        created = await service.create_benchmark(db_session, admin, band())
+
+        updated = await service.update_benchmark(
+            db_session, admin, created.id, {"p50": Decimal("29")}
+        )
+
+        assert updated.p50 == Decimal("29")
 
     async def test_provenance_survives_the_round_trip(
         self, db_session: AsyncSession
