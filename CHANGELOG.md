@@ -22,6 +22,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   0–100 percentages.*
 
 ### Added
+- **Benchmark knowledge base (T2.3), 2026-07-30.** Five **admin-only**
+  endpoints under `/v1/benchmarks` — create, list, read, update, retire. Bands
+  are keyed by **sector × stage × metric × region** and carry quartiles
+  (`p25`/`p50`/`p75`) plus required `source` and `as_of_date`.
+  - **Not visible to founders or investors** — `403`. Publishing the set would
+    tell a founder exactly what to claim.
+  - `sector` and `region` accept `*` for "any", which is what makes lookup fall
+    back from a sector-and-region band to a global one.
+  - `metric` enum: `gross_margin_percent`, `runway_months`, `ltv_cac_ratio`,
+    `cac_payback_months`, `run_rate_vs_trailing_percent`. Absolute-currency
+    figures are absent by design — no FX conversion means amounts are not
+    comparable across regions.
+  - `higher_is_better` is returned on every band, derived from the metric:
+    above `p75` is excellent for gross margin and poor for CAC payback.
+  - **Retire, not delete** (`POST /v1/benchmarks/{id}/retire`) — an AuditRun
+    cites the benchmark it scored against, so removing a row would strand a
+    founder's explanation. Retired bands stay readable and stop matching.
+  - `409` on a duplicate key; `422` if quartiles are out of order. Every write
+    is recorded in the immutable audit log.
 - **Deterministic financial computation (T2.2), 2026-07-30.** `audit/finance.py`
   computes gross margin, net burn, runway, margin-adjusted LTV, LTV/CAC, CAC
   payback, annual run rate, and run-rate-vs-trailing — all in code, never by the

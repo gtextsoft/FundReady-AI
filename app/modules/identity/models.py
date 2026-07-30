@@ -56,6 +56,13 @@ class AuditAction(StrEnum):
     USER_SUSPENDED = "admin.user_suspended"
     USER_REACTIVATED = "admin.user_reactivated"
 
+    # Benchmark knowledge base (T2.3). Logged because a benchmark is the
+    # yardstick every verdict is measured against -- a bad row is a wrong
+    # verdict for every startup scored against it, so who changed it matters.
+    BENCHMARK_CREATED = "admin.benchmark_created"
+    BENCHMARK_UPDATED = "admin.benchmark_updated"
+    BENCHMARK_RETIRED = "admin.benchmark_retired"
+
     # The one that matters most (DECISIONS.md D8)
     REPORT_REVEALED = "report.revealed"
     REPORT_TIER_CHANGED = "report.tier_changed"
