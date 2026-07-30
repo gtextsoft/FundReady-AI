@@ -10,11 +10,13 @@ import { Mono, Txt, TxtSemi } from '@/components/ui/text';
 import { CompanyCard } from './company-card';
 import { FilterSheet } from './filter-sheet';
 import { C, Font } from '@/theme/tokens';
+import { Unavailable } from '@/components/unavailable';
 import { api, type CompanySummary } from '@/api';
 import type { SortKey } from '@/domain/types';
 import { route } from '@/lib/routes';
 import { useInvestor } from '@/store/investor';
 import { useNotifications } from '@/store/notifications';
+import { useSession } from '@/store/session';
 
 const PAGE = 12;
 
@@ -34,6 +36,8 @@ export function DealflowScreen({ mode }: { mode: 'deal' | 'watch' }) {
   const [rows, setRows] = useState<CompanySummary[]>([]);
   const [total, setTotal] = useState(0);
   const [limit, setLimit] = useState(PAGE);
+  const [error, setError] = useState<unknown>(null);
+  const session = useSession((s) => s.session);
 
   const query = useInvestor((s) => s.query);
   const minScore = useInvestor((s) => s.minScore);
@@ -65,11 +69,20 @@ export function DealflowScreen({ mode }: { mode: 'deal' | 'watch' }) {
   useEffect(() => {
     let live = true;
     // `limit` grows as the list is scrolled — one page request covers it all.
-    api.listCompanies(request, 1, limit).then((page) => {
-      if (!live) return;
-      setRows(page.rows);
-      setTotal(page.total);
-    });
+    api
+      .listCompanies(request, 1, limit)
+      .then((page) => {
+        if (!live) return;
+        setRows(page.rows);
+        setTotal(page.total);
+        setError(null);
+      })
+      .catch((e: unknown) => {
+        if (!live) return;
+        setRows([]);
+        setTotal(0);
+        setError(e);
+      });
     return () => {
       live = false;
     };
@@ -113,7 +126,9 @@ export function DealflowScreen({ mode }: { mode: 'deal' | 'watch' }) {
               ) : null}
             </Pressable>
             <View className="h-[28px] w-[28px] items-center justify-center rounded-full bg-line">
-              <TxtSemi className="text-[10px] text-ink-muted">MA</TxtSemi>
+              <TxtSemi className="text-[10px] text-ink-muted">
+                {(session?.displayName ?? 'I').slice(0, 2).toUpperCase()}
+              </TxtSemi>
             </View>
           </View>
         </View>
@@ -181,24 +196,33 @@ export function DealflowScreen({ mode }: { mode: 'deal' | 'watch' }) {
           ) : null
         }
         ListEmptyComponent={
-          <View className="items-center justify-center gap-[11px] px-6 py-[70px]">
-            <View
-              className="h-[42px] w-[42px] items-center justify-center rounded-[11px]"
-              style={{ borderWidth: 1, borderStyle: 'dashed', borderColor: C.lineDash }}>
-              <Txt className="text-[16px] text-ink-ghost">⌕</Txt>
+          error ? (
+            <View className="px-1 py-6">
+              <Unavailable
+                title={mode === 'watch' ? 'The watchlist is not live' : 'Dealflow is not live'}
+                error={error}
+              />
             </View>
-            <TxtSemi className="text-center text-[14px]">
-              {mode === 'watch' ? 'Your watchlist is empty' : 'No companies match these filters'}
-            </TxtSemi>
-            <Txt className="text-center text-[12.5px] text-ink-dim" style={{ lineHeight: 19 }}>
-              {mode === 'watch'
-                ? 'Star a company from the dealflow table and it will be tracked here with score-change alerts.'
-                : 'Widen the score range or clear a sector to see more of the 24 vetted companies currently listed.'}
-            </Txt>
-            <View className="mt-1 w-[160px]">
-              <Button label="Reset filters" height={36} onPress={clearFilters} />
+          ) : (
+            <View className="items-center justify-center gap-[11px] px-6 py-[70px]">
+              <View
+                className="h-[42px] w-[42px] items-center justify-center rounded-[11px]"
+                style={{ borderWidth: 1, borderStyle: 'dashed', borderColor: C.lineDash }}>
+                <Txt className="text-[16px] text-ink-ghost">⌕</Txt>
+              </View>
+              <TxtSemi className="text-center text-[14px]">
+                {mode === 'watch' ? 'Your watchlist is empty' : 'No companies match these filters'}
+              </TxtSemi>
+              <Txt className="text-center text-[12.5px] text-ink-dim" style={{ lineHeight: 19 }}>
+                {mode === 'watch'
+                  ? 'Star a company from the dealflow table and it will be tracked here with score-change alerts.'
+                  : 'Widen the score range or clear a sector to see more of the companies currently listed.'}
+              </Txt>
+              <View className="mt-1 w-[160px]">
+                <Button label="Reset filters" height={36} onPress={clearFilters} />
+              </View>
             </View>
-          </View>
+          )
         }
       />
 

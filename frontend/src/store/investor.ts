@@ -76,7 +76,12 @@ export const useInvestor = create<InvestorState>((set, get) => ({
   },
 
   async loadWatchlist() {
-    set({ watchlist: await api.getWatchlist() });
+    try {
+      set({ watchlist: await api.getWatchlist() });
+    } catch {
+      // No watchlist endpoint yet. An empty list is the truth, not a guess.
+      set({ watchlist: [] });
+    }
   },
 
   async toggleWatch(id) {

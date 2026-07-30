@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api } from '@/api';
+import { api, isUnavailable } from '@/api';
 import { assess } from '@/domain/scoring';
 import { EMPTY_PROFILE, type Assessment, type FounderProfile } from '@/domain/types';
 
@@ -21,9 +21,17 @@ type FounderState = {
   clearDeckError(): void;
   reset(): void;
 
-  /** Live score computed from whatever has been entered so far. */
+  /**
+   * Provisional score computed on the device from what has been entered.
+   * A heuristic over the form, not an audit — the results screen labels it so.
+   */
   liveAssessment(): Assessment;
-  submit(): Promise<Assessment>;
+  /**
+   * Sends the profile for a real audit. Resolves to `null` while the audit
+   * engine does not exist, which leaves `assessment` unset and keeps the
+   * results screen on its provisional estimate rather than inventing a verdict.
+   */
+  submit(): Promise<Assessment | null>;
 };
 
 /** Which fields each onboarding step requires before it will advance. */
@@ -78,8 +86,15 @@ export const useFounder = create<FounderState>((set, get) => ({
   },
 
   async submit() {
-    const result = await api.submitAssessment(get().profile);
-    set({ assessment: result });
-    return result;
+    try {
+      const result = await api.submitAssessment(get().profile);
+      set({ assessment: result });
+      return result;
+    } catch (error) {
+      // No audit engine yet: fall through to the provisional estimate rather
+      // than blocking the founder on a stage of the product that does not exist.
+      if (isUnavailable(error)) return null;
+      throw error;
+    }
   },
 }));

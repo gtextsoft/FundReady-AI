@@ -19,6 +19,9 @@ const ROLES = [
   { value: 'investor' as Role, label: "I'm investing" },
 ];
 
+/** Mirrors the server's minimum (identity/schemas.py). Kept in step by hand. */
+const MIN_PASSWORD = 12;
+
 /** The headline is the only copy above the form — the subhead was removed. */
 const HEADLINE: Record<Role, string> = {
   founder: 'Get funded on evidence, not vibes.',
@@ -27,10 +30,15 @@ const HEADLINE: Record<Role, string> = {
 
 export default function SignUp() {
   const insets = useSafeAreaInsets();
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
   const [role, setRole] = useState<Role>('founder');
+  const [nameError, setNameError] = useState<string | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
   const [sso, setSso] = useState<DomainSso | null>(null);
 
   const status = useSession((s) => s.status);
@@ -85,18 +93,47 @@ export default function SignUp() {
   }
 
   async function submit() {
+    if (!firstName.trim() || !lastName.trim()) {
+      setNameError('Enter both your first and last name.');
+      return;
+    }
+
+    if (!email.trim()) {
+      setEmailError('Enter your email address.');
+      return;
+    }
+
     if (role === 'founder') {
       const verdict = checkFounderEmail(email);
       if (!verdict.ok) {
         setEmailError(verdict.message);
         return;
       }
-    } else if (email.trim() && !isValidEmail(email)) {
+    } else if (!isValidEmail(email)) {
       setEmailError('That does not look like an email address.');
       return;
     }
 
-    const session = await signUp(email.trim() || 'founder@company.com', password || 'demo-password', role);
+    // The server rejects anything shorter, so say so here rather than
+    // round-tripping to find out.
+    if (password.length < MIN_PASSWORD) {
+      setPasswordError(`Use at least ${MIN_PASSWORD} characters.`);
+      return;
+    }
+
+    // Catches the typo before it becomes an account nobody can log into.
+    if (confirm !== password) {
+      setPasswordError('Both passwords must match.');
+      return;
+    }
+
+    const session = await signUp({
+      email: email.trim(),
+      password,
+      role,
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+    });
     if (session) router.replace(landing);
   }
 
@@ -126,6 +163,34 @@ export default function SignUp() {
           <Segmented options={ROLES} value={role} onChange={switchRole} grow size="md" />
 
           <View className="mt-5 gap-[10px]">
+            <View className="flex-row gap-[10px]">
+              <View className="flex-1">
+                <Field
+                  label="First name"
+                  placeholder="Ada"
+                  value={firstName}
+                  onChangeText={(v) => {
+                    setFirstName(v);
+                    if (nameError) setNameError(null);
+                  }}
+                  autoCapitalize="words"
+                  autoComplete="given-name"
+                />
+              </View>
+              <View className="flex-1">
+                <Field
+                  label="Last name"
+                  placeholder="Nwosu"
+                  value={lastName}
+                  onChangeText={(v) => {
+                    setLastName(v);
+                    if (nameError) setNameError(null);
+                  }}
+                  autoCapitalize="words"
+                  autoComplete="family-name"
+                />
+              </View>
+            </View>
             <Field
               label={role === 'founder' ? 'Company email' : 'Email'}
               placeholder={role === 'investor' ? 'you@fund.com' : 'you@yourcompany.com'}
@@ -142,19 +207,39 @@ export default function SignUp() {
               }
             />
             {!sso ? (
-              <Field
-                label="Password"
-                placeholder="••••••••••"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-                autoComplete="new-password"
-              />
+              <>
+                <Field
+                  label="Password"
+                  placeholder="••••••••••"
+                  value={password}
+                  onChangeText={(value) => {
+                    setPassword(value);
+                    if (passwordError) setPasswordError(null);
+                  }}
+                  secureTextEntry
+                  autoComplete="new-password"
+                  hint={passwordError ? undefined : `At least ${MIN_PASSWORD} characters.`}
+                />
+                <Field
+                  label="Confirm password"
+                  placeholder="••••••••••"
+                  value={confirm}
+                  onChangeText={(value) => {
+                    setConfirm(value);
+                    if (passwordError) setPasswordError(null);
+                  }}
+                  secureTextEntry
+                  autoComplete="new-password"
+                  onSubmitEditing={submit}
+                />
+              </>
             ) : null}
           </View>
 
-          {emailError ? <ErrorNote text={emailError} /> : null}
-          {error && !emailError ? <ErrorNote text={error} /> : null}
+          {nameError ? <ErrorNote text={nameError} /> : null}
+          {emailError && !nameError ? <ErrorNote text={emailError} /> : null}
+          {passwordError && !nameError && !emailError ? <ErrorNote text={passwordError} /> : null}
+          {error && !nameError && !emailError && !passwordError ? <ErrorNote text={error} /> : null}
 
           {sso ? (
             /* The company runs its own identity provider, so we hand off to it

@@ -8,9 +8,9 @@ import { StatusBanner } from '@/components/founder/status-banner';
 import { Mark } from '@/components/ui/mark';
 import { Eyebrow, Mono, Txt, TxtSemi } from '@/components/ui/text';
 import { C, band } from '@/theme/tokens';
-import { gate, hasAccess, type Gate } from '@/domain/access';
+import { gate, hasAccess, isPaid, type Gate } from '@/domain/access';
 import type { FounderAccount } from '@/domain/types';
-import { route } from '@/lib/routes';
+import { route, VERIFY_EMAIL } from '@/lib/routes';
 import { useFounder } from '@/store/founder';
 import { useNotifications } from '@/store/notifications';
 import { useSession } from '@/store/session';
@@ -32,7 +32,7 @@ export default function FounderDashboard() {
   const unread = useNotifications((s) => s.unreadCount());
   const pendingCalls = useNotifications((s) => s.pendingCalls().length);
 
-  // The mock approves verification on a timer, so re-read on every focus.
+  // Verification and billing state change server-side, so re-read on focus.
   useFocusEffect(
     useCallback(() => {
       refreshAccount();
@@ -43,6 +43,7 @@ export default function FounderDashboard() {
   if (!account) return <View className="flex-1 bg-ground" />;
 
   const locked = !hasAccess(account);
+  const paid = isPaid(account);
   const companyName = profile.company || account.companyName || 'Your company';
 
   // Computed from `account` on every render so the compiler re-derives them
@@ -54,10 +55,12 @@ export default function FounderDashboard() {
 
   const goPaywall = () => router.push(route('/founder/paywall'));
   const goVerify = () => router.push(route('/founder/verify'));
+  const goConfirmEmail = () => router.push(VERIFY_EMAIL);
 
   /** A locked module routes to whatever would unlock it, not to a dead end. */
   const openGated = (gate: Gate, destination: string) => () => {
     if (gate.allowed) router.push(route(destination));
+    else if (gate.reason === 'email') goConfirmEmail();
     else if (gate.reason === 'payment') goPaywall();
     else goVerify();
   };
@@ -100,7 +103,12 @@ export default function FounderDashboard() {
       </View>
 
       <View className="mt-3">
-        <StatusBanner account={account} onUnlock={goPaywall} onVerify={goVerify} />
+        <StatusBanner
+          account={account}
+          onUnlock={goPaywall}
+          onVerify={goVerify}
+          onConfirmEmail={goConfirmEmail}
+        />
       </View>
 
       {/* fundability */}
@@ -148,8 +156,8 @@ export default function FounderDashboard() {
         />
         <ModuleTile
           glyph="◇"
-          title={account.paidAt ? 'Your plan' : locked ? 'Unlock access' : 'Trial'}
-          subtitle={account.paidAt ? 'Unlocked — one-off payment' : 'Manage your access'}
+          title={paid ? 'Your plan' : locked ? 'Unlock access' : 'Trial'}
+          subtitle={paid ? 'Unlocked — one-off payment' : 'Manage your access'}
           gate={ALLOWED}
           onPress={goPaywall}
         />

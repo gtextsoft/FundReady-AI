@@ -1,7 +1,7 @@
 import { Pressable, View } from 'react-native';
 import { Mono, Txt, TxtSemi } from '@/components/ui/text';
 import { C } from '@/theme/tokens';
-import { daysLeftInTrial, hasAccess } from '@/domain/access';
+import { daysLeftInTrial, hasAccess, isPaid, TRIAL_DAYS } from '@/domain/access';
 import type { FounderAccount } from '@/domain/types';
 
 type Tone = 'info' | 'warn' | 'danger' | 'ok';
@@ -23,13 +23,30 @@ export function StatusBanner({
   account,
   onUnlock,
   onVerify,
+  onConfirmEmail,
 }: {
   account: FounderAccount;
   onUnlock: () => void;
   onVerify: () => void;
+  onConfirmEmail: () => void;
 }) {
   const locked = !hasAccess(account);
   const days = daysLeftInTrial(account);
+
+  // Ahead of everything else: it is the cheapest gate to clear and it blocks
+  // the same things company verification does.
+  if (!account.emailVerified) {
+    return (
+      <Banner
+        tone="warn"
+        eyebrow="CONFIRM YOUR EMAIL"
+        title="Confirm your email address"
+        body="We need to know you control this address before investors can see you, or before you can upload documents."
+        cta="Confirm email"
+        onPress={onConfirmEmail}
+      />
+    );
+  }
 
   if (locked) {
     return (
@@ -37,7 +54,7 @@ export function StatusBanner({
         tone="danger"
         eyebrow="TRIAL ENDED"
         title="Unlock SACI FundMe to continue"
-        body="Your 14-day trial has finished. A single one-off payment restores everything, permanently."
+        body={`Your ${TRIAL_DAYS}-day trial has finished. A single one-off payment restores everything, permanently.`}
         cta="See what's included"
         onPress={onUnlock}
       />
@@ -82,7 +99,7 @@ export function StatusBanner({
   }
 
   // Verified, and either paid or still inside the trial.
-  if (account.paidAt) return null;
+  if (isPaid(account)) return null;
 
   return (
     <Banner

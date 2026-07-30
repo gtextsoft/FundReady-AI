@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Eyebrow, Mono, Txt, TxtMed, TxtSemi } from '@/components/ui/text';
 import { C } from '@/theme/tokens';
 import type { VerificationStatus } from '@/domain/types';
+import { initials } from '@/lib/format';
 import { route, SIGN_IN } from '@/lib/routes';
 import { useInvestor } from '@/store/investor';
 import { useSession } from '@/store/session';
@@ -45,11 +46,15 @@ export default function InvestorProfile() {
       <View className="flex-row items-center gap-3 rounded-[12px] border border-line bg-surface-1 p-[14px]">
         <View className="h-[44px] w-[44px] items-center justify-center rounded-full border border-line-strong bg-surface-3">
           <TxtSemi className="text-[14px] text-ink-muted">
-            {(session?.displayName ?? 'IN').slice(0, 2).toUpperCase()}
+            {session?.displayName ? initials(session.displayName) : 'IN'}
           </TxtSemi>
         </View>
         <View className="flex-1">
-          <TxtSemi className="text-[15px]">{account?.credentials?.firm || session?.displayName || 'Investor'}</TxtSemi>
+          {/* The person first; the firm is context, and may not exist yet. */}
+          <TxtSemi className="text-[15px]">{session?.displayName ?? 'Investor'}</TxtSemi>
+          {account?.credentials?.firm ? (
+            <Txt className="text-[12px] text-ink-muted">{account.credentials.firm}</Txt>
+          ) : null}
           <Txt className="text-[12px] text-ink-dim">{session?.email ?? 'not signed in'}</Txt>
         </View>
         <View className="rounded-[5px] border border-line-strong px-2 py-[3px]">

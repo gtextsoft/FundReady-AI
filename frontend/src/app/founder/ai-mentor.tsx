@@ -6,7 +6,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { Mono, Txt, TxtSemi } from '@/components/ui/text';
 import { C, Font } from '@/theme/tokens';
-import { api } from '@/api';
+import { api, ApiFailure } from '@/api';
 
 type Message = { id: string; from: 'you' | 'mentor'; text: string };
 
@@ -17,7 +17,7 @@ const SUGGESTIONS = [
 ];
 
 const OPENER =
-  'I can see your assessment. Ask me about your growth, unit economics, margin, market size or deck and I will answer against your own numbers.';
+  'Ask me about your growth, unit economics, margin, market size or deck and I will answer against your own numbers.';
 
 export default function AiMentor() {
   const insets = useSafeAreaInsets();
@@ -35,6 +35,14 @@ export default function AiMentor() {
     try {
       const answer = await api.askMentor(question);
       setMessages((m) => [...m, { id: `a${m.length}`, from: 'mentor', text: answer }]);
+    } catch (e) {
+      // Say why there is no answer. Anything else here would be the model
+      // making something up, which is the one thing this screen must not do.
+      const text =
+        e instanceof ApiFailure
+          ? e.message
+          : 'I could not reach the mentor service. Try again in a moment.';
+      setMessages((m) => [...m, { id: `a${m.length}`, from: 'mentor', text }]);
     } finally {
       setBusy(false);
       requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
