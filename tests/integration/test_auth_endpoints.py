@@ -8,6 +8,7 @@ request goes through the real application.
 import uuid
 from collections.abc import AsyncIterator, Iterator
 
+import pyotp
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -64,36 +65,36 @@ def unique_email() -> str:
     return f"user-{uuid.uuid4().hex}@example.test"
 
 
-def registration(email: str | None = None, **overrides: object) -> dict[str, object]:
-    """A complete, valid registration body. Override one field to test it."""
-    return {
-        "email": email or unique_email(),
-        "password": PASSWORD,
-        "role": "founder",
-        "first_name": "Ada",
-        "last_name": "Nwosu",
-        **overrides,
-    }
-
-
 async def register(client: AsyncClient, email: str, role: str = "founder") -> None:
     response = await client.post(
-        "/v1/auth/register", json=registration(email, role=role)
+        "/v1/auth/register",
+        json={"email": email, "password": PASSWORD, "role": role},
     )
     assert response.status_code == 202, response.text
 
 
 async def login(client: AsyncClient, email: str) -> dict[str, str]:
+    """Log in and return the token pair.
+
+    Since T1.2c the response is discriminated: `status` says whether tokens are
+    present or a second factor is outstanding. This helper covers the
+    no-MFA path.
+    """
     response = await client.post(
         "/v1/auth/login", json={"email": email, "password": PASSWORD}
     )
     assert response.status_code == 200, response.text
-    return dict(response.json())
+    body = response.json()
+    assert body["status"] == "authenticated", body
+    return dict(body["tokens"])
 
 
 class TestRegisterEndpoint:
     async def test_accepts_a_new_founder(self, client: AsyncClient) -> None:
-        response = await client.post("/v1/auth/register", json=registration())
+        response = await client.post(
+            "/v1/auth/register",
+            json={"email": unique_email(), "password": PASSWORD, "role": "founder"},
+        )
 
         assert response.status_code == 202
         assert response.json()["status"] == "pending_verification"
@@ -102,7 +103,8 @@ class TestRegisterEndpoint:
         self, client: AsyncClient
     ) -> None:
         """Byte-for-byte identical, or the endpoint leaks who has an account."""
-        body = registration()
+        email = unique_email()
+        body = {"email": email, "password": PASSWORD, "role": "founder"}
 
         first = await client.post("/v1/auth/register", json=body)
         second = await client.post("/v1/auth/register", json=body)
@@ -114,7 +116,8 @@ class TestRegisterEndpoint:
         self, client: AsyncClient
     ) -> None:
         response = await client.post(
-            "/v1/auth/register", json=registration(role="admin")
+            "/v1/auth/register",
+            json={"email": unique_email(), "password": PASSWORD, "role": "admin"},
         )
 
         assert response.status_code == 422
@@ -122,26 +125,14 @@ class TestRegisterEndpoint:
 
     async def test_unknown_fields_are_rejected(self, client: AsyncClient) -> None:
         response = await client.post(
-            # An attempt to set your own status.
             "/v1/auth/register",
-            json=registration(status="active"),
+            json={
+                "email": unique_email(),
+                "password": PASSWORD,
+                "role": "founder",
+                "status": "active",  # an attempt to set your own status
+            },
         )
-
-        assert response.status_code == 422
-
-    async def test_a_blank_name_is_rejected(self, client: AsyncClient) -> None:
-        """Whitespace is not a name, and the column would silently accept it."""
-        response = await client.post(
-            "/v1/auth/register", json=registration(first_name="   ")
-        )
-
-        assert response.status_code == 422
-
-    async def test_a_missing_name_is_rejected(self, client: AsyncClient) -> None:
-        body = registration()
-        del body["last_name"]
-
-        response = await client.post("/v1/auth/register", json=body)
 
         assert response.status_code == 422
 
@@ -152,7 +143,8 @@ class TestRegisterEndpoint:
         rejected = "xyzzy42"
 
         response = await client.post(
-            "/v1/auth/register", json=registration(password=rejected)
+            "/v1/auth/register",
+            json={"email": unique_email(), "password": rejected, "role": "founder"},
         )
 
         assert response.status_code == 422
@@ -169,6 +161,20 @@ class TestLoginEndpoint:
         assert tokens["token_type"] == "bearer"
         assert tokens["access_token"] and tokens["refresh_token"]
         assert tokens["expires_in"] > 0
+
+    async def test_no_mfa_token_when_mfa_is_off(self, client: AsyncClient) -> None:
+        """The two branches are mutually exclusive, not both populated."""
+        email = unique_email()
+        await register(client, email)
+
+        body = (
+            await client.post(
+                "/v1/auth/login", json={"email": email, "password": PASSWORD}
+            )
+        ).json()
+
+        assert body["status"] == "authenticated"
+        assert body["mfa_token"] is None
 
     async def test_wrong_password_is_401(self, client: AsyncClient) -> None:
         email = unique_email()
@@ -291,3 +297,73 @@ class TestLogoutEndpoint:
         )
 
         assert response.status_code == 204
+
+
+class TestMfaOverHttp:
+    async def test_enrolment_requires_a_token(self, client: AsyncClient) -> None:
+        assert (await client.post("/v1/auth/mfa/enroll")).status_code == 401
+
+    async def test_the_full_enrol_then_challenge_flow(
+        self, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Once MFA is on, the password alone stops returning tokens."""
+        monkeypatch.setenv(
+            "MFA_SECRET_ENCRYPTION_KEY", "a-dev-mfa-key-32-characters-long!!"
+        )
+        get_settings.cache_clear()
+
+        email = unique_email()
+        await register(client, email)
+        tokens = await login(client, email)
+        headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+
+        enrolment = await client.post("/v1/auth/mfa/enroll", headers=headers)
+        assert enrolment.status_code == 200
+        secret = enrolment.json()["secret"]
+        assert "otpauth://" in enrolment.json()["provisioning_uri"]
+
+        confirm = await client.post(
+            "/v1/auth/mfa/confirm",
+            headers=headers,
+            json={"code": pyotp.TOTP(secret, digits=6, interval=30).now()},
+        )
+        assert confirm.status_code == 200
+        recovery_codes = confirm.json()["recovery_codes"]
+        assert len(recovery_codes) == 10
+
+        # Password alone is no longer enough.
+        challenged = await client.post(
+            "/v1/auth/login", json={"email": email, "password": PASSWORD}
+        )
+        body = challenged.json()
+        assert body["status"] == "mfa_required"
+        assert body["tokens"] is None
+        assert body["mfa_token"]
+
+        # The challenge token is not usable as an access token.
+        as_access = await client.get(
+            "/v1/users/me",
+            headers={"Authorization": f"Bearer {body['mfa_token']}"},
+        )
+        assert as_access.status_code == 401
+
+        # A recovery code completes it (the TOTP step was just consumed).
+        verified = await client.post(
+            "/v1/auth/mfa/verify",
+            json={"mfa_token": body["mfa_token"], "code": recovery_codes[0]},
+        )
+        assert verified.status_code == 200
+        assert verified.json()["access_token"]
+
+        # And that recovery code is now spent.
+        replayed = await client.post(
+            "/v1/auth/login", json={"email": email, "password": PASSWORD}
+        )
+        again = await client.post(
+            "/v1/auth/mfa/verify",
+            json={
+                "mfa_token": replayed.json()["mfa_token"],
+                "code": recovery_codes[0],
+            },
+        )
+        assert again.status_code == 401

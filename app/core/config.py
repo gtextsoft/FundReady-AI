@@ -59,17 +59,6 @@ OptionalInt = Annotated[int | None, BeforeValidator(_blank_to_none)]
 """An integer setting that may be left blank in `.env`."""
 
 
-OptionalSecret = Annotated[SecretStr | None, BeforeValidator(_blank_to_none)]
-"""A secret that may be left blank in `.env`.
-
-Blank must collapse to `None`, not to `SecretStr("")`. Code that falls back
-when a secret is unset tests for `None`, so an empty string would satisfy the
-check and then fail downstream -- which is exactly what a blank
-`DATABASE_MIGRATION_URL` did to `resolve_database_url`, breaking every
-migration for anyone who copied `.env.example` unedited.
-"""
-
-
 def _is_blank(value: SecretStr | str | None) -> bool:
     """True when a setting is unset or empty, without unwrapping into a log."""
     if value is None:
@@ -92,27 +81,32 @@ class Settings(BaseSettings):
     app_env: Environment = Environment.DEVELOPMENT
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     api_base_url: str = ""
+    # Where emailed links point. Owned by the mobile client (deep link or
+    # universal link), NOT by this API: mail security scanners prefetch every
+    # URL they see, which would consume a single-use token before the user
+    # ever clicked it. The client extracts the token and POSTs it back.
+    app_link_base_url: str = ""
     # Comma-separated. Parsed by `cors_origins`; kept as a string because
     # pydantic-settings would otherwise try to JSON-decode a list-typed field.
     cors_allowed_origins: str = ""
 
     # -- Database (Neon: serverless Postgres + pgvector) --------------------
-    database_url: OptionalSecret = None
+    database_url: SecretStr | None = None
     # Optional: Neon's direct (non-pooled) endpoint. The pooler is PgBouncer in
     # transaction mode, which is right for the app but not the recommended
     # target for DDL. Falls back to `database_url` when unset.
-    database_migration_url: OptionalSecret = None
+    database_migration_url: SecretStr | None = None
     # Test-only, and never read by the application: a throwaway database (a Neon
     # branch) that the suite may write to. Declared here solely because settings
     # reject unknown keys, and this one legitimately lives in `.env` beside the
     # others -- without a field for it, its presence would stop the service.
-    test_database_url: OptionalSecret = None
+    test_database_url: SecretStr | None = None
 
     # -- Authentication (self-built -- AUTH.md) -----------------------------
     # Signs and verifies our own access tokens. One service does both, so a
     # symmetric key is sufficient; `jwt_key_id` allows rotation and the
     # algorithm is pinned here rather than read from a token header.
-    jwt_secret_key: OptionalSecret = None
+    jwt_secret_key: SecretStr | None = None
     jwt_algorithm: Literal["HS256", "HS384", "HS512"] = "HS256"
     jwt_key_id: str = "k1"
     jwt_issuer: str = "fundready"
@@ -128,41 +122,41 @@ class Settings(BaseSettings):
     argon2_parallelism: int = 1
 
     # Encrypts TOTP secrets at rest, so a database leak does not defeat MFA.
-    mfa_secret_encryption_key: OptionalSecret = None
+    mfa_secret_encryption_key: SecretStr | None = None
 
     # -- Object storage (Cloudflare R2 -- never Postgres) -------------------
     r2_account_id: str = ""
     r2_endpoint_url: str = ""
-    r2_access_key_id: OptionalSecret = None
-    r2_secret_access_key: OptionalSecret = None
+    r2_access_key_id: SecretStr | None = None
+    r2_secret_access_key: SecretStr | None = None
     r2_bucket_documents: str = ""
     r2_bucket_evidence: str = ""
     storage_signed_url_ttl_seconds: int = 900
 
     # -- Queue --------------------------------------------------------------
-    redis_url: OptionalSecret = None
+    redis_url: SecretStr | None = None
     queue_name: str = "fundready"
 
     # -- AI -----------------------------------------------------------------
     # Model ids and budget values are chosen in T2.1/T5.5 (DECISIONS.md D16);
     # left unset here so no model choice is smuggled in as a default.
-    anthropic_api_key: OptionalSecret = None
+    anthropic_api_key: SecretStr | None = None
     ai_model_audit: str = ""
     ai_model_chat: str = ""
     ai_max_output_tokens: OptionalInt = None
     ai_daily_budget_tokens_per_user: OptionalInt = None
 
     # -- Stripe -------------------------------------------------------------
-    stripe_secret_key: OptionalSecret = None
-    stripe_webhook_secret: OptionalSecret = None
+    stripe_secret_key: SecretStr | None = None
+    stripe_webhook_secret: SecretStr | None = None
     stripe_publishable_key: str = ""
 
     # -- Email --------------------------------------------------------------
-    resend_api_key: OptionalSecret = None
+    resend_api_key: SecretStr | None = None
     email_from_address: str = ""
 
     # -- Monitoring ---------------------------------------------------------
-    sentry_dsn: OptionalSecret = None
+    sentry_dsn: SecretStr | None = None
 
     @property
     def is_production(self) -> bool:
@@ -184,9 +178,15 @@ class Settings(BaseSettings):
 
         required: dict[str, SecretStr | str | None] = {
             "DATABASE_URL": self.database_url,
+            "APP_LINK_BASE_URL": self.app_link_base_url,
             "JWT_SECRET_KEY": self.jwt_secret_key,
             "MFA_SECRET_ENCRYPTION_KEY": self.mfa_secret_encryption_key,
             "R2_ACCOUNT_ID": self.r2_account_id,
+            # Required outright rather than derived from the account id: R2 is
+            # reached through this URL, and `core.storage` refuses to build a
+            # client without it (T1.5). A blank endpoint would sign URLs that
+            # point nowhere, which looks like success until an upload vanishes.
+            "R2_ENDPOINT_URL": self.r2_endpoint_url,
             "R2_ACCESS_KEY_ID": self.r2_access_key_id,
             "R2_SECRET_ACCESS_KEY": self.r2_secret_access_key,
             "R2_BUCKET_DOCUMENTS": self.r2_bucket_documents,

@@ -10,10 +10,12 @@ from app.core.config import Environment, Settings, SettingsError, get_settings
 # Secret-looking values, so a leak into an error message is unmistakable.
 PRODUCTION_ENV = {
     "APP_ENV": "production",
+    "APP_LINK_BASE_URL": "https://app.fundready.test",
     "DATABASE_URL": "postgresql://user:dbpassword1@host/db",
     "JWT_SECRET_KEY": "jwt-signing-key-value-long-enough-to-pass-32",
     "MFA_SECRET_ENCRYPTION_KEY": "mfa-encryption-key-value",
     "R2_ACCOUNT_ID": "r2-account-id-value",
+    "R2_ENDPOINT_URL": "https://r2-account-id-value.r2.cloudflarestorage.com",
     "R2_ACCESS_KEY_ID": "r2-access-key-value",
     "R2_SECRET_ACCESS_KEY": "r2-secret-key-value",
     "R2_BUCKET_DOCUMENTS": "fundready-documents",
@@ -120,9 +122,11 @@ class TestProductionGuards:
         "missing",
         [
             "DATABASE_URL",
+            "APP_LINK_BASE_URL",
             "JWT_SECRET_KEY",
             "MFA_SECRET_ENCRYPTION_KEY",
             "R2_ACCOUNT_ID",
+            "R2_ENDPOINT_URL",
             "R2_ACCESS_KEY_ID",
             "R2_SECRET_ACCESS_KEY",
             "R2_BUCKET_DOCUMENTS",

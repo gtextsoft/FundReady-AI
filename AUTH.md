@@ -53,6 +53,11 @@ Role is coarse. The real access decision layers conditions on top (§5).
 - **Email verification is required before any sensitive action** — buying, uploading, discovery, interest. Browsing one's own empty account is permitted while unverified.
 - **Admin: no self-service.** Admins are provisioned only by an existing admin, and that creation is itself audit-logged (§9).
 - Registration responses are **identical whether or not the email already exists** — otherwise the endpoint is an account-enumeration oracle. The differing behaviour is in the email that gets sent, not the API response.
+- **Founders must register with a company email address** (`DECISIONS.md` **D20**). A consumer mailbox provider (`gmail.com`, `outlook.com`, `yahoo.com`, …) is refused with `422` and `details.reason = "consumer_email_domain"`. Investors are **not** restricted — an angel investing personally has no company domain, and the KYC gate (§8) is what establishes who they are.
+  - This rejection is **explicit, not uniform**, and that does not contradict the bullet above. The uniform response protects *account existence*; this answer is about the **domain the caller just typed**, which they already know, and reveals nothing about who has an account. Answering uniformly would be worse: the founder would wait for a verification email that was never going to arrive.
+  - The check runs **before** the duplicate lookup, so a refused signup writes nothing and a corrected retry is not a duplicate.
+  - **The blocklist is a heuristic, not verification.** It recognises the providers people actually use; it cannot enumerate every one, and passing it proves nothing about corporate identity — anyone can buy a domain. What *is* verified is control of the mailbox, because the account stays `pending_verification` until the emailed link is clicked. Never treat "has a company domain" as proof that a company exists or that this person belongs to it.
+  - The verified domain also supplies the **initial company name** on the Startup Profile (`DECISIONS.md` D20). That value is a prefill the founder can change, never an authoritative company name.
 
 ### 3.3 Login
 
@@ -169,7 +174,10 @@ Per `DECISIONS.md` **D8** (SECURITY INVARIANT) — unchanged by the stack move:
 The admin role is the highest-value target — it can reveal any full report — so it is treated accordingly:
 
 - **MFA required** for all admin accounts. Founders/investors: optional but supported.
-- **No self-service admin signup**; provisioned by an existing admin; creation logged.
+- Enrolling requires being logged in, so an admin who has not yet enrolled **is** issued tokens — but `require_role(ADMIN)` refuses every admin capability until `mfa_enabled` is true. The second factor gates the *power*, not the session; there is no window in which admin actions are reachable without it.
+- **No self-service admin signup**; provisioned by an existing admin via `POST /v1/admin/users`; creation logged.
+- **The first admin** is created by `scripts/create_admin.py`, which needs database credentials. Deliberately not an env-gated endpoint: that would be a permanent attack surface existing to be misconfigured once. The bootstrapped account lands `pending_verification` and without MFA, so it grants nothing until both are done, and the script refuses to create a second admin — after the first, use the API so the action is attributable.
+- **An admin cannot lock everyone out.** Suspending or demoting yourself is refused, and so is any action that would leave zero active admins — the only remedy for that is database credentials.
 - **Every admin action is written to the immutable audit log** (who, what, target, when) — especially report reveals, tier changes, and user/role changes.
 - Consider IP allow-listing or a separate admin surface later; v1 enforces MFA + logging.
 - Single admin role in v1; sub-roles can come later.
@@ -186,6 +194,8 @@ The admin role is the highest-value target — it can reveal any full report —
 ## 10. Row-Level Security (optional second wall)
 
 Per D13, RLS is **secondary**. With self-built auth the database has no independent notion of the caller — the application is the only thing that verified the token — so RLS can only enforce what the application tells it.
+
+> **Status (2026-07-30): not enabled. Nothing is behind the app-layer wall yet.** The deployed role `neondb_owner` holds `BYPASSRLS`, which skips row-level security on every table regardless of `ENABLE` *or* `FORCE`. Policies therefore wait on a least-privilege `NOBYPASSRLS` role, provisioned in T5.7 (`DECISIONS.md` **D19**). The SQL below is the target shape, not deployed configuration.
 
 Where enabled, identity is passed **per transaction** and policies read it back:
 
@@ -235,7 +245,7 @@ Notes that matter:
 - [ ] Refresh tokens opaque, hashed at rest, rotating, with family revocation on reuse.
 - [ ] `session_valid_after` bumped on password change, role change, suspension, and reuse detection.
 - [ ] **Ownership checked in the service layer on every object access** (primary wall); other-tenant ids return 404.
-- [ ] RLS policies, where enabled, use `SET LOCAL` — verified not to leak across pooled connections.
+- [ ] RLS policies, where enabled, use `SET LOCAL` — verified not to leak across pooled connections. *(Deferred to T5.7 with the least-privilege role — `DECISIONS.md` D19. Nothing to verify until then: the current role bypasses RLS entirely.)*
 - [ ] Tier serializers applied to every response that carries report data.
 - [ ] KYC and subscription gates enforced server-side from Stripe only.
 - [ ] MFA required for admins; TOTP secrets encrypted at rest; recovery codes hashed.
@@ -300,13 +310,19 @@ Enums:
 |---|---|
 | `POST /v1/auth/register` | Create a founder or investor account |
 | `POST /v1/auth/login` | Email + password → tokens, or an MFA challenge |
-| `POST /v1/auth/mfa/verify` | Complete an MFA challenge → tokens |
+| `POST /v1/auth/mfa/enroll` | Issue a TOTP secret + `otpauth://` URI. Does **not** enable MFA |
+| `POST /v1/auth/mfa/confirm` | Confirm with one code → enables MFA, returns 10 recovery codes (shown once) |
+| `POST /v1/auth/mfa/verify` | Complete an MFA challenge with a TOTP **or** recovery code → tokens |
 | `POST /v1/auth/refresh` | Rotate the refresh token → new token pair |
 | `POST /v1/auth/logout` | Revoke the current refresh token family |
 | `POST /v1/auth/verify-email` | Confirm an email with the emailed token |
 | `POST /v1/auth/password-reset/request` | Begin a reset (uniform response) |
 | `POST /v1/auth/password-reset/confirm` | Complete a reset; ends all sessions |
 | `GET /v1/users/me` | The caller's own profile, role, and gate status |
+| `POST /v1/admin/users` | **Admin-only.** Provision an admin. The only path that creates one |
+| `POST /v1/admin/users/{id}/suspend` | **Admin-only.** Suspend and end all sessions immediately |
+| `POST /v1/admin/users/{id}/reactivate` | **Admin-only.** Lift a suspension |
+| `PATCH /v1/admin/users/{id}/role` | **Admin-only.** Change a role; forces re-authentication |
 
 Client responsibilities:
 
@@ -325,7 +341,7 @@ Client responsibilities:
 - [ ] `identity` module: register, login, refresh (with rotation + reuse detection), logout, email verification, password reset.
 - [ ] MFA: TOTP enrolment/verification, encrypted secrets, hashed recovery codes; enforced for admins.
 - [ ] Per-tier response serializers wired to services.
-- [ ] Optional RLS policies using `SET LOCAL`, plus the server-side role that bypasses them.
+- [ ] Optional RLS policies using `SET LOCAL`, plus the server-side role that bypasses them. *(Deferred to T5.7 — `DECISIONS.md` D19. Requires a least-privilege `NOBYPASSRLS` role first; policies added before it would enforce nothing.)*
 - [ ] Admin manual-provisioning path; audit-log writes on every admin/auth-sensitive action.
 - [ ] Rate limiting on auth endpoints; CORS + secure headers.
 - [ ] `tests/security`: authz, tenant isolation (with RLS off), tier filtering, gate enforcement, refresh rotation + reuse detection, revocation, account enumeration.

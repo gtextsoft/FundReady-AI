@@ -6,11 +6,11 @@ only. Every schema change also requires an Alembic migration under
 """
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, String, false, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, String, false, func
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -46,6 +46,8 @@ class AuditAction(StrEnum):
     # string literal as a credential. These are event names, not secrets.
     USER_PASSWORD_RESET = "user.password_reset"  # noqa: S105
     USER_SESSIONS_REVOKED = "user.sessions_revoked"
+    USER_MFA_ENABLED = "user.mfa_enabled"
+    USER_MFA_RECOVERY_CODE_USED = "user.mfa_recovery_code_used"
     REFRESH_TOKEN_REUSE_DETECTED = "user.refresh_token_reuse_detected"  # noqa: S105
 
     # Admin actions (AUTH.md section 9 -- all of these are logged)
@@ -119,13 +121,6 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
 
-    # Personal names. PII, so they are never written to a log and never
-    # returned to another tenant -- only the owner and an admin ever read them
-    # (CLAUDE.md section 4). Empty-string default rather than NULL so existing
-    # rows stay valid and the application never has to branch on None.
-    first_name: Mapped[str] = mapped_column(String(80), default="", server_default="")
-    last_name: Mapped[str] = mapped_column(String(80), default="", server_default="")
-
     role: Mapped[Role] = mapped_column(
         SAEnum(
             Role,
@@ -148,9 +143,15 @@ class User(Base):
 
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    # Columns land here; the TOTP logic arrives with T1.2c.
     mfa_enabled: Mapped[bool] = mapped_column(default=False, server_default=false())
+    # Encrypted, not hashed: a TOTP secret has to be read back to verify a
+    # code (AUTH.md section 9.1).
     mfa_secret_encrypted: Mapped[str | None] = mapped_column(String(255))
+    # The last TOTP step consumed. Rejecting codes from this step or earlier
+    # is what stops an intercepted code being replayed inside its own
+    # 30-second window. Not in AUTH.md section 15's list; section 9.1
+    # requires the behaviour, so the column is added and the doc updated.
+    mfa_last_used_step: Mapped[int | None] = mapped_column(BigInteger)
 
     # Both are trusted from Stripe only -- never from a client (AUTH.md 8).
     kyc_status: Mapped[KycStatus] = mapped_column(
@@ -187,8 +188,15 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    # `onupdate` is a Python callable, not `func.now()`. A server-side
+    # onupdate leaves the ORM not knowing the new value, so it expires the
+    # attribute and reading it back for a response triggers lazy IO --
+    # which under async SQLAlchemy raises MissingGreenlet. Computing it here
+    # means the value is sent as a parameter and already known.
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=lambda: datetime.now(UTC),
     )
 
     @property
@@ -236,3 +244,75 @@ class RefreshToken(Base):
 
     def __repr__(self) -> str:
         return f"<RefreshToken {self.id} user={self.user_id} family={self.family_id}>"
+
+
+class TokenPurpose(StrEnum):
+    """What a single-use auth token is allowed to do.
+
+    Checked on every lookup. Without it a verification token would also work as
+    a password reset -- an attacker who obtains the weaker one gets the
+    stronger capability for free.
+    """
+
+    EMAIL_VERIFICATION = "email_verification"
+    # noqa: an enum member naming a flow, not a credential.
+    PASSWORD_RESET = "password_reset"  # noqa: S105
+
+
+class AuthToken(Base):
+    """A single-use, expiring token sent by email (AUTH.md sections 12, 15).
+
+    Only the SHA-256 hash is stored; the raw value exists once, in the message
+    that carried it. Consumed by setting `used_at` -- rows are kept rather than
+    deleted so a replay can be told apart from a token that never existed.
+    """
+
+    __tablename__ = "auth_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    purpose: Mapped[TokenPurpose] = mapped_column(
+        SAEnum(
+            TokenPurpose,
+            native_enum=False,
+            length=32,
+            name="token_purpose",
+            values_callable=_by_value,
+        ),
+        index=True,
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"<AuthToken {self.id} purpose={self.purpose} user={self.user_id}>"
+
+
+class MfaRecoveryCode(Base):
+    """A single-use way back in when the authenticator device is gone.
+
+    Stored Argon2id-hashed, exactly like a password: these are credentials, and
+    ten of them are a standing bypass of the second factor if leaked
+    (AUTH.md section 9.1).
+    """
+
+    __tablename__ = "mfa_recovery_codes"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    code_hash: Mapped[str] = mapped_column(String(255))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"<MfaRecoveryCode {self.id} user={self.user_id} used={self.used_at}>"

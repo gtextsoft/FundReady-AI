@@ -104,3 +104,36 @@ Format: **Decision → Why → Constraint (what this means for the code).**
 *Recorded 2026-07-29.*
 **Why:** the PRD describes programs, mentorship, and events as things SACI lists and sells. They share everything that matters — tags, region relevance, pricing, Stripe Checkout, and the link from a readiness gap to a purchase. A separate events module would duplicate all of it to model a difference that is really just two extra fields.
 **Constraint:** a single catalogue model with a type discriminator (`program` · `mentorship` · `event`); events carry date and location. One admin CRUD, one purchase path. Splitting them later is a new decision entry.
+
+### D19 — RLS is deferred to T5.7 behind a least-privilege role, because `neondb_owner` carries `BYPASSRLS`
+*Recorded 2026-07-30. Scopes the RLS half of D13; does not change it.*
+
+**Why:** T1.3 set out to add the optional RLS backstop D13 describes. Probing the live Neon database showed it cannot work as configured:
+
+```
+current_user = neondb_owner    rolsuper = false    rolbypassrls = TRUE
+all 7 public tables owned by neondb_owner, rowsecurity = false, 0 policies
+```
+
+A role holding `BYPASSRLS` skips row-level security on every table unconditionally. This is stronger than the familiar table-owner caveat: `ENABLE ROW LEVEL SECURITY` and `FORCE ROW LEVEL SECURITY` are **both** no-ops for such a role. Writing the policies now would produce SQL that appears in `pg_policies`, reads as protection in a review, and enforces nothing — worse than no RLS, because the second wall would be believed to exist.
+
+Making it real needs a second Postgres role (`NOBYPASSRLS`, least privilege, not the table owner) with `DATABASE_URL` pointed at it while `DATABASE_MIGRATION_URL` stays on the owner. That is Neon provisioning plus `core/config.py`, `.env.example`, and `tests/conftest.py` — the same ground T5.7 already covers, and pointless to do twice.
+
+**Constraint:**
+- The app-layer ownership check (`core/ownership.py`) is, for now, the **only** tenant-isolation wall. D13 already called it the primary one; until T5.7 there is nothing behind it. Treat a missing ownership check accordingly.
+- **T5.7 provisions the role and adds the policies migration.** Enabling RLS without a `NOBYPASSRLS` connection role is not a partial win, it is a false one.
+- Any future test asserting RLS enforcement must run as a non-owner, non-bypassing role, or it proves nothing.
+
+### D20 — Founders register on a company email; the domain seeds the company name
+*Recorded 2026-07-30. New scope, requested by the product owner; not in the PRD.*
+
+**Why:** a company address is a cheap signal that a founder is registering a real business rather than browsing, and the domain is a free, already-verified source for the one profile field the platform would otherwise ask them to type first. Verification is real: an account sits at `pending_verification` until the emailed link is clicked, so by the time any profile exists the founder has demonstrably controlled a mailbox at that domain.
+
+**Constraint:**
+- **Founders only.** Investors are exempt — an angel investing personally has no company domain, and `AUTH.md` §8's KYC gate is what establishes an investor's identity.
+- The refusal is **explicit** (`422`, `details.reason = "consumer_email_domain"`), not folded into registration's uniform response. The uniform response exists to hide *account existence*; this answer concerns the domain the caller just typed and leaks nothing. Answering uniformly would leave a founder waiting for an email that would never arrive.
+- Checked **before** the duplicate lookup, so a refused signup writes nothing.
+- **The blocklist is a heuristic, not a security control.** It cannot enumerate every consumer provider, and passing it proves nothing about corporate identity — a domain costs a few pounds. Never treat "has a company domain" as verification that a company exists or that this person belongs to it.
+- The derived company name is a **prefill**. It is written only when the founder supplies no name, never overwrites one they did supply, and is `None` rather than a guess when nothing sensible can be read. Nothing downstream may treat it as a legal name.
+
+**The tradeoff, accepted knowingly:** this product's own vocabulary includes `Stage.IDEA` and `PRE_SEED` (`intake/fields.py`), and the PRD's premise is converting not-yet-ready startups. Idea-stage founders frequently have no company domain, and a hard block at registration turns them away at the one step where a rejected user simply leaves. The alternative considered was requiring the company address at **profile creation** instead, which preserves the funnel and still guarantees every profile has a verified company domain behind it. The owner chose the hard block at registration. **If signup conversion for early-stage founders disappoints, moving the check to profile creation is the first thing to try** — the rule is one call in `register_user` and the derivation is untouched by the move.

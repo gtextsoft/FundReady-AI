@@ -144,6 +144,12 @@ running:
 All resources live under `/v1`. Timestamps are ISO 8601 UTC, currencies are ISO 4217
 codes, and money is expressed in integer minor units.
 
+Every endpoint publishes a summary, a description, its auth requirement, every
+error code it can return, and at least one example request/response — enforced
+by `tests/unit/test_openapi_contract.py`, so a new route that skips them fails
+CI rather than reaching the mobile developer. Send the access token as
+`Authorization: Bearer <token>` (the `Bearer` scheme in the document).
+
 ### Errors
 
 Every error response — without exception — uses this envelope:

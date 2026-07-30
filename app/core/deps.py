@@ -82,12 +82,21 @@ def require_role(*roles: Role) -> Callable[[CurrentUser], Awaitable[CurrentUser]
 
     Denials are `403` -- the caller is authenticated, just not permitted, so
     the mobile client must not retry after refreshing (AUTH.md section 4.3).
+
+    Admins additionally need MFA enrolled (AUTH.md section 9). This resolves the
+    bootstrap circle -- enrolling requires being logged in -- by letting an
+    unenrolled admin hold a token that can reach the enrolment endpoints and
+    nothing else. No admin capability is ever exercised without a second factor.
     """
     allowed = frozenset(roles)
 
     async def dependency(user: CurrentUserDep) -> CurrentUser:
         if user.role not in allowed:
             raise ForbiddenError
+        if user.role is Role.ADMIN and not user.mfa_enabled:
+            raise ForbiddenError(
+                "Admin accounts must enrol in two-factor authentication first."
+            )
         return user
 
     return dependency

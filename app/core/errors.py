@@ -23,7 +23,7 @@ from typing import Any, ClassVar, Final
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from starlette import status
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import Request
@@ -74,6 +74,38 @@ class ErrorBody(BaseModel):
 
 class ErrorEnvelope(BaseModel):
     """The one and only error response shape in this API."""
+
+    # The most-consulted example in the document: every non-2xx response in the
+    # API looks like this, so it is worth showing rather than describing.
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "error": {
+                        "code": "forbidden",
+                        "message": "You do not have access to this resource.",
+                    }
+                },
+                {
+                    "error": {
+                        "code": "validation_error",
+                        "message": "The request failed validation.",
+                        "details": {
+                            "fields": [
+                                {
+                                    "field": "body.password",
+                                    "reason": (
+                                        "String should have at least 12 characters"
+                                    ),
+                                    "type": "string_too_short",
+                                }
+                            ]
+                        },
+                    }
+                },
+            ]
+        }
+    )
 
     error: ErrorBody
 

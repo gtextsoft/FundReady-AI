@@ -18,6 +18,8 @@ fundready-backend/
 │   │   ├── config.py           # env-driven settings
 │   │   ├── db.py               # engine, session, base
 │   │   ├── security.py         # token verification, current_user, RBAC deps
+│   │   ├── ownership.py        # the object-level ownership check (tenant isolation)
+│   │   ├── storage.py          # Cloudflare R2 (S3 API): signed upload/download URLs
 │   │   ├── errors.py           # error envelope + exception handlers
 │   │   ├── logging.py
 │   │   └── deps.py             # shared FastAPI dependencies
