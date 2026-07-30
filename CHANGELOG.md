@@ -10,6 +10,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Deterministic financial computation (T2.2), 2026-07-30.** `audit/finance.py`
+  computes gross margin, net burn, runway, margin-adjusted LTV, LTV/CAC, CAC
+  payback, annual run rate, and run-rate-vs-trailing — all in code, never by the
+  model (`DECISIONS.md` D9). **No API change yet**: these figures reach clients
+  through the audit report in T2.7. Two conventions the mobile app will meet
+  when they do surface:
+  - **A figure that cannot be computed is `null` with a named reason**
+    (`missing_input`, `no_revenue`, `not_burning`, `no_churn`,
+    `no_acquisition_cost`, `no_contribution`, `no_trailing_revenue`) — never a
+    zero. Render "not known" rather than "0%".
+  - **`net_burn` is positive when burning cash**, negative when generating it.
+  - Figures stay in the profile's own currency; no conversion is performed.
 - **Document upload and download (T1.5), 2026-07-30.** Four endpoints, and
   **the bytes never pass through this API** — they go straight to Cloudflare R2
   on a signed URL, which is why a 25 MB deck does not time out:
