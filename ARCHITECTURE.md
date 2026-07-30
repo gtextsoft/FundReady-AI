@@ -18,6 +18,7 @@ fundready-backend/
 │   │   ├── config.py           # env-driven settings
 │   │   ├── db.py               # engine, session, base
 │   │   ├── security.py         # token verification, current_user, RBAC deps
+│   │   ├── ownership.py        # the object-level ownership check (tenant isolation)
 │   │   ├── errors.py           # error envelope + exception handlers
 │   │   ├── logging.py
 │   │   └── deps.py             # shared FastAPI dependencies

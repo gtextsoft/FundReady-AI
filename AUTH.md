@@ -190,6 +190,8 @@ The admin role is the highest-value target — it can reveal any full report —
 
 Per D13, RLS is **secondary**. With self-built auth the database has no independent notion of the caller — the application is the only thing that verified the token — so RLS can only enforce what the application tells it.
 
+> **Status (2026-07-30): not enabled. Nothing is behind the app-layer wall yet.** The deployed role `neondb_owner` holds `BYPASSRLS`, which skips row-level security on every table regardless of `ENABLE` *or* `FORCE`. Policies therefore wait on a least-privilege `NOBYPASSRLS` role, provisioned in T5.7 (`DECISIONS.md` **D19**). The SQL below is the target shape, not deployed configuration.
+
 Where enabled, identity is passed **per transaction** and policies read it back:
 
 ```sql
@@ -238,7 +240,7 @@ Notes that matter:
 - [ ] Refresh tokens opaque, hashed at rest, rotating, with family revocation on reuse.
 - [ ] `session_valid_after` bumped on password change, role change, suspension, and reuse detection.
 - [ ] **Ownership checked in the service layer on every object access** (primary wall); other-tenant ids return 404.
-- [ ] RLS policies, where enabled, use `SET LOCAL` — verified not to leak across pooled connections.
+- [ ] RLS policies, where enabled, use `SET LOCAL` — verified not to leak across pooled connections. *(Deferred to T5.7 with the least-privilege role — `DECISIONS.md` D19. Nothing to verify until then: the current role bypasses RLS entirely.)*
 - [ ] Tier serializers applied to every response that carries report data.
 - [ ] KYC and subscription gates enforced server-side from Stripe only.
 - [ ] MFA required for admins; TOTP secrets encrypted at rest; recovery codes hashed.
@@ -334,7 +336,7 @@ Client responsibilities:
 - [ ] `identity` module: register, login, refresh (with rotation + reuse detection), logout, email verification, password reset.
 - [ ] MFA: TOTP enrolment/verification, encrypted secrets, hashed recovery codes; enforced for admins.
 - [ ] Per-tier response serializers wired to services.
-- [ ] Optional RLS policies using `SET LOCAL`, plus the server-side role that bypasses them.
+- [ ] Optional RLS policies using `SET LOCAL`, plus the server-side role that bypasses them. *(Deferred to T5.7 — `DECISIONS.md` D19. Requires a least-privilege `NOBYPASSRLS` role first; policies added before it would enforce nothing.)*
 - [ ] Admin manual-provisioning path; audit-log writes on every admin/auth-sensitive action.
 - [ ] Rate limiting on auth endpoints; CORS + secure headers.
 - [ ] `tests/security`: authz, tenant isolation (with RLS off), tier filtering, gate enforcement, refresh rotation + reuse detection, revocation, account enumeration.

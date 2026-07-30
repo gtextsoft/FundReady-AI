@@ -10,6 +10,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Changed
+- **Tenant isolation consolidated into one check (T1.3), 2026-07-30.** The ownership
+  rule that was private to `intake` now lives in `core/ownership.py`, so every
+  founder-owned table that follows (documents T1.5, tasks T3.1, evidence T3.5)
+  applies the identical decision instead of re-implementing it. Behaviour is
+  unchanged and **no API endpoint changed**: another founder's id still returns
+  `404` rather than `403`, so the API does not confirm which ids exist.
+- **Postgres RLS is deferred to T5.7 (`DECISIONS.md` D19), 2026-07-30.** The deployed
+  database role carries `BYPASSRLS`, which makes both `ENABLE` and `FORCE ROW LEVEL
+  SECURITY` no-ops — policies written now would enforce nothing while appearing in
+  `pg_policies` as though they did. They wait on a least-privilege role provisioned at
+  deployment. Until then the app-layer ownership check is the only wall, not merely
+  the primary one. No client impact.
 - **Build queue corrected against the PRD, 2026-07-29** — a trace of PRD §4/§5 and
   `AUTH.md` against `TASKS.md` found six requirements with no task: the immutable
   audit log, email verification/password reset, MFA, admin user management, the

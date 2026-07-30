@@ -12,45 +12,37 @@ Selects the tier serializer for every response carrying report data
 check is the primary defence and Postgres RLS is only a backstop
 (DECISIONS.md D13). Every function that reaches a profile by id goes through
 `_authorise`, and a founder asking for someone else's profile gets **404, not
-403** -- a 403 would confirm the id exists (AUTH.md section 6).
+403** -- a 403 would confirm the id exists (AUTH.md section 6). The decision
+itself lives in `core.ownership` (T1.3) so every founder-owned table that
+follows applies the identical rule.
 """
 
-import logging
 import uuid
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ConflictError, NotFoundError
-from app.core.security import CurrentUser, Role
+from app.core.ownership import owned_or_404
+from app.core.security import CurrentUser
 from app.modules.intake.fields import REQUIRED_COLUMNS, REQUIRED_FIELDS
 from app.modules.intake.models import StartupProfile
 from app.modules.intake.repository import StartupProfileRepository
 
-logger = logging.getLogger(__name__)
+# One wording for both denials -- "no such profile" and "not yours" must read
+# identically, so the message is fixed here rather than typed per call site
+# where the two could drift apart (AUTH.md section 6).
+_DENIED = "No such startup profile."
 
 
 def _authorise(profile: StartupProfile | None, actor: CurrentUser) -> StartupProfile:
     """Return the profile only if this caller is entitled to it.
 
-    A missing profile and someone else's profile are the same answer on purpose.
-    Distinguishing them turns the endpoint into an existence oracle: an attacker
-    walking ids could map which ones are real (AUTH.md section 6).
-
-    SACI admins see everything (AUTH.md section 2); investors reach startups
-    through the summary tier in T4.2, never through here.
+    The rule itself is `core.ownership.owned_or_404`; this only binds the
+    message. Kept as the module's single door so a new function reaching a
+    profile by id has an obvious thing to call.
     """
-    if profile is None:
-        raise NotFoundError("No such startup profile.")
-    if actor.role is Role.ADMIN:
-        return profile
-    if profile.owner_id != actor.id:
-        logger.info(
-            "cross-tenant profile access refused",
-            extra={"context": {"actor_role": actor.role.value}},
-        )
-        raise NotFoundError("No such startup profile.")
-    return profile
+    return owned_or_404(profile, actor, message=_DENIED)
 
 
 def missing_fields(profile: StartupProfile) -> list[str]:
