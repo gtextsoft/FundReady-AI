@@ -163,6 +163,16 @@ export interface FundMeApi {
    */
   confirmEmail(token: string): Promise<void>;
 
+  // ── two-factor ──────────────────────────────────────────
+  /**
+   * Finish a login that came back `mfa_required`.
+   *
+   * Takes the challenge token from that response plus a six-digit
+   * authenticator code, or one recovery code. A code is accepted once —
+   * replaying it inside its own window is refused.
+   */
+  verifyMfa(mfaToken: string, code: string): Promise<Session>;
+
   // ── accounts ────────────────────────────────────────────
   /** Trial window, payment state and verification status for the founder. */
   getFounderAccount(): Promise<FounderAccount>;

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api, ApiFailure, type Role, type Session } from '@/api';
+import { MfaRequired } from '@/api/http';
 import { checkFounderEmail } from '@/domain/email';
 import type { FounderAccount, InvestorAccount } from '@/domain/types';
 import { storage } from '@/lib/storage';
@@ -17,8 +18,17 @@ type SessionState = {
   investorAccount: InvestorAccount | null;
   error: string | null;
   busy: boolean;
+  /**
+   * Set when a password was accepted but a second factor is outstanding. It
+   * grants nothing on its own and expires in five minutes; the code screen
+   * exchanges it for a real session.
+   */
+  mfaToken: string | null;
 
   restore(): Promise<void>;
+  /** Finish an `mfa_required` login with an authenticator or recovery code. */
+  verifyMfa(code: string): Promise<Session | null>;
+  clearMfa(): void;
   signIn(email: string, password: string): Promise<Session | null>;
   signUp(registration: {
     email: string;
@@ -53,6 +63,7 @@ export const useSession = create<SessionState>((set, get) => ({
   investorAccount: null,
   error: null,
   busy: false,
+  mfaToken: null,
 
   async restore() {
     const raw = await storage.get(KEY);
@@ -84,17 +95,48 @@ export const useSession = create<SessionState>((set, get) => ({
   },
 
   async signIn(email, password) {
-    set({ busy: true, error: null });
+    set({ busy: true, error: null, mfaToken: null });
     try {
       const session = await api.signIn({ email, password });
       await storage.set(KEY, JSON.stringify(session));
       set({ status: 'signedIn', session, role: session.role, busy: false });
       await get().refreshAccount();
       return session;
-    } catch {
+    } catch (e) {
+      // Not a failure: the password was right and a code is outstanding.
+      if (e instanceof MfaRequired) {
+        set({ busy: false, mfaToken: e.mfaToken });
+        return null;
+      }
       set({ busy: false, error: 'We could not sign you in. Check your email and password.' });
       return null;
     }
+  },
+
+  async verifyMfa(code) {
+    const mfaToken = get().mfaToken;
+    if (!mfaToken) {
+      set({ error: 'That sign-in attempt expired. Please start again.' });
+      return null;
+    }
+
+    set({ busy: true, error: null });
+    try {
+      const session = await api.verifyMfa(mfaToken, code);
+      await storage.set(KEY, JSON.stringify(session));
+      set({ status: 'signedIn', session, role: session.role, busy: false, mfaToken: null });
+      await get().refreshAccount();
+      return session;
+    } catch {
+      // One message for a wrong code, a replayed code and an expired
+      // challenge alike — the server does not distinguish them either.
+      set({ busy: false, error: 'That code was not accepted. Try the current one.' });
+      return null;
+    }
+  },
+
+  clearMfa() {
+    set({ mfaToken: null, error: null });
   },
 
   async signUp({ email, password, role, firstName, lastName }) {
@@ -153,6 +195,7 @@ export const useSession = create<SessionState>((set, get) => ({
       founderAccount: null,
       investorAccount: null,
       error: null,
+      mfaToken: null,
     });
   },
 

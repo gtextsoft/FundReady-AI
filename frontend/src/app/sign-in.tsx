@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { Mark } from '@/components/ui/mark';
 import { Txt, TxtMed, TxtSemi } from '@/components/ui/text';
-import { homeFor } from '@/lib/routes';
+import { homeFor, MFA } from '@/lib/routes';
 import { useSession } from '@/store/session';
 
 /**
@@ -30,7 +30,13 @@ export default function SignIn() {
 
   async function submit() {
     const session = await signIn(email.trim(), password);
-    if (session) router.replace(homeFor(session.role));
+    if (session) {
+      router.replace(homeFor(session.role));
+      return;
+    }
+    // No session and no error means the password was accepted and a second
+    // factor is outstanding, not that anything went wrong.
+    if (useSession.getState().mfaToken) router.push(MFA);
   }
 
   return (

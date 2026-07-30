@@ -166,6 +166,33 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
 type TokenPair = { access_token: string; refresh_token: string; expires_in: number };
 
+/**
+ * Login does not return tokens directly.
+ *
+ * `authenticated` carries them; `mfa_required` carries a short-lived
+ * `mfa_token` instead, which grants nothing until it is exchanged along with a
+ * code at `/v1/auth/mfa/verify`. Branch on `status` -- never assume `tokens`.
+ */
+type LoginResponse = {
+  status: 'authenticated' | 'mfa_required';
+  tokens: TokenPair | null;
+  mfa_token: string | null;
+};
+
+/**
+ * Raised when the password was right but a second factor is outstanding.
+ * The session store catches it and sends the user to the code screen.
+ */
+export class MfaRequired extends Error {
+  readonly mfaToken: string;
+
+  constructor(mfaToken: string) {
+    super('A verification code is required to finish signing in.');
+    this.name = 'MfaRequired';
+    this.mfaToken = mfaToken;
+  }
+}
+
 type MeResponse = {
   id: string;
   email: string;
@@ -223,11 +250,8 @@ function sessionFrom(me: MeResponse): Session {
   };
 }
 
-async function logIn(creds: Credentials): Promise<Session> {
-  const pair = await request<TokenPair>('/v1/auth/login', {
-    method: 'POST',
-    body: { email: creds.email.trim().toLowerCase(), password: creds.password },
-  });
+/** Store a fresh pair and resolve who it belongs to. */
+async function establish(pair: TokenPair): Promise<Session> {
   await saveTokens({ access: pair.access_token, refresh: pair.refresh_token });
   try {
     return sessionFrom(await fetchMe());
@@ -236,6 +260,25 @@ async function logIn(creds: Credentials): Promise<Session> {
     await clearTokens();
     throw error;
   }
+}
+
+async function logIn(creds: Credentials): Promise<Session> {
+  const result = await request<LoginResponse>('/v1/auth/login', {
+    method: 'POST',
+    body: { email: creds.email.trim().toLowerCase(), password: creds.password },
+  });
+
+  if (result.status === 'mfa_required') {
+    if (!result.mfa_token) {
+      throw new ApiFailure('server', 'The server asked for a code but sent no challenge.');
+    }
+    throw new MfaRequired(result.mfa_token);
+  }
+
+  if (!result.tokens) {
+    throw new ApiFailure('server', 'The server reported success but returned no tokens.');
+  }
+  return establish(result.tokens);
 }
 
 /** Every method with no endpoint behind it fails the same, nameable way. */
@@ -260,18 +303,19 @@ export const httpApi: FundMeApi = {
       throw new ApiFailure('validation', 'personal_email_domain');
     }
 
+    // NOTE: `firstName`/`lastName` are collected but deliberately NOT sent.
+    // The register schema rejects unknown fields, and personal names are not
+    // on it yet -- sending them would 422 the whole registration. Add the two
+    // lines back the moment the backend accepts them.
+    void firstName;
+    void lastName;
+
     // Registration answers 202 with no tokens, and answers identically whether
     // or not the address was already taken, so we cannot tell from it whether
     // an account was created. Logging in straight after is what proves it.
     await request<unknown>('/v1/auth/register', {
       method: 'POST',
-      body: {
-        email: email.trim().toLowerCase(),
-        password,
-        role,
-        first_name: firstName.trim(),
-        last_name: lastName.trim(),
-      },
+      body: { email: email.trim().toLowerCase(), password, role },
     });
 
     try {
@@ -309,7 +353,13 @@ export const httpApi: FundMeApi = {
     await clearTokens();
   },
 
-  requestPasswordReset: () => notYet<void>('Password reset', 'T1.2b'),
+  async requestPasswordReset(email: string) {
+    // Always 202, whether or not the address has an account.
+    await request<unknown>('/v1/auth/password-reset/request', {
+      method: 'POST',
+      body: { email: email.trim().toLowerCase() },
+    });
+  },
 
   // ── accounts ────────────────────────────────────────────
   async getFounderAccount() {
@@ -340,8 +390,27 @@ export const httpApi: FundMeApi = {
   },
 
   // ── email verification ──────────────────────────────────
-  resendVerificationEmail: () => notYet<void>('Email verification', 'T1.2b'),
-  confirmEmail: () => notYet<void>('Email verification', 'T1.2b'),
+  // The verification email points at the app, not the API: mail scanners
+  // prefetch links, which would spend the single-use token before the person
+  // ever clicked. The client lifts the token out and posts it here.
+  async confirmEmail(token: string) {
+    await request<void>('/v1/auth/verify-email', {
+      method: 'POST',
+      body: { token: token.trim() },
+    });
+  },
+
+  // No resend endpoint exists; registration sends the only message so far.
+  resendVerificationEmail: () => notYet<void>('Resending the verification email', 'no endpoint yet'),
+
+  /** Exchange the login challenge and a code for a real session. */
+  async verifyMfa(mfaToken: string, code: string) {
+    const pair = await request<TokenPair>('/v1/auth/mfa/verify', {
+      method: 'POST',
+      body: { mfa_token: mfaToken, code: code.trim() },
+    });
+    return establish(pair);
+  },
 
   // ── verification ────────────────────────────────────────
   submitCompanyRegistration: () => notYet('Company verification', 'T1.4'),

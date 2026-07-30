@@ -14,6 +14,7 @@ export const SIGN_IN = '/sign-in' as Href;
 export const SIGN_UP = '/sign-up' as Href;
 export const ONBOARDING = '/onboarding' as Href;
 export const VERIFY_EMAIL = '/verify-email' as Href;
+export const MFA = '/mfa' as Href;
 
 /** Where a role belongs after authenticating. */
 export function homeFor(role: Role): Href {
