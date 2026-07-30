@@ -119,7 +119,13 @@ def validate_password(password: str, email: str) -> None:
 
 
 async def register_user(
-    session: AsyncSession, *, email: str, password: str, role: Role
+    session: AsyncSession,
+    *,
+    email: str,
+    password: str,
+    role: Role,
+    first_name: str = "",
+    last_name: str = "",
 ) -> User | None:
     """Register a founder or investor.
 
@@ -146,6 +152,8 @@ async def register_user(
         password_hash=hash_password(password),
         role=role,
         status=AccountStatus.PENDING_VERIFICATION,
+        first_name=first_name,
+        last_name=last_name,
     )
     await record_action(
         session,
@@ -153,6 +161,8 @@ async def register_user(
         actor_id=user.id,
         target_type="user",
         target_id=user.id,
+        # Role only. The names are PII and the audit log is append-only, so
+        # anything written here can never be redacted (CLAUDE.md section 4).
         details={"role": role.value},
     )
     return user

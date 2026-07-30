@@ -119,6 +119,13 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
 
+    # Personal names. PII, so they are never written to a log and never
+    # returned to another tenant -- only the owner and an admin ever read them
+    # (CLAUDE.md section 4). Empty-string default rather than NULL so existing
+    # rows stay valid and the application never has to branch on None.
+    first_name: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    last_name: Mapped[str] = mapped_column(String(80), default="", server_default="")
+
     role: Mapped[Role] = mapped_column(
         SAEnum(
             Role,

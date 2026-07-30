@@ -45,7 +45,12 @@ async def register(
     payload: RegisterRequest, session: SessionDep
 ) -> RegistrationAccepted:
     await service.register_user(
-        session, email=payload.email, password=payload.password, role=payload.role
+        session,
+        email=payload.email,
+        password=payload.password,
+        role=payload.role,
+        first_name=payload.first_name,
+        last_name=payload.last_name,
     )
     return RegistrationAccepted()
 

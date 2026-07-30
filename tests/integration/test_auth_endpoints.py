@@ -64,10 +64,21 @@ def unique_email() -> str:
     return f"user-{uuid.uuid4().hex}@example.test"
 
 
+def registration(email: str | None = None, **overrides: object) -> dict[str, object]:
+    """A complete, valid registration body. Override one field to test it."""
+    return {
+        "email": email or unique_email(),
+        "password": PASSWORD,
+        "role": "founder",
+        "first_name": "Ada",
+        "last_name": "Nwosu",
+        **overrides,
+    }
+
+
 async def register(client: AsyncClient, email: str, role: str = "founder") -> None:
     response = await client.post(
-        "/v1/auth/register",
-        json={"email": email, "password": PASSWORD, "role": role},
+        "/v1/auth/register", json=registration(email, role=role)
     )
     assert response.status_code == 202, response.text
 
@@ -82,10 +93,7 @@ async def login(client: AsyncClient, email: str) -> dict[str, str]:
 
 class TestRegisterEndpoint:
     async def test_accepts_a_new_founder(self, client: AsyncClient) -> None:
-        response = await client.post(
-            "/v1/auth/register",
-            json={"email": unique_email(), "password": PASSWORD, "role": "founder"},
-        )
+        response = await client.post("/v1/auth/register", json=registration())
 
         assert response.status_code == 202
         assert response.json()["status"] == "pending_verification"
@@ -94,8 +102,7 @@ class TestRegisterEndpoint:
         self, client: AsyncClient
     ) -> None:
         """Byte-for-byte identical, or the endpoint leaks who has an account."""
-        email = unique_email()
-        body = {"email": email, "password": PASSWORD, "role": "founder"}
+        body = registration()
 
         first = await client.post("/v1/auth/register", json=body)
         second = await client.post("/v1/auth/register", json=body)
@@ -107,8 +114,7 @@ class TestRegisterEndpoint:
         self, client: AsyncClient
     ) -> None:
         response = await client.post(
-            "/v1/auth/register",
-            json={"email": unique_email(), "password": PASSWORD, "role": "admin"},
+            "/v1/auth/register", json=registration(role="admin")
         )
 
         assert response.status_code == 422
@@ -116,14 +122,26 @@ class TestRegisterEndpoint:
 
     async def test_unknown_fields_are_rejected(self, client: AsyncClient) -> None:
         response = await client.post(
+            # An attempt to set your own status.
             "/v1/auth/register",
-            json={
-                "email": unique_email(),
-                "password": PASSWORD,
-                "role": "founder",
-                "status": "active",  # an attempt to set your own status
-            },
+            json=registration(status="active"),
         )
+
+        assert response.status_code == 422
+
+    async def test_a_blank_name_is_rejected(self, client: AsyncClient) -> None:
+        """Whitespace is not a name, and the column would silently accept it."""
+        response = await client.post(
+            "/v1/auth/register", json=registration(first_name="   ")
+        )
+
+        assert response.status_code == 422
+
+    async def test_a_missing_name_is_rejected(self, client: AsyncClient) -> None:
+        body = registration()
+        del body["last_name"]
+
+        response = await client.post("/v1/auth/register", json=body)
 
         assert response.status_code == 422
 
@@ -134,8 +152,7 @@ class TestRegisterEndpoint:
         rejected = "xyzzy42"
 
         response = await client.post(
-            "/v1/auth/register",
-            json={"email": unique_email(), "password": rejected, "role": "founder"},
+            "/v1/auth/register", json=registration(password=rejected)
         )
 
         assert response.status_code == 422

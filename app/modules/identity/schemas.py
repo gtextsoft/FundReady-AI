@@ -42,6 +42,22 @@ _EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$")
 Password = Annotated[str, Field(min_length=12, max_length=256)]
 
 
+def _clean_name(value: str) -> str:
+    """Collapse whitespace and reject a name that is only whitespace.
+
+    Deliberately not a character allow-list: real names carry accents,
+    apostrophes, hyphens and scripts far outside ASCII, and rejecting them
+    turns a legitimate user away for having the wrong sort of name.
+    """
+    cleaned = " ".join(value.split())
+    if not cleaned:
+        raise ValueError("must not be blank")
+    return cleaned
+
+
+PersonName = Annotated[str, Field(min_length=1, max_length=80)]
+
+
 class _Request(BaseModel):
     """Base for request bodies: unknown fields are an error, not ignored."""
 
@@ -73,6 +89,17 @@ class RegisterRequest(_EmailMixin):
     role: Literal[Role.FOUNDER, Role.INVESTOR] = Field(
         description="`founder` or `investor`. Admin accounts cannot be self-created.",
     )
+    first_name: PersonName = Field(
+        description="Given name, as the person writes it.", examples=["Ada"]
+    )
+    last_name: PersonName = Field(
+        description="Family name, as the person writes it.", examples=["Nwosu"]
+    )
+
+    @field_validator("first_name", "last_name")
+    @classmethod
+    def _check_name(cls, value: str) -> str:
+        return _clean_name(value)
 
 
 class RegistrationAccepted(BaseModel):
@@ -123,6 +150,8 @@ class UserResponse(BaseModel):
 
     id: uuid.UUID
     email: str
+    first_name: str
+    last_name: str
     role: Role
     status: AccountStatus
     email_verified: bool

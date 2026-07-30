@@ -87,9 +87,23 @@ class UserRepository:
         return result
 
     async def create(
-        self, *, email: str, password_hash: str, role: Role, status: AccountStatus
+        self,
+        *,
+        email: str,
+        password_hash: str,
+        role: Role,
+        status: AccountStatus,
+        first_name: str = "",
+        last_name: str = "",
     ) -> User:
-        user = User(email=email, password_hash=password_hash, role=role, status=status)
+        user = User(
+            email=email,
+            password_hash=password_hash,
+            role=role,
+            status=status,
+            first_name=first_name,
+            last_name=last_name,
+        )
         self._session.add(user)
         await self._session.flush()
         return user
