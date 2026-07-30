@@ -9,6 +9,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Profile field values are now validated against their declared kind
+  (T2.2a), 2026-07-30.** `POST /v1/startups` and `PATCH /v1/startups/{id}`
+  return **`422`** naming each offending field when a value contradicts its
+  `FieldKind`: a `percent` outside 0–100, a `money_minor` that is not a whole
+  number, a negative count or amount, an implausible `year`, or a boolean where
+  a number belongs. Previously the kinds were documentation and anything
+  scalar stored. All problems in one payload are reported together, not one per
+  round trip. *Client impact: a form sending `45000.50` for a money field, or a
+  percentage as a fraction, will now be rejected — send integer minor units and
+  0–100 percentages.*
+
 ### Added
 - **Deterministic financial computation (T2.2), 2026-07-30.** `audit/finance.py`
   computes gross margin, net burn, runway, margin-adjusted LTV, LTV/CAC, CAC

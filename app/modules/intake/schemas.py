@@ -22,6 +22,7 @@ from app.modules.intake.fields import (
     FIELDS_BY_NAME,
     FieldSource,
     Stage,
+    value_error,
 )
 
 __all__ = [
@@ -141,6 +142,32 @@ class _ProfileBody(BaseModel):
         unknown = sorted(set(value) - set(FIELDS_BY_NAME))
         if unknown:
             raise ValueError(f"unknown profile fields: {', '.join(unknown)}")
+        return value
+
+    @field_validator("fields")
+    @classmethod
+    def _values_match_their_kind(
+        cls, value: dict[str, ProfileFieldValue] | None
+    ) -> dict[str, ProfileFieldValue] | None:
+        """Enforce the contract `FieldKind` declares.
+
+        Without this the kinds are documentation: `PERCENT` says "0-100" and
+        `150` stores fine, `MONEY_MINOR` says integer minor units and
+        `45000.50` stores fine. Every one of these feeds `finance.py`, so a
+        wrong type becomes a wrong figure in a founder's report.
+
+        It does **not** catch a percentage sent as a fraction -- see
+        `fields.value_error`; that needs cross-field plausibility (T2.5).
+        """
+        if value is None:
+            return value
+        problems = [
+            f"{name}: {problem}"
+            for name, field in sorted(value.items())
+            if (problem := value_error(FIELDS_BY_NAME[name], field.value)) is not None
+        ]
+        if problems:
+            raise ValueError("; ".join(problems))
         return value
 
 

@@ -180,6 +180,70 @@ PROFILE_FIELDS: Final[tuple[FieldSpec, ...]] = (
 
 FIELDS_BY_NAME: Final[dict[str, FieldSpec]] = {f.name: f for f in PROFILE_FIELDS}
 
+# A founded year outside this range is a typo, not a business. Wide on purpose:
+# family firms predate the platform's target market by a long way, and next year
+# is allowed because a founder registering early is not an error.
+_EARLIEST_FOUNDED_YEAR: Final[int] = 1800
+_LATEST_FOUNDED_YEAR: Final[int] = 2100
+
+
+def value_error(spec: FieldSpec, value: object) -> str | None:
+    """Why this value is unacceptable for this field, or `None` if it is fine.
+
+    The kinds in `FieldKind` are a *contract*, and until this existed they were
+    only a comment: `PERCENT` said "0-100" and nothing stopped a founder -- or
+    document extraction (T2.4) -- storing `0.02` meaning 2%.
+
+    **What this cannot catch, and nothing at this layer can:** a percentage
+    submitted as a fraction. `0.02` meaning 2% is indistinguishable from `0.02`
+    meaning 0.02%, because a genuinely low-churn business exists and refusing it
+    would be wrong. That ambiguity yields a lifetime value a hundred times too
+    high and belongs to cross-field plausibility checking -- the consistency
+    stage (T2.5), which can weigh churn against customer counts and revenue
+    rather than judging one number in isolation.
+
+    `None` is always allowed: a field present but empty is a placeholder, and
+    `missing_fields` already reports it as absent.
+    """
+    if value is None:
+        return None
+
+    # `isinstance(True, int)` is True in Python, so booleans are excluded by
+    # hand everywhere a number is wanted -- otherwise `"team_size": true`
+    # quietly stores a team of one.
+    match spec.kind:
+        case FieldKind.TEXT:
+            if not isinstance(value, str):
+                return "must be text"
+        case FieldKind.BOOLEAN:
+            if not isinstance(value, bool):
+                return "must be true or false"
+        case FieldKind.INTEGER:
+            if not isinstance(value, int) or isinstance(value, bool):
+                return "must be a whole number"
+            if value < 0:
+                return "cannot be negative"
+        case FieldKind.MONEY_MINOR:
+            if not isinstance(value, int) or isinstance(value, bool):
+                return "must be an integer in minor units (e.g. 4500000 = 45,000.00)"
+            if value < 0:
+                return "cannot be negative"
+        case FieldKind.PERCENT:
+            if not isinstance(value, int | float) or isinstance(value, bool):
+                return "must be a number"
+            if not 0 <= value <= 100:
+                return "must be between 0 and 100 -- a percentage, not a fraction"
+        case FieldKind.YEAR:
+            if not isinstance(value, int) or isinstance(value, bool):
+                return "must be a four-digit year"
+            if not _EARLIEST_FOUNDED_YEAR <= value <= _LATEST_FOUNDED_YEAR:
+                return (
+                    f"must be between {_EARLIEST_FOUNDED_YEAR} "
+                    f"and {_LATEST_FOUNDED_YEAR}"
+                )
+    return None
+
+
 # The indexed columns. Required for an audit too, but they are not in the JSONB
 # document, so completeness has to consider both.
 REQUIRED_COLUMNS: Final[tuple[str, ...]] = (
