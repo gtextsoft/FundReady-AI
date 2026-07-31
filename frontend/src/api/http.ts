@@ -1,3 +1,6 @@
+import { Platform } from 'react-native';
+import Constants from 'expo-constants';
+
 import { companyNameFromEmail, isPersonalEmailDomain } from '@/domain/email';
 import { storage } from '@/lib/storage';
 import type { VerificationStatus } from '@/domain/types';
@@ -24,7 +27,44 @@ import { TRIAL_DAYS } from '@/domain/access';
  * with a real call. The contract and the screens do not change.
  */
 
-const BASE_URL = (process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000').replace(/\/+$/, '');
+/** The API port. Only used when the host is inferred rather than configured. */
+const DEV_API_PORT = 8000;
+
+/**
+ * Where the API lives.
+ *
+ * `EXPO_PUBLIC_API_URL` wins when it is set -- that is what staging and
+ * production will use. With it unset, the host is taken from whatever address
+ * served this bundle and the API port substituted.
+ *
+ * That inference exists because a phone cannot reach `localhost` (on a device,
+ * that is the device), so development otherwise needs the machine's LAN
+ * address baked in at bundle time -- and DHCP moves it. Reusing the dev
+ * server's own host means the app follows the machine wherever it lands, with
+ * no edit and no rebuild.
+ */
+function resolveBaseUrl(): string {
+  const configured = process.env.EXPO_PUBLIC_API_URL?.trim();
+  if (configured) return configured.replace(/\/+$/, '');
+
+  // Native (Expo Go): the dev server's address, e.g. "192.168.0.139:8081".
+  // Populated only in a development build, which is exactly when it is wanted.
+  const hostUri = Constants.expoConfig?.hostUri ?? Constants.expoGoConfig?.debuggerHost;
+  const fromExpo = hostUri?.split('/')[0]?.split(':')[0];
+  if (fromExpo) return `http://${fromExpo}:${DEV_API_PORT}`;
+
+  // Web: `hostUri` is not populated there, so read the address the page was
+  // actually served from. Without this branch a LAN-served web preview calls
+  // localhost, which the browser then blocks as a private-network request.
+  if (Platform.OS === 'web' && typeof globalThis.location !== 'undefined') {
+    const { hostname, protocol } = globalThis.location;
+    if (hostname) return `${protocol}//${hostname}:${DEV_API_PORT}`;
+  }
+
+  return `http://localhost:${DEV_API_PORT}`;
+}
+
+const BASE_URL = resolveBaseUrl();
 
 /** Access + refresh live together; they are only ever valid as a pair. */
 const TOKENS_KEY = 'saci.fundme.tokens';
