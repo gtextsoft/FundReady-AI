@@ -124,6 +124,11 @@ class TestEnvExampleStaysCurrent:
         parse this asserts on never happens during the suite. `.env.example` is
         the only copy in git, and it is what operators copy from.
 
+        **The guard is therefore one-directional.** The file that actually broke
+        was `.env`, which is gitignored and cannot be asserted on from here, so
+        a hand-edit that reintroduces the pattern there will not fail anything.
+        The rule applies to both files; only this one can be enforced.
+
         Put the comment on its own line above the key.
         """
         example = Path(__file__).resolve().parents[2] / ".env.example"
