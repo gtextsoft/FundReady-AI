@@ -196,8 +196,9 @@ export class MfaRequired extends Error {
 type MeResponse = {
   id: string;
   email: string;
-  first_name: string;
-  last_name: string;
+  // Nullable: accounts created before the columns existed carry no name.
+  first_name: string | null;
+  last_name: string | null;
   role: 'founder' | 'investor' | 'admin';
   status: 'pending_verification' | 'active' | 'suspended';
   email_verified: boolean;
@@ -233,9 +234,12 @@ function sessionFrom(me: MeResponse): Session {
       'Admin accounts are managed in the SACI console, not in the app.',
     );
   }
-  const given = `${me.first_name} ${me.last_name}`.trim();
-  // Accounts predating the name fields have none; fall back to the address so
-  // the UI still has something to address them by.
+  const firstName = me.first_name ?? '';
+  const lastName = me.last_name ?? '';
+  const given = `${firstName} ${lastName}`.trim();
+
+  // Accounts predating the name columns carry none, so fall back to the
+  // address rather than showing an empty header.
   const handle = me.email.split('@')[0] || 'there';
   const fromEmail = handle.replace(/[._-]+/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
 
@@ -244,8 +248,8 @@ function sessionFrom(me: MeResponse): Session {
     userId: me.id,
     email: me.email,
     role: me.role,
-    firstName: me.first_name,
-    lastName: me.last_name,
+    firstName,
+    lastName,
     displayName: given || fromEmail,
   };
 }
@@ -303,19 +307,18 @@ export const httpApi: FundMeApi = {
       throw new ApiFailure('validation', 'personal_email_domain');
     }
 
-    // NOTE: `firstName`/`lastName` are collected but deliberately NOT sent.
-    // The register schema rejects unknown fields, and personal names are not
-    // on it yet -- sending them would 422 the whole registration. Add the two
-    // lines back the moment the backend accepts them.
-    void firstName;
-    void lastName;
-
     // Registration answers 202 with no tokens, and answers identically whether
     // or not the address was already taken, so we cannot tell from it whether
     // an account was created. Logging in straight after is what proves it.
     await request<unknown>('/v1/auth/register', {
       method: 'POST',
-      body: { email: email.trim().toLowerCase(), password, role },
+      body: {
+        email: email.trim().toLowerCase(),
+        password,
+        role,
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+      },
     });
 
     try {
