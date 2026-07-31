@@ -109,6 +109,39 @@ class TestEnvExampleStaysCurrent:
             "these keys no longer exist and would stop the service from starting"
         )
 
+    def test_a_blank_key_carries_no_inline_comment(self) -> None:
+        """An inline comment after a *blank* key is read as that key's value.
+
+        The stripping is conditional, which is what makes this so easy to miss:
+        `APP_ENV=development  # ...` parses as `development`, but
+        `AI_MODEL_AUDIT=      # ...` parses as the comment sentence itself. It
+        turned the audit model id into `"# strongest model: ..."` -- a 404 on
+        the first real API call -- and did the same to `CORS_ALLOWED_ORIGINS`,
+        `R2_ENDPOINT_URL`, and `STRIPE_WEBHOOK_SECRET`.
+
+        **No other test can catch this**: `conftest` sets `env_file = None` so a
+        developer's `.env` cannot decide a test outcome, which also means the
+        parse this asserts on never happens during the suite. `.env.example` is
+        the only copy in git, and it is what operators copy from.
+
+        **The guard is therefore one-directional.** The file that actually broke
+        was `.env`, which is gitignored and cannot be asserted on from here, so
+        a hand-edit that reintroduces the pattern there will not fail anything.
+        The rule applies to both files; only this one can be enforced.
+
+        Put the comment on its own line above the key.
+        """
+        example = Path(__file__).resolve().parents[2] / ".env.example"
+        offenders = [
+            line
+            for line in example.read_text(encoding="utf-8").splitlines()
+            if "=" in line
+            and not line.lstrip().startswith("#")
+            and line.split("=", 1)[1].strip().startswith("#")
+        ]
+
+        assert not offenders, f"move the comment above the key: {offenders}"
+
 
 class TestProductionGuards:
     def test_complete_production_config_is_accepted(

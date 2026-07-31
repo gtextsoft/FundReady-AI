@@ -58,7 +58,10 @@ include = ["app*"]
 [tool.ruff]
 target-version = "py311"
 line-length = 88
-extend-exclude = ["migrations/versions"]
+# `docs/skills-reference` is vendored third-party material, kept verbatim under
+# its own MIT licence (see its README). Linting it would mean editing it, and an
+# edited reference is no longer the thing it references.
+extend-exclude = ["migrations/versions", "docs/skills-reference"]
 
 [tool.ruff.lint]
 select = [

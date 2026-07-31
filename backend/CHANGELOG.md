@@ -15,8 +15,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   alike. A registration body without them is rejected with **`422`**.
   *Client impact: any existing call to this endpoint breaks until the two
   fields are added.* No API version bump was made — this endpoint has no
-  released consumers yet. **If the mobile client is already calling it, say so
-  and this needs `/v2` instead** (`CLAUDE.md` §6).
+  released consumers yet.
+  - **Answered 2026-07-31: the mobile client IS calling this endpoint, and it
+    is broken right now.** `frontend/src/api/index.ts` points at the live API
+    with no mock, and `signUp` in `frontend/src/api/http.ts` deliberately omits
+    both fields — its own comment says *"the register schema rejects unknown
+    fields… Add the two lines back the moment the backend accepts them."* That
+    moment has arrived, so every mobile registration currently gets a `422`.
+    **No `/v2` is proposed:** the endpoint has no *released* consumers, the
+    client already collects and validates both names on its sign-up screen, and
+    the fix is the two lines its author left a note to restore. Versioning an
+    unreleased endpoint would cost the mobile developer more than the two-line
+    change it exists to spare them. **Owner's call** — say so and `/v2` is the
+    alternative. Either way the mobile developer needs telling today.
   - Validation is deliberately permissive about **what a name may contain**:
     1–100 characters, whitespace trimmed, control characters stripped, and **no
     alphabet restriction**. Diacritics, non-Latin scripts, apostrophes, spaces,
@@ -46,6 +57,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   0–100 percentages.*
 
 ### Added
+- **Audit rubric v1 (T2.6), 2026-07-30.** `audit/rubric/v1` — 11 scored
+  dimensions with explicit criteria, versioned and immutable once published.
+  **No endpoint or contract change:** internal, and not yet reachable from the
+  API (scoring is wired up in T2.7/T2.8).
+  - Seven universal-core dimensions apply to both verdicts; `scalability` is
+    fundability-only; `owner_independence`, `transferability`, and
+    `revenue_durability` are saleability-only.
+  - Every score carries citations to the submitted data. A dimension with
+    nothing to go on returns `insufficient_data` rather than a low score —
+    absent and bad are never collapsed.
+  - When no benchmark matches, the rubric reasons from first principles and
+    lowers confidence. It never invents a band (D11).
+  - Financial figures arrive pre-computed from `audit/finance.py`; the prompt
+    marks them authoritative and forbids recomputation (D9).
+  - Recorded on every AuditRun as `rubric_version` `v1` plus prompt ref
+    `audit_scoring@1`, so a past audit stays explainable (D12).
 - **AI client with model tiering (T2.1), 2026-07-30.** `app/ai/` — the single
   chokepoint for every Claude API call. **No endpoint or contract change:** this
   is internal plumbing the audit engine (T2.4–T2.7) and chat (T4.4) build on,

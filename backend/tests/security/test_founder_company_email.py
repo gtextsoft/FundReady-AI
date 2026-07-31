@@ -327,6 +327,12 @@ class TestProfileCreationIsAFounderCapability:
                 "email": consumer_email(),
                 "password": PASSWORD,
                 "role": "founder",
+                # Valid, so the only thing wrong with this request is the
+                # address. Without them the body fails schema validation first
+                # and returns a *different* 422 -- the assertion below would be
+                # checking that a missing name is reported, not the domain rule.
+                "first_name": "Ada",
+                "last_name": "Tester",
             },
         )
 
