@@ -134,12 +134,23 @@ Run all four locally before pushing — they are exactly what CI runs.
 
 ## API documentation
 
-The OpenAPI document is the source of truth for the mobile developer. With the app
-running:
+**Start at [`CLIENTS.md`](CLIENTS.md)** — the integration guide for the three
+roles across two surfaces: **founders and investors on mobile, SACI admins on
+web**. It covers the auth lifecycle, refresh rotation, the error envelope, the
+upload flow, every enum, and what is not built yet. The OpenAPI document is the
+source of truth for individual endpoints; `CLIENTS.md` is the narrative that
+tells a client developer how they fit together.
+
+With the app running:
 
 - Swagger UI — `/docs`
 - ReDoc — `/redoc`
 - OpenAPI JSON — `/openapi.json`
+
+Without running anything, [`docs/openapi.json`](docs/openapi.json) is the same
+document, committed for codegen and review diffs. Regenerate it with
+`python scripts/export_openapi.py` in the same commit as any endpoint change —
+`tests/unit/test_client_guide.py` fails when it goes stale.
 
 All resources live under `/v1`. Timestamps are ISO 8601 UTC, currencies are ISO 4217
 codes, and money is expressed in integer minor units.
@@ -226,6 +237,7 @@ Request path is strictly **router → service → repository**. See `ARCHITECTUR
 
 | File | What it covers |
 |---|---|
+| `CLIENTS.md` | **Client integration guide** — founders/investors (mobile), SACI admin (web) |
 | `CLAUDE.md` | Session rules and security/AI guardrails — read first |
 | `AGENTS.md` | Stack, commands, conventions, definition of done |
 | `ARCHITECTURE.md` | Folder structure, layer boundaries, where files go |

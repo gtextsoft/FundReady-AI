@@ -1,0 +1,3816 @@
+{
+  "components": {
+    "schemas": {
+      "AccountStatus": {
+        "description": "Account lifecycle state (AUTH.md section 15).",
+        "enum": [
+          "pending_verification",
+          "active",
+          "suspended"
+        ],
+        "title": "AccountStatus",
+        "type": "string"
+      },
+      "BenchmarkCreate": {
+        "additionalProperties": false,
+        "description": "Add one peer-group band.\n\nThe key -- sector, stage, metric, region -- identifies the cell. Sector and\nregion accept `*` for \"any\", which is what makes the last rung of the\nlookup fallback chain possible.",
+        "examples": [
+          {
+            "as_of_date": "2026-06-30",
+            "metric": "gross_margin_percent",
+            "p25": "18.0000",
+            "p50": "27.5000",
+            "p75": "36.0000",
+            "region": "NG",
+            "sample_size": 42,
+            "sector": "last-mile delivery",
+            "source": "SACI portfolio review, Q2 2026",
+            "stage": "seed"
+          }
+        ],
+        "properties": {
+          "as_of_date": {
+            "description": "When the data was gathered. **Required** -- benchmarks go stale, and a date makes that visible rather than silent.",
+            "format": "date",
+            "title": "As Of Date",
+            "type": "string"
+          },
+          "metric": {
+            "$ref": "#/components/schemas/BenchmarkMetric",
+            "description": "Which figure this bands. Absolute-currency figures are absent by design: the platform does no FX conversion, so only dimensionless ratios and month counts are comparable across regions."
+          },
+          "p25": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "description": "Lower quartile.",
+            "title": "P25"
+          },
+          "p50": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "description": "Median.",
+            "title": "P50"
+          },
+          "p75": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "description": "Upper quartile.",
+            "title": "P75"
+          },
+          "region": {
+            "description": "ISO 3166-1 alpha-2, or `*` for global.",
+            "maxLength": 2,
+            "minLength": 1,
+            "title": "Region",
+            "type": "string"
+          },
+          "sample_size": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How many companies the band came from.",
+            "title": "Sample Size"
+          },
+          "sector": {
+            "description": "Free text, matched case-insensitively. `*` for a band that applies to any sector.",
+            "maxLength": 120,
+            "title": "Sector",
+            "type": "string"
+          },
+          "source": {
+            "description": "Where these figures came from. **Required** -- a verdict cites its evidence, and a benchmark with no provenance cannot be cited.",
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Source",
+            "type": "string"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/Stage",
+            "description": "Matched **exactly** at lookup -- a seed band never serves a growth company."
+          }
+        },
+        "required": [
+          "sector",
+          "stage",
+          "metric",
+          "region",
+          "p25",
+          "p50",
+          "p75",
+          "source",
+          "as_of_date"
+        ],
+        "title": "BenchmarkCreate",
+        "type": "object"
+      },
+      "BenchmarkMetric": {
+        "description": "The figures worth comparing against a peer group.\n\nEvery value is a field on `audit.finance.FinancialSummary`.\n\n**The absolute-currency figures are excluded on purpose.** `net_burn_minor`\nand `annual_run_rate_minor` are amounts, not ratios, and the platform does\nno currency conversion (`finance.py`) -- so a naira burn has no meaningful\ncomparison against a benchmark gathered in dollars. Everything here is\ndimensionless or in months, which is exactly why it travels across regions\nunchanged. Adding an amount to this list would mean either an FX feed or a\nsilently wrong comparison.",
+        "enum": [
+          "gross_margin_percent",
+          "runway_months",
+          "ltv_cac_ratio",
+          "cac_payback_months",
+          "run_rate_vs_trailing_percent"
+        ],
+        "title": "BenchmarkMetric",
+        "type": "string"
+      },
+      "BenchmarkResponse": {
+        "description": "A stored band, as an admin sees it.",
+        "examples": [
+          {
+            "as_of_date": "2026-06-30",
+            "created_at": "2026-07-30T09:00:00Z",
+            "higher_is_better": true,
+            "id": "1f0c9a2b-7d34-4e51-9a6f-2c8b3d4e5f60",
+            "is_active": true,
+            "metric": "gross_margin_percent",
+            "p25": "18.0000",
+            "p50": "27.5000",
+            "p75": "36.0000",
+            "region": "NG",
+            "sample_size": 42,
+            "sector": "last-mile delivery",
+            "source": "SACI portfolio review, Q2 2026",
+            "stage": "seed",
+            "updated_at": "2026-07-30T09:00:00Z"
+          }
+        ],
+        "properties": {
+          "as_of_date": {
+            "format": "date",
+            "title": "As Of Date",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "higher_is_better": {
+            "description": "Whether a larger value is the better one. Derived from the metric, not stored -- being above p75 is excellent for gross margin and poor for CAC payback.",
+            "title": "Higher Is Better",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "description": "Retired bands stay readable so past audits remain explainable, but lookup ignores them.",
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "metric": {
+            "$ref": "#/components/schemas/BenchmarkMetric"
+          },
+          "p25": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "P25",
+            "type": "string"
+          },
+          "p50": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "P50",
+            "type": "string"
+          },
+          "p75": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "P75",
+            "type": "string"
+          },
+          "region": {
+            "title": "Region",
+            "type": "string"
+          },
+          "sample_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Size"
+          },
+          "sector": {
+            "title": "Sector",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/Stage"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sector",
+          "stage",
+          "metric",
+          "region",
+          "p25",
+          "p50",
+          "p75",
+          "sample_size",
+          "source",
+          "as_of_date",
+          "is_active",
+          "created_at",
+          "updated_at",
+          "higher_is_better"
+        ],
+        "title": "BenchmarkResponse",
+        "type": "object"
+      },
+      "BenchmarkUpdate": {
+        "additionalProperties": false,
+        "description": "Revise a band's values or provenance.\n\nThe key is **not** editable. Sector, stage, metric, and region say which\ncell this is; moving them would silently relocate a band to a place nobody\ncurated it for. Retire the row and create the right one instead.",
+        "examples": [
+          {
+            "p50": "29.0000",
+            "source": "SACI portfolio review, Q3 2026"
+          }
+        ],
+        "properties": {
+          "as_of_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of Date"
+          },
+          "p25": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P25"
+          },
+          "p50": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P50"
+          },
+          "p75": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P75"
+          },
+          "sample_size": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Size"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "title": "BenchmarkUpdate",
+        "type": "object"
+      },
+      "ChangeRoleRequest": {
+        "additionalProperties": false,
+        "description": "Move a user between roles.",
+        "examples": [
+          {
+            "role": "investor"
+          }
+        ],
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/Role",
+            "description": "`founder`, `investor`, or `admin`."
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "title": "ChangeRoleRequest",
+        "type": "object"
+      },
+      "DocumentKind": {
+        "description": "What the founder says this file is.\n\nThe three named in `fundready-prd.md` \u00a74.1, plus an escape hatch. It steers\nextraction (T2.4) -- a cap table and a financial model are read for\ndifferent things -- so it is the founder's declaration, not a fact, and\nextraction must cope with being told the wrong one.",
+        "enum": [
+          "deck",
+          "financials",
+          "cap_table",
+          "other"
+        ],
+        "title": "DocumentKind",
+        "type": "string"
+      },
+      "DocumentResponse": {
+        "description": "A document's metadata. The bytes live in object storage.",
+        "examples": [
+          {
+            "content_type": "application/pdf",
+            "created_at": "2026-07-30T08:00:00Z",
+            "filename": "kanmi-seed-deck.pdf",
+            "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+            "kind": "deck",
+            "scan_status": "skipped",
+            "size_bytes": 2418123,
+            "startup_id": "3f2b1c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "status": "ready",
+            "updated_at": "2026-07-30T08:01:12Z"
+          }
+        ],
+        "properties": {
+          "content_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What storage reported after upload. `null` until confirmed.",
+            "title": "Content Type"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/DocumentKind"
+          },
+          "scan_status": {
+            "$ref": "#/components/schemas/ScanStatus",
+            "description": "Malware scan result. **No scanner is wired yet**, so uploads settle at `skipped` rather than being reported `clean` (TASKS.md T5.5)."
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Actual bytes stored. `null` until confirmed.",
+            "title": "Size Bytes"
+          },
+          "startup_id": {
+            "format": "uuid",
+            "title": "Startup Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DocumentStatus",
+            "description": "`pending` until you call complete; `ready` once confirmed and accepted; `rejected` if it failed validation, in which case the file was deleted."
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "startup_id",
+          "kind",
+          "filename",
+          "content_type",
+          "size_bytes",
+          "status",
+          "scan_status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DocumentResponse",
+        "type": "object"
+      },
+      "DocumentStatus": {
+        "description": "Where an upload has got to.",
+        "enum": [
+          "pending",
+          "ready",
+          "rejected"
+        ],
+        "title": "DocumentStatus",
+        "type": "string"
+      },
+      "DownloadTicket": {
+        "description": "A short-lived URL that reads one document.",
+        "examples": [
+          {
+            "download_url": "https://<account>.r2.cloudflarestorage.com/...",
+            "expires_in": 900
+          }
+        ],
+        "properties": {
+          "download_url": {
+            "description": "`GET` this directly. It is a bearer credential for one file -- do not log it, share it, or put it somewhere it outlives its TTL.",
+            "title": "Download Url",
+            "type": "string"
+          },
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "download_url",
+          "expires_in"
+        ],
+        "title": "DownloadTicket",
+        "type": "object"
+      },
+      "Environment": {
+        "description": "Deployment environment.",
+        "enum": [
+          "development",
+          "staging",
+          "production"
+        ],
+        "title": "Environment",
+        "type": "string"
+      },
+      "ErrorBody": {
+        "description": "The body of an error response.",
+        "properties": {
+          "code": {
+            "description": "Stable, machine-readable error code. Branch on this.",
+            "examples": [
+              "forbidden"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional structured context. Never contains submitted values.",
+            "title": "Details"
+          },
+          "message": {
+            "description": "Human-readable explanation. May change; do not parse.",
+            "examples": [
+              "You do not have access to this resource."
+            ],
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ErrorBody",
+        "type": "object"
+      },
+      "ErrorEnvelope": {
+        "description": "The one and only error response shape in this API.",
+        "examples": [
+          {
+            "error": {
+              "code": "forbidden",
+              "message": "You do not have access to this resource."
+            }
+          },
+          {
+            "error": {
+              "code": "validation_error",
+              "details": {
+                "fields": [
+                  {
+                    "field": "body.password",
+                    "reason": "String should have at least 12 characters",
+                    "type": "string_too_short"
+                  }
+                ]
+              },
+              "message": "The request failed validation."
+            }
+          }
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "ErrorEnvelope",
+        "type": "object"
+      },
+      "FieldSource": {
+        "description": "Where a field's value came from.\n\nRecorded per field because the audit has to cite its evidence\n(CLAUDE.md section 5) and a founder's own claim is not the same kind of\ninput as a figure read out of their financials.",
+        "enum": [
+          "founder",
+          "document",
+          "inferred"
+        ],
+        "title": "FieldSource",
+        "type": "string"
+      },
+      "HealthResponse": {
+        "description": "Service liveness.",
+        "examples": [
+          {
+            "environment": "production",
+            "status": "ok",
+            "version": "0.1.0"
+          }
+        ],
+        "properties": {
+          "environment": {
+            "$ref": "#/components/schemas/Environment"
+          },
+          "status": {
+            "const": "ok",
+            "description": "Always `ok` when the API is serving.",
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "description": "Deployed API version.",
+            "examples": [
+              "0.1.0"
+            ],
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "version",
+          "environment"
+        ],
+        "title": "HealthResponse",
+        "type": "object"
+      },
+      "KycStatus": {
+        "description": "Investor identity verification, trusted from Stripe only (AUTH.md 8).",
+        "enum": [
+          "none",
+          "pending",
+          "verified",
+          "failed"
+        ],
+        "title": "KycStatus",
+        "type": "string"
+      },
+      "LoginRequest": {
+        "additionalProperties": false,
+        "description": "Email and password.",
+        "examples": [
+          {
+            "email": "founder@example.com",
+            "password": "correct-horse-battery-staple"
+          }
+        ],
+        "properties": {
+          "email": {
+            "examples": [
+              "founder@example.com"
+            ],
+            "maxLength": 320,
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 256,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "LoginRequest",
+        "type": "object"
+      },
+      "LoginResponse": {
+        "description": "The outcome of a login attempt.\n\n**Branch on `status`.** `authenticated` means `tokens` is present and the\nsession is live. `mfa_required` means the password was accepted but a second\nfactor is outstanding: `mfa_token` is present instead, and must be sent to\n`POST /v1/auth/mfa/verify` together with the code. `mfa_token` is not an\naccess token and grants nothing on its own.",
+        "examples": [
+          {
+            "status": "authenticated",
+            "tokens": {
+              "access_token": "eyJhbGciOiJIUzI1NiIsImtpZCI6ImsxIn0.eyJzdWIiOiI3Yzll.EXAMPLE",
+              "expires_in": 900,
+              "refresh_token": "N2Q4ZjFhYzQtM2I5ZS00ZjJhLTk4YzEtMGU3YjRkNmE5ZjEy",
+              "token_type": "bearer"
+            }
+          },
+          {
+            "mfa_token": "eyJhbGciOiJIUzI1NiJ9.eyJ0eXAiOiJtZmFfY2hhbGxlbmdlIn0.EXAMPLE",
+            "status": "mfa_required"
+          }
+        ],
+        "properties": {
+          "mfa_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present when `status` is `mfa_required`. Expires in 5 minutes.",
+            "title": "Mfa Token"
+          },
+          "status": {
+            "enum": [
+              "authenticated",
+              "mfa_required"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tokens": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TokenPairResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present when `status` is `authenticated`."
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "LoginResponse",
+        "type": "object"
+      },
+      "LogoutRequest": {
+        "additionalProperties": false,
+        "description": "The refresh token whose family should be revoked.",
+        "examples": [
+          {
+            "refresh_token": "N2Q4ZjFhYzQtM2I5ZS00ZjJhLTk4YzEtMGU3YjRkNmE5ZjEy"
+          }
+        ],
+        "properties": {
+          "refresh_token": {
+            "maxLength": 512,
+            "title": "Refresh Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh_token"
+        ],
+        "title": "LogoutRequest",
+        "type": "object"
+      },
+      "MfaConfirmRequest": {
+        "additionalProperties": false,
+        "description": "Prove the authenticator holds the secret, then enable MFA.",
+        "examples": [
+          {
+            "code": "123456"
+          }
+        ],
+        "properties": {
+          "code": {
+            "description": "Six-digit authenticator code.",
+            "maxLength": 32,
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "MfaConfirmRequest",
+        "type": "object"
+      },
+      "MfaEnrolmentResponse": {
+        "description": "A secret to enrol against. MFA is **not** active until confirmed.",
+        "examples": [
+          {
+            "provisioning_uri": "otpauth://totp/fundready:founder%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=fundready&digits=6&period=30",
+            "secret": "JBSWY3DPEHPK3PXP"
+          }
+        ],
+        "properties": {
+          "provisioning_uri": {
+            "description": "`otpauth://` URI to render as a QR code.",
+            "title": "Provisioning Uri",
+            "type": "string"
+          },
+          "secret": {
+            "description": "Base32 TOTP secret, for manual entry.",
+            "title": "Secret",
+            "type": "string"
+          }
+        },
+        "required": [
+          "secret",
+          "provisioning_uri"
+        ],
+        "title": "MfaEnrolmentResponse",
+        "type": "object"
+      },
+      "MfaRecoveryCodesResponse": {
+        "description": "Shown exactly once.\n\nThe codes are stored hashed, so they cannot be shown again. Each works\nonce, and using one is audit-logged.",
+        "examples": [
+          {
+            "recovery_codes": [
+              "A1B2C-D3E4F",
+              "G5H6I-J7K8L",
+              "M9N0O-P1Q2R",
+              "S3T4U-V5W6X",
+              "Y7Z8A-B9C0D",
+              "E1F2G-H3I4J",
+              "K5L6M-N7O8P",
+              "Q9R0S-T1U2V",
+              "W3X4Y-Z5A6B",
+              "C7D8E-F9G0H"
+            ]
+          }
+        ],
+        "properties": {
+          "recovery_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Recovery Codes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "recovery_codes"
+        ],
+        "title": "MfaRecoveryCodesResponse",
+        "type": "object"
+      },
+      "MfaVerifyRequest": {
+        "additionalProperties": false,
+        "description": "Complete an MFA login with a TOTP code or a recovery code.",
+        "examples": [
+          {
+            "code": "123456",
+            "mfa_token": "eyJhbGciOiJIUzI1NiJ9.eyJ0eXAiOiJtZmFfY2hhbGxlbmdlIn0.EXAMPLE"
+          },
+          {
+            "code": "A1B2C-D3E4F",
+            "mfa_token": "eyJhbGciOiJIUzI1NiJ9.eyJ0eXAiOiJtZmFfY2hhbGxlbmdlIn0.EXAMPLE"
+          }
+        ],
+        "properties": {
+          "code": {
+            "description": "Six-digit authenticator code, or one recovery code.",
+            "maxLength": 32,
+            "title": "Code",
+            "type": "string"
+          },
+          "mfa_token": {
+            "maxLength": 2048,
+            "title": "Mfa Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mfa_token",
+          "code"
+        ],
+        "title": "MfaVerifyRequest",
+        "type": "object"
+      },
+      "PasswordResetConfirmRequest": {
+        "additionalProperties": false,
+        "description": "Complete a reset with the token from the emailed link.",
+        "examples": [
+          {
+            "password": "a-different-passphrase-entirely",
+            "token": "aXNzdWVkLWJ5LWVtYWlsLW5vdC1hLXJlYWwtdG9rZW4"
+          }
+        ],
+        "properties": {
+          "password": {
+            "description": "The new password. At least 12 characters.",
+            "maxLength": 256,
+            "minLength": 12,
+            "title": "Password",
+            "type": "string"
+          },
+          "token": {
+            "maxLength": 512,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "password"
+        ],
+        "title": "PasswordResetConfirmRequest",
+        "type": "object"
+      },
+      "PasswordResetRequest": {
+        "additionalProperties": false,
+        "description": "Begin a reset. The response is the same whether or not the account exists.",
+        "examples": [
+          {
+            "email": "founder@example.com"
+          }
+        ],
+        "properties": {
+          "email": {
+            "examples": [
+              "founder@example.com"
+            ],
+            "maxLength": 320,
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "PasswordResetRequest",
+        "type": "object"
+      },
+      "ProfileFieldValue": {
+        "additionalProperties": false,
+        "description": "One field, with where it came from and how sure we are.\n\nProvenance is part of the value rather than a parallel structure, so a field\ncannot be stored without it. The audit has to cite its evidence\n(CLAUDE.md section 5), and \"the founder told us\" is a materially different\ninput from \"read out of their filed accounts\".",
+        "examples": [
+          {
+            "confidence": 0.82,
+            "document_id": "9b1c2d3e-4f5a-4b6c-8d7e-1f2a3b4c5d6e",
+            "source": "document",
+            "value": 4500000
+          },
+          {
+            "source": "founder",
+            "value": "Same-day parcels for Lagos merchants."
+          }
+        ],
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "0-1. Absent for `founder` values, which are taken as stated but are self-reported, not verified (DECISIONS.md D7).",
+            "title": "Confidence"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Which upload this came from, when `document`.",
+            "title": "Document Id"
+          },
+          "source": {
+            "$ref": "#/components/schemas/FieldSource",
+            "default": "founder",
+            "description": "`founder` when submitted directly, `document` when extracted from an upload, `inferred` when the model derived it."
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The value. Money is an integer in minor units.",
+            "title": "Value"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "ProfileFieldValue",
+        "type": "object"
+      },
+      "ProfileResponse": {
+        "description": "A startup profile as its owner (or a SACI admin) sees it.\n\nThis is the **full** founder-facing view. The investor-facing summary tier\nis a separate serializer, built in T4.2 -- deliberately not a flag on this\none, because a shared model with a hidden switch is how a full report leaks\nto the wrong tier (DECISIONS.md D8).",
+        "examples": [
+          {
+            "country": "NG",
+            "created_at": "2026-07-30T08:00:00Z",
+            "currency": "NGN",
+            "fields": {
+              "monthly_revenue_minor": {
+                "confidence": 0.82,
+                "source": "document",
+                "value": 4500000
+              }
+            },
+            "id": "3f2b1c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "missing_fields": [
+              "business_model",
+              "cash_on_hand_minor",
+              "monthly_costs_minor",
+              "team_size"
+            ],
+            "name": "Kanmi Logistics",
+            "owner_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+            "sector": "last-mile delivery",
+            "stage": "seed",
+            "updated_at": "2026-07-30T08:30:00Z"
+          }
+        ],
+        "properties": {
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "fields": {
+            "additionalProperties": true,
+            "title": "Fields",
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "missing_fields": {
+            "description": "Fields an audit still needs, computed on read rather than stored -- it is a function of the field set and the rubric version, so a persisted copy would go stale as soon as either changed.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Fields",
+            "type": "array"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "owner_id": {
+            "format": "uuid",
+            "title": "Owner Id",
+            "type": "string"
+          },
+          "sector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sector"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Stage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "owner_id",
+          "name",
+          "sector",
+          "stage",
+          "country",
+          "currency",
+          "fields",
+          "missing_fields",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ProfileResponse",
+        "type": "object"
+      },
+      "ProvisionAdminRequest": {
+        "additionalProperties": false,
+        "description": "Create an admin account. Admin-only; there is no self-service path.",
+        "examples": [
+          {
+            "email": "ops@saci.example",
+            "password": "correct-horse-battery-staple"
+          }
+        ],
+        "properties": {
+          "email": {
+            "examples": [
+              "founder@example.com"
+            ],
+            "maxLength": 320,
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "description": "Initial password, at least 12 characters. The new admin must verify their email and enrol MFA before any admin capability opens to them.",
+            "maxLength": 256,
+            "minLength": 12,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "ProvisionAdminRequest",
+        "type": "object"
+      },
+      "RefreshRequest": {
+        "additionalProperties": false,
+        "description": "The refresh token to exchange. It is consumed by this call.",
+        "examples": [
+          {
+            "refresh_token": "N2Q4ZjFhYzQtM2I5ZS00ZjJhLTk4YzEtMGU3YjRkNmE5ZjEy"
+          }
+        ],
+        "properties": {
+          "refresh_token": {
+            "maxLength": 512,
+            "title": "Refresh Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh_token"
+        ],
+        "title": "RefreshRequest",
+        "type": "object"
+      },
+      "RegisterRequest": {
+        "additionalProperties": false,
+        "description": "Create a founder or investor account.\n\n`admin` is intentionally absent: admins are provisioned by an existing\nadmin and never through self-service (AUTH.md section 3.2).\n\nA founder's address must be a company one (AUTH.md section 3.2). Enforced\nin the service, not here, because the rule depends on `role` and belongs\nwith the rest of the registration policy.",
+        "examples": [
+          {
+            "email": "founder@example.com",
+            "first_name": "Amaka",
+            "last_name": "Okonkwo",
+            "password": "correct-horse-battery-staple",
+            "role": "founder"
+          }
+        ],
+        "properties": {
+          "email": {
+            "examples": [
+              "founder@example.com"
+            ],
+            "maxLength": 320,
+            "title": "Email",
+            "type": "string"
+          },
+          "first_name": {
+            "description": "The person's given name. Required for founders and investors.",
+            "examples": [
+              "Amaka"
+            ],
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "First Name",
+            "type": "string"
+          },
+          "last_name": {
+            "description": "The person's family name. Required for founders and investors.",
+            "examples": [
+              "Okonkwo"
+            ],
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Last Name",
+            "type": "string"
+          },
+          "password": {
+            "description": "At least 12 characters. Must not contain your email address.",
+            "maxLength": 256,
+            "minLength": 12,
+            "title": "Password",
+            "type": "string"
+          },
+          "role": {
+            "description": "`founder` or `investor`. Admin accounts cannot be self-created. A `founder` must use a company email address, not a consumer mailbox provider.",
+            "enum": [
+              "founder",
+              "investor"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password",
+          "role",
+          "first_name",
+          "last_name"
+        ],
+        "title": "RegisterRequest",
+        "type": "object"
+      },
+      "RegistrationAccepted": {
+        "description": "Deliberately uninformative.\n\nThe same body is returned whether or not the address was already\nregistered, so this endpoint cannot be used to discover who has an account.",
+        "examples": [
+          {
+            "message": "If that address can be registered, a verification email is on its way.",
+            "status": "pending_verification"
+          }
+        ],
+        "properties": {
+          "message": {
+            "default": "If that address can be registered, a verification email is on its way.",
+            "title": "Message",
+            "type": "string"
+          },
+          "status": {
+            "const": "pending_verification",
+            "default": "pending_verification",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "title": "RegistrationAccepted",
+        "type": "object"
+      },
+      "Role": {
+        "description": "The three roles (AUTH.md section 2).",
+        "enum": [
+          "founder",
+          "investor",
+          "admin"
+        ],
+        "title": "Role",
+        "type": "string"
+      },
+      "ScanStatus": {
+        "description": "Malware scanning (`CLAUDE.md` \u00a74: uploads are scanned).\n\n**No scanner is wired yet.** `intake.service.scan_document` is the seam it\nplugs into; the queue it will run on arrives with T2.8, and the scanner\nitself is T5.5. Until then uploads settle at `SKIPPED`, which is honest --\nan unscanned file must not be recorded as `CLEAN`.",
+        "enum": [
+          "pending",
+          "clean",
+          "infected",
+          "skipped"
+        ],
+        "title": "ScanStatus",
+        "type": "string"
+      },
+      "Stage": {
+        "description": "Funding stage.\n\nA bounded vocabulary, unlike sector: benchmarks are keyed by stage, so it\nhas to match across startups to be comparable at all.",
+        "enum": [
+          "idea",
+          "pre_seed",
+          "seed",
+          "series_a",
+          "series_b_plus",
+          "growth"
+        ],
+        "title": "Stage",
+        "type": "string"
+      },
+      "StartupProfileCreate": {
+        "additionalProperties": false,
+        "description": "Create your startup profile.\n\nEvery field is optional. A founder can start with a name and fill the rest\nin later, or let document extraction do it -- `missing_fields` on the\nresponse reports what an audit will still need.",
+        "examples": [
+          {
+            "country": "NG",
+            "currency": "NGN",
+            "fields": {
+              "description": {
+                "source": "founder",
+                "value": "Same-day parcel delivery for Lagos merchants."
+              },
+              "monthly_revenue_minor": {
+                "confidence": 0.82,
+                "source": "document",
+                "value": 4500000
+              }
+            },
+            "name": "Kanmi Logistics",
+            "sector": "last-mile delivery",
+            "stage": "seed"
+          }
+        ],
+        "properties": {
+          "country": {
+            "anyOf": [
+              {
+                "maxLength": 2,
+                "minLength": 2,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ISO 3166-1 alpha-2, e.g. `NG`, `GB`, `AE`.",
+            "title": "Country"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "maxLength": 3,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ISO 4217, e.g. `NGN`, `GBP`, `USD`.",
+            "title": "Currency"
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/ProfileFieldValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Any subset of the known profile fields. Unknown names are rejected rather than silently stored, so a typo does not become a field that no audit will ever read.",
+            "title": "Fields"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "sector": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Free text. Novel sectors are expected and supported.",
+            "title": "Sector"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Stage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "StartupProfileCreate",
+        "type": "object"
+      },
+      "StartupProfileUpdate": {
+        "additionalProperties": false,
+        "description": "Update your startup profile.\n\nA partial update: omitted keys are left alone. Supplying `fields` merges\nper field name -- send a field to replace it, omit it to keep it.",
+        "examples": [
+          {
+            "fields": {
+              "cash_on_hand_minor": {
+                "source": "founder",
+                "value": 82000000
+              }
+            },
+            "stage": "series_a"
+          }
+        ],
+        "properties": {
+          "country": {
+            "anyOf": [
+              {
+                "maxLength": 2,
+                "minLength": 2,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ISO 3166-1 alpha-2, e.g. `NG`, `GB`, `AE`.",
+            "title": "Country"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "maxLength": 3,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ISO 4217, e.g. `NGN`, `GBP`, `USD`.",
+            "title": "Currency"
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/ProfileFieldValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Any subset of the known profile fields. Unknown names are rejected rather than silently stored, so a typo does not become a field that no audit will ever read.",
+            "title": "Fields"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "sector": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Free text. Novel sectors are expected and supported.",
+            "title": "Sector"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Stage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "StartupProfileUpdate",
+        "type": "object"
+      },
+      "SubscriptionStatus": {
+        "description": "Founder billing state, trusted from Stripe webhooks only (AUTH.md 8).",
+        "enum": [
+          "none",
+          "active",
+          "past_due",
+          "canceled"
+        ],
+        "title": "SubscriptionStatus",
+        "type": "string"
+      },
+      "TokenPairResponse": {
+        "description": "The tokens, and how the client should treat them.\n\nStore both in secure device storage. On `401`, exchange the refresh token\nonce and retry; if that fails, send the user to login (AUTH.md section 16).",
+        "examples": [
+          {
+            "access_token": "eyJhbGciOiJIUzI1NiIsImtpZCI6ImsxIn0.eyJzdWIiOiI3Yzll.EXAMPLE",
+            "expires_in": 900,
+            "refresh_token": "N2Q4ZjFhYzQtM2I5ZS00ZjJhLTk4YzEtMGU3YjRkNmE5ZjEy",
+            "token_type": "bearer"
+          }
+        ],
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "expires_in": {
+            "description": "Seconds until the access token expires.",
+            "examples": [
+              900
+            ],
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "refresh_token": {
+            "title": "Refresh Token",
+            "type": "string"
+          },
+          "token_type": {
+            "const": "bearer",
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "refresh_token",
+          "expires_in"
+        ],
+        "title": "TokenPairResponse",
+        "type": "object"
+      },
+      "UploadRequest": {
+        "additionalProperties": false,
+        "description": "Ask for somewhere to put a file.\n\nDeclaring the type up front is what lets the server bake it into the\nsignature, so a mismatched upload is refused by storage rather than\ndiscovered afterwards.",
+        "examples": [
+          {
+            "content_type": "application/pdf",
+            "filename": "kanmi-seed-deck.pdf",
+            "kind": "deck"
+          }
+        ],
+        "properties": {
+          "content_type": {
+            "description": "MIME type of the file you are about to send. Must be on the allowlist, and must match the `Content-Type` header you set on the upload or storage will reject it.",
+            "maxLength": 120,
+            "title": "Content Type",
+            "type": "string"
+          },
+          "filename": {
+            "description": "Display name only. It is **never** part of the storage path -- directory separators and control characters are stripped before it is stored.",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Filename",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/DocumentKind",
+            "description": "What this file is. Steers extraction (T2.4); your declaration, not a verified fact."
+          }
+        },
+        "required": [
+          "kind",
+          "filename",
+          "content_type"
+        ],
+        "title": "UploadRequest",
+        "type": "object"
+      },
+      "UploadTicket": {
+        "description": "Where to send the bytes, and for how long.\n\nThe URL is a **credential**: anyone holding it can write that one object\nuntil it expires. It is issued once, never stored, and not retrievable\nagain -- ask for a new one if you lose it.",
+        "examples": [
+          {
+            "document_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+            "expires_in": 900,
+            "max_bytes": 26214400,
+            "upload_url": "https://<account>.r2.cloudflarestorage.com/..."
+          }
+        ],
+        "properties": {
+          "document_id": {
+            "format": "uuid",
+            "title": "Document Id",
+            "type": "string"
+          },
+          "expires_in": {
+            "description": "Seconds until the URL stops working.",
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "max_bytes": {
+            "description": "Reject anything larger before uploading. The server checks the real size afterwards and deletes what does not qualify.",
+            "title": "Max Bytes",
+            "type": "integer"
+          },
+          "upload_url": {
+            "description": "`PUT` the file here with the same `Content-Type` you declared. Send no authorization header -- the signature is the credential. Then call `POST /v1/documents/{document_id}/complete`.",
+            "title": "Upload Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_id",
+          "upload_url",
+          "expires_in",
+          "max_bytes"
+        ],
+        "title": "UploadTicket",
+        "type": "object"
+      },
+      "UserResponse": {
+        "description": "The caller's own account. Never another user's.",
+        "examples": [
+          {
+            "created_at": "2026-07-29T09:15:00Z",
+            "email": "founder@example.com",
+            "email_verified": false,
+            "first_name": "Amaka",
+            "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+            "kyc_status": "none",
+            "last_name": "Okonkwo",
+            "role": "founder",
+            "status": "pending_verification",
+            "subscription_status": "none"
+          }
+        ],
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "email_verified": {
+            "title": "Email Verified",
+            "type": "boolean"
+          },
+          "first_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Name"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kyc_status": {
+            "$ref": "#/components/schemas/KycStatus"
+          },
+          "last_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Name"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AccountStatus"
+          },
+          "subscription_status": {
+            "$ref": "#/components/schemas/SubscriptionStatus"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "role",
+          "first_name",
+          "last_name",
+          "status",
+          "email_verified",
+          "kyc_status",
+          "subscription_status",
+          "created_at"
+        ],
+        "title": "UserResponse",
+        "type": "object"
+      },
+      "VerifyEmailRequest": {
+        "additionalProperties": false,
+        "description": "The token from the verification link.",
+        "examples": [
+          {
+            "token": "aXNzdWVkLWJ5LWVtYWlsLW5vdC1hLXJlYWwtdG9rZW4"
+          }
+        ],
+        "properties": {
+          "token": {
+            "maxLength": 512,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "VerifyEmailRequest",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "Bearer": {
+        "description": "Access token issued by `POST /v1/auth/login`.",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "REST API for the FundReady platform. All resources live under `/v1`. Timestamps are ISO 8601 UTC, currencies are ISO 4217 codes, and money is expressed in integer minor units.\n\nEvery error response uses the envelope `{\"error\": {\"code\", \"message\", \"details\"}}`. Branch on `code`, which is stable; never parse `message`.\n\nEvery response carries an `X-Request-ID` header. Quote it in a support report and we can find the exact log line.",
+    "summary": "AI business audit and investor-matching platform for SACI Holdings.",
+    "title": "FundReady API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/v1/admin/users": {
+      "post": {
+        "description": "Creates an admin. This is the only way one comes into existence -- `/v1/auth/register` refuses the role.\n\nThe new admin lands `pending_verification` and without MFA, so they must verify their address and enrol a second factor before any admin capability opens to them. A verification email is sent.\n\nUnlike self-registration, a duplicate address returns `409` rather than a uniform success: the caller is already trusted, so there is no enumeration concern.\n\nRequires an admin account **with MFA enrolled**. An admin who has not enrolled receives `403` here until they do.",
+        "operationId": "provision_admin_v1_admin_users_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProvisionAdminRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Provision an admin account",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/v1/admin/users/{user_id}/reactivate": {
+      "post": {
+        "description": "Returns the account to `active`, or to `pending_verification` if the address was never verified -- reactivating does not confer verification.\n\n`409` if the account is not suspended.\n\nRequires an admin account **with MFA enrolled**. An admin who has not enrolled receives `403` here until they do.",
+        "operationId": "reactivate_user_v1_admin_users__user_id__reactivate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Lift a suspension",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/v1/admin/users/{user_id}/role": {
+      "patch": {
+        "description": "Applies the new role and **forces the user to log in again**: `session_valid_after` moves, so their existing access and refresh tokens stop working and the next login is authorised against the new role.\n\n`403` if you target your own account. `409` if the user already has that role, or if demoting them would leave no active admin.\n\nRequires an admin account **with MFA enrolled**. An admin who has not enrolled receives `403` here until they do.",
+        "operationId": "change_user_role_v1_admin_users__user_id__role_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeRoleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Change a user's role",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/v1/admin/users/{user_id}/suspend": {
+      "post": {
+        "description": "Blocks the account and **ends its sessions immediately** -- refresh tokens revoked, access tokens already issued invalidated.\n\n`403` if you target your own account. `409` if the target is the only active admin, since the only way back from zero admins is database credentials.\n\nRequires an admin account **with MFA enrolled**. An admin who has not enrolled receives `403` here until they do.",
+        "operationId": "suspend_user_v1_admin_users__user_id__suspend_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Suspend an account",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/v1/auth/login": {
+      "post": {
+        "description": "Exchanges email and password for tokens.\n\n**Branch on `status`.** `authenticated` returns `tokens`. `mfa_required` means the password was correct but a second factor is outstanding: send the returned `mfa_token` and the code to `POST /v1/auth/mfa/verify`. The `mfa_token` grants nothing by itself and expires in 5 minutes.\n\nEvery failure returns the same `401` with the same message -- whether the account does not exist, the password is wrong, or the account is temporarily locked after repeated failures. Do not branch on it.\n\nA `403` means the account is suspended. Logging in while `pending_verification` succeeds, but protected endpoints return `403` until the email is verified.",
+        "operationId": "login_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "summary": "Log in",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/v1/auth/logout": {
+      "post": {
+        "description": "Revokes the presented refresh token and every token from the same login. The access token expires on its own shortly after.\n\nAlways returns `204`, even for a token we do not recognise.",
+        "operationId": "logout_v1_auth_logout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogoutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "summary": "Log out",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/v1/auth/mfa/confirm": {
+      "post": {
+        "description": "Enables MFA and returns ten recovery codes.\n\n**Show them once and tell the user to store them.** They are held hashed and cannot be shown again. Each works once; using one is audit-logged. Re-enrolling invalidates the previous set.",
+        "operationId": "confirm_mfa_v1_auth_mfa_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MfaRecoveryCodesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Confirm MFA enrolment",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/v1/auth/mfa/enroll": {
+      "post": {
+        "description": "Issues a TOTP secret to add to an authenticator app. **MFA is not active yet** -- call `/v1/auth/mfa/confirm` with a code to enable it, which proves the app really holds the secret before the account starts depending on it.\n\nCalling this again replaces an unconfirmed secret. Required for admin accounts, optional for everyone else.",
+        "operationId": "enroll_mfa_v1_auth_mfa_enroll_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MfaEnrolmentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Begin MFA enrolment",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/v1/auth/mfa/verify": {
+      "post": {
+        "description": "Exchanges the `mfa_token` from login, plus a six-digit authenticator code **or** one recovery code, for a token pair.\n\nA code is accepted once: replaying the same authenticator code inside its own 30-second window is refused, and a recovery code is spent permanently. Every failure returns the same `401`.",
+        "operationId": "verify_mfa_v1_auth_mfa_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPairResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "summary": "Complete an MFA login",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/v1/auth/password-reset/confirm": {
+      "post": {
+        "description": "Sets the new password and **ends every existing session**: all refresh tokens are revoked and every access token already issued stops working. The user must log in again afterwards, on every device.\n\nAny other reset link already sent to that address is invalidated too.",
+        "operationId": "confirm_password_reset_v1_auth_password_reset_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "summary": "Complete a password reset",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/v1/auth/password-reset/request": {
+      "post": {
+        "description": "Sends a reset link if the address has an account.\n\n**Always returns `202` with the same body**, whether or not the address is registered, so this cannot be used to discover accounts.",
+        "operationId": "request_password_reset_v1_auth_password_reset_request_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "summary": "Begin a password reset",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/v1/auth/refresh": {
+      "post": {
+        "description": "Refresh tokens rotate: the presented token is consumed and a new pair returned. **Store the new refresh token immediately and discard the old one.**\n\nPresenting a refresh token that has already been used is treated as theft -- every token from that login is revoked and all access tokens are invalidated, so the user must log in again. Never retry a refresh with a token you have already exchanged.",
+        "operationId": "refresh_v1_auth_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPairResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "summary": "Exchange a refresh token for a new pair",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/v1/auth/register": {
+      "post": {
+        "description": "Creates an account with status `pending_verification`.\n\n**The response is identical whether or not the address was already registered.** That is deliberate -- a different response would let anyone test which addresses have accounts. Do not treat `202` as proof that a new account was created.\n\n**Founders must register with a company email address.** A consumer mailbox (`gmail.com`, `outlook.com`, `yahoo.com`, ...) is refused with `422` and `details.reason = \"consumer_email_domain\"` -- show that against the email field. Investors are not restricted. The domain also becomes the starting company name on the startup profile, so this rejection is explicit rather than uniform: there is no account to enumerate, only the domain the caller just typed.\n\n`admin` is not an accepted role: admins are provisioned internally.",
+        "operationId": "register_v1_auth_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "summary": "Register a founder or investor",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/v1/auth/verify-email": {
+      "post": {
+        "description": "Confirms the address and activates the account.\n\nThe token arrives as a query parameter on the link in the verification email, which points at **your** app rather than this API: mail security scanners prefetch URLs, and a GET endpoint here would have the single-use token consumed before the user clicked. Extract the token and POST it.\n\n`422` covers unknown, expired, and already-used tokens with one message -- do not try to distinguish them.",
+        "operationId": "verify_email_v1_auth_verify_email_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyEmailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "summary": "Confirm an email address",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/v1/benchmarks": {
+      "get": {
+        "description": "Filter on any subset of the key. Retired bands are hidden unless `include_retired` is set.\n\n**SACI admins only.** Benchmarks are the yardstick every verdict is measured against, so a wrong row is a wrong verdict for every startup scored against it. They are not visible to founders or investors -- publishing the set would tell a founder exactly what to claim. Every write is recorded in the immutable audit log.",
+        "operationId": "list_benchmarks_v1_benchmarks_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "sector",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sector"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stage",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Stage"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stage"
+            }
+          },
+          {
+            "in": "query",
+            "name": "metric",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/BenchmarkMetric"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Metric"
+            }
+          },
+          {
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Region"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Retired",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BenchmarkResponse"
+                  },
+                  "title": "Response List Benchmarks V1 Benchmarks Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Browse benchmark bands",
+        "tags": [
+          "audit"
+        ]
+      },
+      "post": {
+        "description": "Creates one peer-group band, keyed by **sector x stage x metric x region**.\n\n`sector` and `region` accept `*` for \"any\", which is what makes the lookup fallback chain work: a startup with no sector-specific band falls back to `*` for its region, then to `*`/`*`.\n\n`source` and `as_of_date` are required -- a verdict cites its evidence, and a band with no provenance cannot be cited.\n\n`409` if a band already exists for that key; `422` if the quartiles are out of order.\n\n**SACI admins only.** Benchmarks are the yardstick every verdict is measured against, so a wrong row is a wrong verdict for every startup scored against it. They are not visible to founders or investors -- publishing the set would tell a founder exactly what to claim. Every write is recorded in the immutable audit log.",
+        "operationId": "create_benchmark_v1_benchmarks_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BenchmarkCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BenchmarkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Add a benchmark band",
+        "tags": [
+          "audit"
+        ]
+      }
+    },
+    "/v1/benchmarks/{benchmark_id}": {
+      "get": {
+        "description": "Returns a single band, retired or not.\n\n**SACI admins only.** Benchmarks are the yardstick every verdict is measured against, so a wrong row is a wrong verdict for every startup scored against it. They are not visible to founders or investors -- publishing the set would tell a founder exactly what to claim. Every write is recorded in the immutable audit log.",
+        "operationId": "read_benchmark_v1_benchmarks__benchmark_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "benchmark_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Benchmark Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BenchmarkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Read one benchmark band",
+        "tags": [
+          "audit"
+        ]
+      },
+      "patch": {
+        "description": "Updates values or provenance. **The key cannot be changed** -- sector, stage, metric, and region say which cell this is, and moving them would relocate a band somewhere nobody curated it for. Retire this one and create the right one instead.\n\n`422` if the resulting quartiles are out of order.\n\n**SACI admins only.** Benchmarks are the yardstick every verdict is measured against, so a wrong row is a wrong verdict for every startup scored against it. They are not visible to founders or investors -- publishing the set would tell a founder exactly what to claim. Every write is recorded in the immutable audit log.",
+        "operationId": "update_benchmark_v1_benchmarks__benchmark_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "benchmark_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Benchmark Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BenchmarkUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BenchmarkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Revise a benchmark band",
+        "tags": [
+          "audit"
+        ]
+      }
+    },
+    "/v1/benchmarks/{benchmark_id}/retire": {
+      "post": {
+        "description": "Takes a band out of use. **Not a delete**: an AuditRun cites the benchmark it scored against, so removing the row would strand the explanation a founder was given. Lookup ignores it immediately.\n\n**SACI admins only.** Benchmarks are the yardstick every verdict is measured against, so a wrong row is a wrong verdict for every startup scored against it. They are not visible to founders or investors -- publishing the set would tell a founder exactly what to claim. Every write is recorded in the immutable audit log.",
+        "operationId": "retire_benchmark_v1_benchmarks__benchmark_id__retire_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "benchmark_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Benchmark Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BenchmarkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Retire a benchmark band",
+        "tags": [
+          "audit"
+        ]
+      }
+    },
+    "/v1/documents/{document_id}/complete": {
+      "post": {
+        "description": "Call this after the `PUT` succeeds. The server reads the object back from storage and judges it on what actually arrived -- not on what you declared.\n\nA file that is missing, empty, larger than `max_bytes`, or of an unaccepted type is **deleted from storage** and the document is marked `rejected`; `422` carries the reason in `details.reason` (`object_missing`, `empty_file`, `file_too_large`, `unsupported_content_type`).\n\nSafe to retry: calling it again on a `ready` document returns it unchanged.\n\nYou can only reach your own profile. Another founder's id returns `404`, not `403` -- deliberately, so the API does not confirm which ids exist. SACI admins can read any profile.",
+        "operationId": "complete_upload_v1_documents__document_id__complete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Confirm a document upload",
+        "tags": [
+          "intake"
+        ]
+      }
+    },
+    "/v1/documents/{document_id}/download": {
+      "get": {
+        "description": "Returns a short-lived URL, not the file. `GET` it directly with no `Authorization` header.\n\n**Treat the URL as a credential.** Anyone holding it can read the file until it expires -- do not log it or persist it.\n\n`422` if the document is not `ready`, or if a scan has flagged it.\n\nYou can only reach your own profile. Another founder's id returns `404`, not `403` -- deliberately, so the API does not confirm which ids exist. SACI admins can read any profile.",
+        "operationId": "download_document_v1_documents__document_id__download_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadTicket"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Get a download URL for a document",
+        "tags": [
+          "intake"
+        ]
+      }
+    },
+    "/v1/health": {
+      "get": {
+        "description": "Returns 200 whenever the API process is serving requests. Requires no authentication and performs no dependency checks, so a 200 means *this process is alive*, not *the platform is healthy*.",
+        "operationId": "health_v1_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "The API is serving requests."
+          }
+        },
+        "summary": "Liveness check",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/v1/startups": {
+      "post": {
+        "description": "Creates the profile for the authenticated founder. **Every field is optional** -- start with what you know and fill the rest in later, or let document extraction do it. `missing_fields` on the response says what an audit will still need.\n\nThe owner is taken from your token, never from the request body.\n\n**If you omit `name`, it is filled in from your company email domain** -- `founder@acme.com` gives `Acme`. It is a starting point, not a verified company name: send `name` yourself to set it exactly, or correct it later with `PATCH /startups/{id}`. A name you do send is never overwritten.\n\nFounders (and SACI admins) only. `403` for an investor.\n\n`409` if you already have a profile: one per founder in v1.",
+        "operationId": "create_profile_v1_startups_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartupProfileCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Create your startup profile",
+        "tags": [
+          "intake"
+        ]
+      }
+    },
+    "/v1/startups/me": {
+      "get": {
+        "description": "Returns the authenticated founder's profile without needing its id.\n\n`404` if you have not created one yet.",
+        "operationId": "read_own_profile_v1_startups_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Your own startup profile",
+        "tags": [
+          "intake"
+        ]
+      }
+    },
+    "/v1/startups/{profile_id}": {
+      "get": {
+        "description": "Returns one profile in full.\n\nYou can only reach your own profile. Another founder's id returns `404`, not `403` -- deliberately, so the API does not confirm which ids exist. SACI admins can read any profile.",
+        "operationId": "read_profile_v1_startups__profile_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "profile_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Profile Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Read a startup profile",
+        "tags": [
+          "intake"
+        ]
+      },
+      "patch": {
+        "description": "A partial update: omitted keys are left as they were. `fields` merges by field name, so you can correct one value without resending the whole document -- and so document extraction does not overwrite what the founder typed.\n\nUnknown field names are rejected with `422` rather than stored, so a typo cannot become a field no audit will ever read.\n\nYou can only reach your own profile. Another founder's id returns `404`, not `403` -- deliberately, so the API does not confirm which ids exist. SACI admins can read any profile.",
+        "operationId": "update_profile_v1_startups__profile_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "profile_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Profile Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartupProfileUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Update a startup profile",
+        "tags": [
+          "intake"
+        ]
+      }
+    },
+    "/v1/startups/{startup_id}/documents": {
+      "get": {
+        "description": "Newest first. Includes `pending` and `rejected` documents, so the client can show an upload that stalled or was refused.\n\nYou can only reach your own profile. Another founder's id returns `404`, not `403` -- deliberately, so the API does not confirm which ids exist. SACI admins can read any profile.",
+        "operationId": "list_documents_v1_startups__startup_id__documents_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "startup_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Startup Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DocumentResponse"
+                  },
+                  "title": "Response List Documents V1 Startups  Startup Id  Documents Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "List a startup's documents",
+        "tags": [
+          "intake"
+        ]
+      },
+      "post": {
+        "description": "Reserves a document and returns a URL to send the file to.\n\n**The upload is three calls, and the bytes never pass through this API.** They go straight to object storage, which is why a 25 MB deck does not time out:\n\n1. `POST /v1/startups/{startup_id}/documents` -> a signed `upload_url`\n2. `PUT` the file to that URL with the `Content-Type` you declared, and **no** `Authorization` header -- the signature in the URL is the credential\n3. `POST /v1/documents/{document_id}/complete` -> the server reads the object back, checks it, and marks it `ready`\n\nA document that never reaches step 3 stays `pending` and is not downloadable. Signed URLs expire after `expires_in` seconds (15 minutes by default).\n\n`422` if the `content_type` is not on the allowlist -- check before uploading rather than after.\n\nYou can only reach your own profile. Another founder's id returns `404`, not `403` -- deliberately, so the API does not confirm which ids exist. SACI admins can read any profile.",
+        "operationId": "start_upload_v1_startups__startup_id__documents_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "startup_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Startup Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadTicket"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Start a document upload",
+        "tags": [
+          "intake"
+        ]
+      }
+    },
+    "/v1/users/me": {
+      "get": {
+        "description": "Returns the authenticated user's own record and gate status.\n\nReachable while `pending_verification`, so the client can prompt the user to verify their email. Use `kyc_status` and `subscription_status` to decide when to launch those flows.",
+        "operationId": "read_me_v1_users_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "The caller's own account",
+        "tags": [
+          "identity"
+        ]
+      }
+    }
+  }
+}

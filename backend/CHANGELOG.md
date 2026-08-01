@@ -9,6 +9,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **`CLIENTS.md` — the client integration guide, 2026-08-01.** One document for
+  the **three roles across two surfaces**: founders and investors on mobile,
+  SACI admins on web. Covers the auth lifecycle (including refresh rotation and
+  reuse detection, the single easiest thing for a client to get wrong), the
+  `401` vs `403` distinction, the error envelope and every stable code, the
+  three-step document upload, every enum a client switches on, and an explicit
+  **"not built yet"** list so nobody codes against Phase 3–5.
+  *No API change — this documents what already exists.*
+  - **`docs/openapi.json` is now committed**, so a client developer can
+    generate a typed client or diff an API change without running the service.
+    Regenerate with `python scripts/export_openapi.py`.
+  - **Two corrections it makes to previously-stated behaviour:** all five
+    `/v1/benchmarks` endpoints are **admin-only including the reads** (a
+    founder who could read the bands would know exactly what to claim), and
+    `first_name`/`last_name` are nullable on `UserResponse` for provisioned
+    admins and pre-column accounts.
+  - `tests/unit/test_client_guide.py` fails if a path or enum value the guide
+    names stops existing, or if the exported spec goes stale. Prose still needs
+    a human; the contract does not.
+
 ### Changed
 - **⚠️ BREAKING — `POST /v1/auth/register` now requires `first_name` and
   `last_name`, 2026-07-30.** Both are collected for **founders and investors**
