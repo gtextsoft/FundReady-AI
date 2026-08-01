@@ -20,7 +20,11 @@ from app.ai.schemas import StructuredOutput
 from app.core.config import Settings
 from tests.conftest import ANTHROPIC_API_KEY, requires_anthropic_key
 
-pytestmark = [pytest.mark.integration, requires_anthropic_key]
+# `billed` is deselected by default (see pyproject). Run with `pytest -m billed`.
+# The skipif is not enough on its own: it protects an unconfigured machine, not
+# a configured one, so without the marker adding the CI secret would start
+# spending on every push.
+pytestmark = [pytest.mark.integration, pytest.mark.billed, requires_anthropic_key]
 
 PROMPT = PromptVersion(
     name="live_smoke",
@@ -98,10 +102,14 @@ async def test_the_wire_schema_is_accepted_for_a_bounded_evidence_schema() -> No
 
 
 async def test_prompt_caching_reports_usage_figures() -> None:
-    """Not asserting a cache *hit* -- the prefix here is far below the minimum.
+    """That the usage figures parse and are real -- NOT that caching happened.
 
-    Asserting the figures come back at all, so per-audit cost tracking has
-    something real to read (DECISIONS.md D16).
+    The prefix here is one sentence, far below the 1024-token minimum on the
+    chat model, so both cache counters are necessarily zero. Asserting that
+    explicitly is the point: it is falsifiable, unlike `>= 0`, and it fails
+    loudly if the minimum drops or this prompt grows past it -- at which point
+    the premise of this test has changed and it should be rewritten to assert a
+    real hit (DECISIONS.md D16).
     """
     result = await _client().complete(
         tier=ModelTier.CHAT,
@@ -112,5 +120,13 @@ async def test_prompt_caching_reports_usage_figures() -> None:
     )
 
     usage = result.record.usage
-    assert usage.total_input_tokens >= usage.input_tokens
-    assert usage.cache_read_input_tokens >= 0
+    # Can fail: proves the SDK populated the fields rather than defaulting them.
+    assert usage.input_tokens > 0, "prompt tokens were billed but not reported"
+    assert usage.output_tokens > 0, "a response arrived but reported no tokens"
+    assert usage.cache_creation_input_tokens == 0, (
+        "the prefix is below the cacheable minimum, so nothing should be written"
+    )
+    assert usage.cache_read_input_tokens == 0, (
+        "the prefix is below the cacheable minimum, so nothing should be read"
+    )
+    assert usage.total_input_tokens == usage.input_tokens

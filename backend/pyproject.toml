@@ -128,11 +128,17 @@ warn_required_dynamic_aliases = true
 # ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--strict-markers --strict-config -ra"
+# `-m "not billed"` is a spend gate, not a speed one. Billed tests skip on their
+# own when no key is set, so today they are inert -- but the moment
+# `ANTHROPIC_API_KEY` reaches CI as a secret, an ungated suite would spend real
+# money on every push. Deselecting by default means adding that secret is safe,
+# and running them stays a deliberate act: `pytest -m billed`.
+addopts = "--strict-markers --strict-config -ra -m 'not billed'"
 asyncio_mode = "auto"
 markers = [
     "security: authorization, tenant isolation, report-tier, gating, webhooks",
     "integration: exercises the database, queue, or an external adapter",
+    "billed: spends real money on a third-party API; deselected unless -m billed",
 ]
 
 [tool.coverage.run]

@@ -6,6 +6,7 @@ import pytest
 from pydantic import SecretStr, ValidationError
 
 from app.core.config import Environment, Settings, SettingsError, get_settings
+from tests.conftest import _strip_inline_comment
 
 # Secret-looking values, so a leak into an error message is unmistakable.
 PRODUCTION_ENV = {
@@ -124,12 +125,12 @@ class TestEnvExampleStaysCurrent:
         parse this asserts on never happens during the suite. `.env.example` is
         the only copy in git, and it is what operators copy from.
 
-        **The guard is therefore one-directional.** The file that actually broke
-        was `.env`, which is gitignored and cannot be asserted on from here, so
-        a hand-edit that reintroduces the pattern there will not fail anything.
-        The rule applies to both files; only this one can be enforced.
-
-        Put the comment on its own line above the key.
+        **This guard is one-directional, and is no longer the only one.** The
+        file that actually broke was `.env`, which is gitignored and cannot be
+        asserted on from here. That gap is now closed at the parse layer
+        instead -- see `test_a_comment_only_value_parses_as_blank` -- so this
+        test is a style rule for the file operators copy from, not the
+        safety net. Put the comment on its own line above the key.
         """
         example = Path(__file__).resolve().parents[2] / ".env.example"
         offenders = [
@@ -141,6 +142,47 @@ class TestEnvExampleStaysCurrent:
         ]
 
         assert not offenders, f"move the comment above the key: {offenders}"
+
+    def test_a_comment_only_value_parses_as_blank(self) -> None:
+        """The fix at the depth that covers `.env` too, not just `.env.example`.
+
+        A lint on one file in git polices formatting; this polices the parse, so
+        the operator's real `.env` -- the file that actually decides the audit
+        model id -- is covered by the same rule. A setting can never legitimately
+        begin with `#`, so a value that does is this key's trailing comment.
+        """
+        settings = Settings(
+            ai_model_audit="  # strongest model, used for audits",
+            ai_model_chat="# cheaper model",
+        )
+
+        assert settings.ai_model_audit == ""
+        assert settings.ai_model_chat == ""
+
+
+class TestTestEnvFileParser:
+    """The suite's own `.env` reader -- the one path that reads the real file.
+
+    `conftest` sets `env_file = None` so a developer's `.env` cannot decide a
+    test outcome, but the suite still reads that file directly to resolve
+    `ANTHROPIC_API_KEY` and `DATABASE_URL`. That parser is hand-rolled, so it
+    gets the same comment rule as `app.core.config`, and for a sharper reason:
+    a key with a comment glued on is non-`None`, so `requires_anthropic_key`
+    would *not* skip -- the live tests would run and fail as a 401 that reads
+    like a revoked key rather than a parse bug.
+    """
+
+    def test_an_inline_comment_is_stripped(self) -> None:
+        assert _strip_inline_comment("sk-ant-abc123  # prod key") == "sk-ant-abc123"
+
+    def test_a_hash_inside_a_value_is_kept(self) -> None:
+        """`#` is legal in a Postgres password, and `DATABASE_URL` uses this."""
+        url = "postgres://user:pa#ss@host/db"
+
+        assert _strip_inline_comment(url) == url
+
+    def test_a_hash_after_whitespace_ends_the_value(self) -> None:
+        assert _strip_inline_comment("value # note") == "value"
 
 
 class TestProductionGuards:
