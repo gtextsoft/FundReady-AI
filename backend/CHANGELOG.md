@@ -29,6 +29,33 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - `tests/unit/test_client_guide.py` fails if a path or enum value the guide
     names stops existing, or if the exported spec goes stale. Prose still needs
     a human; the contract does not.
+- **Extraction stage (T2.4), 2026-08-01 — documents to Startup Profile fields.**
+  **No API change and no new endpoint**: this is stage 1 of the audit pipeline,
+  invoked by the background job that lands with T2.8. Nothing is reachable over
+  HTTP yet.
+  - **PDFs and images are sent to the model as native `document`/`image`
+    blocks, not text-extracted.** A pitch deck is a design artefact — a text
+    extractor returns the speaker notes and misses the chart carrying the
+    number — and a photographed cap table has no text layer at all. This also
+    means **no PDF dependency was added**.
+  - **Three parsers added for the Office formats the API cannot ingest
+    natively** (approved 2026-08-01): `openpyxl` (xlsx), `python-pptx` (pptx),
+    `python-docx` (docx), plus `types-openpyxl` for strict typing. All pure
+    Python, no system binaries. The **legacy binary formats — `.xls`, `.ppt`,
+    `.doc` — stay on the upload allowlist but cannot be read**; those uploads
+    are reported in `unreadable` so a founder learns which file was wasted
+    rather than wondering why a field stayed empty.
+  - **A founder-stated value is never overwritten by an extracted one.**
+    Extraction fills gaps and corrects nothing; silently replacing what someone
+    typed with what a model read off a slide is the fastest way to lose their
+    trust in the audit. *Client impact once T2.8 wires this up: a profile field
+    may arrive with `source: "document"`, a `confidence`, and a `citation` — a
+    value the founder never typed. Show `confidence` below 0.5 as provisional.*
+  - Extraction **records, never computes**. Ratios, runway, and margins remain
+    `audit/finance.py`'s job, in code (D9). A value here is a reading; a
+    calculated one arriving as a reading would be a false reading.
+  - Every extracted value carries a citation to the document and the quoted
+    span, and anything failing its `FieldSpec` is dropped rather than stored.
 - **`GET /v1/benchmarks` filtering and paging documented, 2026-08-01.** The
   endpoint has always accepted `sector`, `stage`, `metric`, `region`,
   `include_retired`, `limit`, and `offset` — all optional — but none of it was

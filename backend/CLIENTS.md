@@ -315,8 +315,17 @@ compatibility, not as an error — parse defensively.
 | `FieldSource` | `founder`, `document`, `inferred` |
 | `BenchmarkMetric` | `gross_margin_percent`, `runway_months`, `ltv_cac_ratio`, `cac_payback_months`, `run_rate_vs_trailing_percent` |
 
-`FieldSource` matters for UI: a value marked `inferred` was derived, not stated
-by the founder, and should be shown as provisional and editable.
+`FieldSource` matters for UI, and will matter more once extraction is wired
+(T2.8). A profile field carries the source of its value:
+
+- `founder` — they typed it. Authoritative; nothing overwrites it.
+- `document` — read out of an upload. Arrives with a `confidence` (0–1) and a
+  `citation` naming the document and the quoted span. **Treat below `0.5` as
+  provisional** and let the founder confirm or correct it.
+- `inferred` — derived rather than stated. Provisional and editable.
+
+Nothing today returns `document`, because no pipeline runs yet. Building the UI
+to handle it now is cheaper than retrofitting it when T2.8 lands.
 
 ---
 
@@ -327,7 +336,8 @@ exist for any of them today.
 
 | Area | Task | Affects |
 |---|---|---|
-| Audit engine (extraction, scoring, reports) | T2.4–T2.9 | Founder mobile |
+| Audit engine (scoring, reports, persistence) | T2.5–T2.9 | Founder mobile |
+| Extraction — **built, not yet reachable**: no endpoint until T2.8 wires the pipeline | T2.4 | Founder mobile |
 | Readiness tasks, evidence upload, re-audit gate | T3.1, T3.5, T3.6 | Founder mobile |
 | Stripe checkout and subscriptions | T3.3, T3.4 | Founder mobile |
 | Founder AI chat | T3.7 | Founder mobile |
