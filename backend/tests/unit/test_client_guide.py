@@ -107,6 +107,40 @@ def test_the_exported_spec_is_current(spec: dict) -> None:
     ), "docs/openapi.json is stale: the schema set changed"
 
 
+def test_documented_status_codes_match_the_spec(spec: dict, guide: str) -> None:
+    """The guide said `201` where the API returns `200`, and nothing caught it.
+
+    A wrong success code is among the most expensive documentation errors
+    possible: the client developer writes `if status == 201`, it never matches,
+    and the bug looks like a server fault rather than a doc fault. Anywhere the
+    guide writes `VERB /path → NNN`, that code must exist on that operation.
+    """
+    by_path = {
+        _normalise(path): {
+            verb: set(op.get("responses", {})) for verb, op in ops.items()
+        }
+        for path, ops in spec["paths"].items()
+    }
+
+    claims = re.findall(
+        r"^\s*\d+\.\s+(GET|POST|PUT|PATCH|DELETE)\s+(/v1/\S+)\s+→\s+(\d{3})",
+        guide,
+        re.M,
+    )
+    assert claims, "no `VERB /path → NNN` claims found -- the guide format drifted"
+
+    for verb, path, code in claims:
+        operations = by_path.get(_normalise(path))
+        assert operations is not None, f"{verb} {path}: path does not exist"
+
+        declared = operations.get(verb.lower())
+        assert declared is not None, f"{verb} {path}: verb not supported"
+        assert code in declared, (
+            f"CLIENTS.md says {verb} {path} returns {code}, "
+            f"but the API declares {sorted(declared)}"
+        )
+
+
 def test_the_documented_error_codes_are_the_real_ones(guide: str) -> None:
     """Clients branch on `code`, so this table is part of the contract."""
     from app.core.errors import ErrorCode

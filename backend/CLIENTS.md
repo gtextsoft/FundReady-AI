@@ -164,6 +164,26 @@ These hold across every endpoint. Assume them rather than checking per-route.
   parse leniently and ignore what you do not recognise. Breaking changes get a
   new version and a `CHANGELOG` entry.
 
+### List conventions — not yet consistent
+
+Read this before writing a generic list helper: **the two list endpoints do not
+agree with each other**, so a shared abstraction built today will be wrong for
+one of them.
+
+| Endpoint | Query parameters |
+|---|---|
+| `GET /v1/benchmarks` | `sector`, `stage`, `metric`, `region`, `include_retired`, `limit`, `offset` — all optional |
+| `GET /v1/startups/{id}/documents` | **none** — returns every document for that startup |
+
+`limit`/`offset` paging exists only on benchmarks (admin web). Neither endpoint
+takes a sort parameter, and neither returns a total count, so there is no way to
+render "page 3 of 12" — paginate with a cursor-style "load more" instead.
+
+`CLAUDE.md` §6 requires list conventions to be consistent across every list
+endpoint. They are not, and this is documented rather than papered over; it is
+tracked as an open follow-up in `TASKS.md`. Expect `documents` to gain paging
+before Phase 3 adds more collections.
+
 ---
 
 ## 4. Endpoints by role
@@ -238,8 +258,11 @@ Files never pass through this API — they go straight to object storage.
 1. POST /v1/startups/{id}/documents   → 201 UploadTicket { upload_url, document_id, ... }
 2. PUT  <upload_url>                  → direct to storage. Send the EXACT
                                         content_type you declared in step 1.
-3. POST /v1/documents/{id}/complete   → 201 confirms and starts scanning
+3. POST /v1/documents/{id}/complete   → 200 confirms the upload
 ```
+
+Note the asymmetry: step 1 returns **201** (it creates a document record), step
+3 returns **200** (it updates one).
 
 Three things that will bite you:
 
@@ -249,8 +272,25 @@ Three things that will bite you:
   limit, so an oversized file uploads successfully and is then deleted
   server-side. Check the size client-side before starting.
 - **The allowlist constrains what you *declare*, not the bytes.** Real content
-  inspection happens in the scanner. `scan_status` starts `pending` and a
-  document is not trustworthy until it is `clean`.
+  inspection belongs to the scanner, which is **not built yet** (T5.5).
+
+### Do not gate on `scan_status == "clean"`
+
+`clean` is never set today. No scanner is wired, so every upload settles at
+**`skipped`** — the honest value, chosen deliberately over marking an unscanned
+file `clean`, which would later read as a completed check that never happened.
+
+Downloads check **two independent things**, and neither is `clean`:
+
+1. `status` must be `ready` — i.e. step 3 completed. A `pending` or `rejected`
+   document is refused with `422` and `reason` set to that status.
+2. `scan_status` must not be `infected` — refused with `422` and
+   `reason: "infected"`.
+
+So the correct client rule today is **gate on `status == "ready"`, and treat any
+`scan_status` other than `infected` as usable.** Revisit when T5.5 ships. A
+client written to wait for `clean` blocks forever on every document ever
+uploaded.
 
 Downloads are the mirror image: `GET /v1/documents/{id}/download` returns a
 short-lived signed URL, not the bytes.

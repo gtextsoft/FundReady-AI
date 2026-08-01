@@ -29,8 +29,35 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - `tests/unit/test_client_guide.py` fails if a path or enum value the guide
     names stops existing, or if the exported spec goes stale. Prose still needs
     a human; the contract does not.
+- **`GET /v1/benchmarks` filtering and paging documented, 2026-08-01.** The
+  endpoint has always accepted `sector`, `stage`, `metric`, `region`,
+  `include_retired`, `limit`, and `offset` — all optional — but none of it was
+  written down anywhere. **No API change**; this documents existing behaviour.
+  - **The two list endpoints do not share conventions**, which `CLAUDE.md` §6
+    requires them to. `GET /v1/benchmarks` takes the seven parameters above;
+    `GET /v1/startups/{startup_id}/documents` takes **none** and returns every
+    row. Neither supports sorting, and neither returns a total count, so a
+    client cannot render "page 3 of 12" — only a cursor-style "load more".
+    *Client impact: a generic list helper written against one endpoint will be
+    wrong for the other.* Documented in `CLIENTS.md` §3 and filed as an open
+    follow-up rather than silently normalised, because adding paging to
+    `documents` changes a response shape the mobile client already consumes.
 
 ### Changed
+- **Failed AI calls now report what they cost, 2026-08-01.** `AiError` carries
+  an `AiUsage` on `.usage`, populated on every billed failure — refusal,
+  truncation, and invalid output alike — and `complete` folds earlier attempts
+  in before re-raising, so a refusal on the retry reports both attempts rather
+  than half the bill. **No API change**; this is internal to `ai/client.py`.
+  *Why it mattered:* the three most expensive calls the platform can make are
+  all failures — a truncated audit runs to the full 16k cap at high effort, and
+  a mismatch retry bills twice — so the T5.5 per-user budget was set up to
+  under-count precisely the spend it exists to cap.
+  - **Billed tests are now gated behind a `billed` pytest marker**, deselected
+    by default via `addopts`. `tests/integration/test_ai_live.py` skips without
+    a key, which protects an *unconfigured* machine but not a configured one:
+    adding `ANTHROPIC_API_KEY` to CI would otherwise have started spending real
+    money on every push. Running them is now deliberate — `pytest -m billed`.
 - **⚠️ BREAKING — `POST /v1/auth/register` now requires `first_name` and
   `last_name`, 2026-07-30.** Both are collected for **founders and investors**
   alike. A registration body without them is rejected with **`422`**.
@@ -104,9 +131,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Responses are validated against a schema before anything downstream sees
     them. A refusal and a truncation each fail immediately; only a schema
     mismatch is retried, once. Raw model text never reaches a caller.
-  - Every call returns a usage record with per-user attribution and the full
-    token split, so per-audit cost is visible from day one. **Daily budgets are
-    measured but not yet enforced** — enforcement is T5.5.
+  - Every **successful** call returns a usage record with per-user attribution
+    and the full token split, so per-audit cost is visible from day one.
+    **Daily budgets are measured but not yet enforced** — enforcement is T5.5.
+    (Failed calls were originally silent about cost; corrected 2026-08-01 —
+    see *Changed* above.)
   - Prompt versions are frozen once published and looked up by exact version;
     there is no "latest", so a re-run reproduces the prompt it originally used
     (D12). The version is returned on every call for recording on the AuditRun.
@@ -248,6 +277,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Every request and response model now publishes an example** (`CLAUDE.md` §6).
   Previously none did. `LoginResponse` publishes **both** branches, so a client can
   see the `mfa_required` shape and not only the happy path.
+- **A blank `.env` key no longer takes its trailing comment as its value**
+  (`851a7b2`, `6035538`, `781b361`, `2026-07-30`/`31`). **Deployment change
+  only — no API change.** Inline-comment stripping is conditional:
+  `APP_ENV=development  # ...` parses as `development`, but
+  `AI_MODEL_AUDIT=      # strongest model…` parses as *the comment sentence*.
+  That turned the audit model id into prose and would have made the first real
+  API call a confusing `404`; it hit `CORS_ALLOWED_ORIGINS`, `R2_ENDPOINT_URL`,
+  and `STRIPE_WEBHOOK_SECRET` the same way. **No test could see it** —
+  `conftest` sets `env_file = None` so a developer's `.env` cannot decide a
+  test outcome, which also means the parse never happens during the suite.
+  - **First fixed at the wrong depth, corrected 2026-08-01.** `6035538` added a
+    lint asserting `.env.example` carries no inline comments — which polices one
+    file's formatting in git and leaves the operator's real `.env`, the file
+    that actually decides the model id, unguarded. The rule now lives in the
+    parse layer: `_blank_to_none` treats any value whose stripped form starts
+    with `#` as unset, since no setting can legitimately begin with one.
+  - The suite's own `.env` reader in `conftest` had the same hole and was worse
+    — it never stripped inline comments at all, so `ANTHROPIC_API_KEY=sk-…  #
+    prod key` returned a non-`None` key with the comment attached. That meant
+    `requires_anthropic_key` would **not** skip, and the live tests would fail
+    as a `401` that reads like a revoked key rather than a parse bug.
 
 ### Added
 - **Startup Profile** (T1.4) — the first founder-owned resource.
@@ -274,8 +324,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Repository scaffold: module/layer structure per `ARCHITECTURE.md`, `pyproject.toml`,
   `.env.example`, README (T0.1). No API endpoints yet.
 - Tooling and CI (T0.2): ruff (lint + format), mypy in strict mode, pytest, and a
-  gitleaks secret scan, all wired into a GitHub Actions workflow that runs on every
-  push and pull request. No API change.
+  gitleaks secret scan, all wired into a GitHub Actions workflow. No API change.
+  - **Correction, 2026-07-31: this originally claimed the workflow "runs on
+    every push and pull request". It did not — it had never run at all.** The
+    file sat at `backend/.github/workflows/ci.yml`, but GitHub Actions only
+    discovers workflows under `/.github/workflows` at the **repository** root,
+    which since `37344d3` is the monorepo root rather than `backend/`. Every
+    push between T0.2 and 2026-07-31 was unchecked, and the entry above read as
+    protection the whole time. Fixed in `74cc8d7` by moving the workflow to the
+    root with `defaults.run.working-directory: backend`; first observed green
+    run recorded in `87f60b5`. See `TASKS.md` open follow-ups for what a green
+    badge does and does not cover — db-backed tests still skip on the runner.
 - **`GET /v1/health`** (T0.3) — unauthenticated liveness check returning
   `{status, version, environment}`. The first endpoint on the API.
 - **Error envelope** (T0.3) — every error response now returns
