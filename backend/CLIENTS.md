@@ -336,8 +336,18 @@ exist for any of them today.
 
 | Area | Task | Affects |
 |---|---|---|
-| Audit engine (scoring, reports, persistence) | T2.5–T2.9 | Founder mobile |
-| Extraction — **built, not yet reachable**: no endpoint until T2.8 wires the pipeline | T2.4 | Founder mobile |
+| AuditRun persistence, background job, status endpoint · golden-set harness | T2.8, T2.9 | Founder mobile |
+| Extraction, consistency checking, scoring and synthesis — **built, not yet reachable**: no endpoint until T2.8 wires the pipeline | T2.4–T2.7 | Founder mobile |
+
+When the audit does land, two rules will govern how you render it, and both are
+enforced server-side rather than left to the client:
+
+- **`insufficient_data` is an absence, not a failure.** It means the audit could
+  not be run on what was submitted — never show it as "not fundable". The
+  founder has not been assessed, and telling them otherwise is the failure the
+  whole `sufficiency` model exists to prevent.
+- **`provisional` must always be labelled.** A conclusion drawn from partial
+  evidence is offered, but rendering it as a plain result overstates it.
 | Readiness tasks, evidence upload, re-audit gate | T3.1, T3.5, T3.6 | Founder mobile |
 | Stripe checkout and subscriptions | T3.3, T3.4 | Founder mobile |
 | Founder AI chat | T3.7 | Founder mobile |

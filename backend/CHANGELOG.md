@@ -29,6 +29,48 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - `tests/unit/test_client_guide.py` fails if a path or enum value the guide
     names stops existing, or if the exported spec goes stale. Prose still needs
     a human; the contract does not.
+- **Scoring and synthesis (T2.7), 2026-08-01 — scores to verdicts, report, and
+  action plan.** **No API change and no new endpoint**; stage 5, reachable once
+  T2.8 wires the pipeline.
+  - **The verdict is computed by rule, not asked of a model.** The inputs came
+    from one, but the verdict itself must be reproducible (T2.9), explainable
+    to the founder who receives it, and incapable of being talked out of
+    `CLAUDE.md` §5's ban on a false "fundable" on thin data.
+  - **Four levels: `ready`, `not_yet`, `provisional`, `insufficient_data`.**
+    *Client impact once T2.8 lands: `insufficient_data` is an **absence, not a
+    failure** — never render it as "not fundable". `provisional` must always be
+    shown labelled as such, never as a plain result. Branch on `level`; the
+    `rationale` is prose and will change.*
+  - Coverage below half the in-scope dimensions yields `insufficient_data`
+    however good the available evidence looks, and a `data_integrity_score`
+    under 50 blocks the verdict outright — scoring figures we already believe
+    are wrong is scoring noise.
+  - The action plan derives from the rubric's `unmet_criteria`, sorted with
+    unassessable dimensions first, then worst-scoring: those are cheaper to fix
+    and they are what blocks the verdict.
+- **Consistency check (T2.5), 2026-08-01 — does the submitted data agree with
+  itself?** **No API change and no new endpoint**; stage 2 of the pipeline,
+  reachable once T2.8 wires it up.
+  - **Scale plausibility is arithmetic, in code — not a model call.** D9 says
+    money is math, and a model judging it would break T2.9's
+    same-input-same-score requirement. Contradiction detection *is* the model's
+    half, and must cite both conflicting claims.
+  - **Thresholds are deliberately loose: 10x, never 2x.** A false positive
+    costs more than a missed subtlety — telling a founder their revenue looks
+    wrong when it is right damages trust in the whole audit. A 3x discrepancy
+    is explicitly not reported; a business that grew or shrank is normal.
+  - **Churn is judged against customer count, not range.** `0.02` meaning 2% is
+    indistinguishable from a genuine `0.02%` on range alone (T2.2a), so the
+    test is whether the rate describes fewer than one customer a month. At
+    50,000 customers 0.02% is ten people — real. At 34 it is 0.0068 — a typo.
+  - **Findings carry a founder-facing `message` and an engineer-facing
+    `detail`, and `log_context()` carries neither.** Logs get the code,
+    severity, and field names only — never figures (`CLAUDE.md` §4). Showing a
+    founder their own numbers is not a leak; writing them to a shared log is.
+    Founder messages are also tested to be non-accusatory: a mistyped unit is
+    far likelier than dishonesty. *Client impact once T2.8 lands: expect a
+    `data_integrity_score` (0–100) and a findings list whose `code` is stable
+    and safe to branch on; `message` is prose and will change.*
 - **Extraction stage (T2.4), 2026-08-01 — documents to Startup Profile fields.**
   **No API change and no new endpoint**: this is stage 1 of the audit pipeline,
   invoked by the background job that lands with T2.8. Nothing is reachable over
