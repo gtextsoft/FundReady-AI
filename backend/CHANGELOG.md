@@ -10,6 +10,33 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **`AuditRun` persistence and migration `0010`, 2026-08-02 (T2.8, partial).**
+  One row per execution of the audit pipeline, carrying `rubric_version` (D12)
+  so a verdict stays explainable after the rubric moves on. **No API change** —
+  no endpoint reads or writes this table yet.
+  - **`uq_audit_runs_idempotency` on `(startup_id, input_hash, rubric_version)`
+    is the point of the table.** D14 requires a repeated run to be safe, and an
+    audit is the most expensive call the platform makes (`claude-opus-5`, high
+    effort, 16k budget), so a duplicate is a real charge for a verdict the
+    founder already has. The constraint closes the race an RQ `job_id` cannot:
+    a job id prevents a duplicate only while the job is in flight and lapses
+    the moment it finishes. Four integration tests against the real database
+    prove the `IntegrityError`, that a new `rubric_version` is still allowed,
+    and that changed inputs still produce a fresh run.
+  - **`input_fingerprint` must be computed from the persisted JSONB.**
+    `startup_profiles.fields` round-trips through Postgres, so a value written
+    as `Decimal("42.5000")` reads back as `42.5` and hashes differently —
+    which would bill a founder twice for one audit. One code path, documented
+    at the function.
+  - **No embedding column, though the task lists embeddings.** Anthropic has no
+    embeddings endpoint and a vector's dimension is provider-specific (1024,
+    1536, …), so declaring one would silently commit to a provider nobody has
+    chosen. `pgvector` remains a declared and unused dependency. Filed as an
+    open follow-up; adding the column later is one additive migration.
+  - Applied to Neon and verified with `alembic check` (no drift). Still `[~]`:
+    `REDIS_URL` is blank so no job has ever been dispatched, `pipeline.py` is
+    still a docstring, and the status endpoint is not built.
+
 - **`CLIENTS.md` — the client integration guide, 2026-08-01.** One document for
   the **three roles across two surfaces**: founders and investors on mobile,
   SACI admins on web. Covers the auth lifecycle (including refresh rotation and
