@@ -41,20 +41,45 @@ def test_the_guide_exists(guide: str) -> None:
     assert len(guide) > 2000, "CLIENTS.md is the client contract, not a stub"
 
 
-def test_every_path_named_in_the_guide_exists(spec: dict, guide: str) -> None:
-    live = {_normalise(p) for p in spec["paths"]}
-    # Only `/v1/...` tokens inside backticks -- prose mentioning a path in
-    # passing should not be load-bearing.
-    named = {
+def _named_paths(guide: str) -> set[str]:
+    """Every `/v1/...` token the guide names inside backticks.
+
+    Backticks only -- prose mentioning a path in passing should not be
+    load-bearing in either direction.
+    """
+    return {
         _normalise(m)
         for m in re.findall(r"`[A-Z]+ (/v1/[^`\s]*)`|`(/v1/[^`\s]*)`", guide)
         for m in [next(filter(None, m if isinstance(m, tuple) else (m,)), "")]
         if m
     }
 
+
+def test_every_path_named_in_the_guide_exists(spec: dict, guide: str) -> None:
+    live = {_normalise(p) for p in spec["paths"]}
+    named = _named_paths(guide)
+
     assert named, "no paths found -- the extraction regex has drifted"
     assert named <= live, (
         f"CLIENTS.md names paths that no longer exist: {sorted(named - live)}"
+    )
+
+
+def test_every_live_path_is_named_in_the_guide(spec: dict, guide: str) -> None:
+    """The other direction, and the one that was missing.
+
+    `test_every_path_named_in_the_guide_exists` asserts `named <= live`, so a
+    documented path that vanishes is caught -- but a **new endpoint that is never
+    documented passed silently**, which is the failure mode that actually
+    happens: nobody forgets to remove a path, everybody forgets to add one.
+    `CLAUDE.md` section 6 says every endpoint is documented; until this existed,
+    nothing enforced it.
+    """
+    live = {_normalise(p) for p in spec["paths"]}
+    named = _named_paths(guide)
+
+    assert live <= named, (
+        f"endpoints exist that CLIENTS.md does not document: {sorted(live - named)}"
     )
 
 

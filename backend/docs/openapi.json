@@ -11,6 +11,120 @@
         "title": "AccountStatus",
         "type": "string"
       },
+      "AuditRunResponse": {
+        "description": "One audit run's lifecycle -- **status only, never the report**.\n\nThis is the polling shape the mobile client reads while an audit runs, and\nthe boundary matters: `CLAUDE.md` section 4 requires report content to go\nthrough a per-tier serializer, and this endpoint is reachable by the founder\nthe moment the run is created. Adding a `report` field here would route the\nfull internal report around the tier rules for every caller at once. The\nreport is served separately once its serializer exists (T4.2 for the\ninvestor tier, T2.7's founder view alongside it).\n\n`error_message` is founder-facing and deliberately thin. Whatever an\nengineer needs to debug the failure is in the log line for the run, not in a\ncolumn the API hands back.",
+        "examples": [
+          {
+            "attempts": 1,
+            "created_at": "2026-08-02T09:00:00Z",
+            "id": "9c4d1e77-3b2a-4f80-8d61-5a7e9f0c1b23",
+            "rubric_version": "v1",
+            "started_at": "2026-08-02T09:00:04Z",
+            "startup_id": "3f2b1a09-8c7d-4e65-b4a3-1d2c3b4a5e6f",
+            "status": "running"
+          }
+        ],
+        "properties": {
+          "attempts": {
+            "description": "How many times a worker has picked this run up.",
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Stable code when `status` is `failed`. Branch on this, never on the message.",
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Founder-safe explanation when `status` is `failed`.",
+            "title": "Error Message"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "rubric_version": {
+            "description": "The rubric this run was scored against. Recorded so a past verdict stays explainable after the rubric moves on.",
+            "title": "Rubric Version",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "startup_id": {
+            "format": "uuid",
+            "title": "Startup Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AuditStatus",
+            "description": "`queued` and `running` mean keep polling. `succeeded` and `failed` are terminal for this attempt; a failed run may be retried and reuses the same id rather than creating a second one."
+          }
+        },
+        "required": [
+          "id",
+          "startup_id",
+          "status",
+          "rubric_version",
+          "attempts",
+          "created_at"
+        ],
+        "title": "AuditRunResponse",
+        "type": "object"
+      },
+      "AuditStatus": {
+        "description": "Where one audit run has got to.\n\nDocumented for clients in `CLIENTS.md`: the mobile app polls this and needs\nto know which values are terminal. `SUCCEEDED` and `FAILED` are; the other\ntwo mean \"keep polling\".",
+        "enum": [
+          "queued",
+          "running",
+          "succeeded",
+          "failed"
+        ],
+        "title": "AuditStatus",
+        "type": "string"
+      },
       "BenchmarkCreate": {
         "additionalProperties": false,
         "description": "Add one peer-group band.\n\nThe key -- sector, stage, metric, region -- identifies the cell. Sector and\nregion accept `*` for \"any\", which is what makes the last rung of the\nlookup fallback chain possible.",
@@ -3592,6 +3706,258 @@
         "summary": "Update a startup profile",
         "tags": [
           "intake"
+        ]
+      }
+    },
+    "/v1/startups/{startup_id}/audits": {
+      "get": {
+        "description": "This startup's audit runs, newest first. Status only -- no report content.\n\nAudits run in the background and are **never** performed inline: a full audit is minutes of model time. Submit, then poll the status endpoint until `status` is `succeeded` or `failed`.",
+        "operationId": "list_audit_runs_v1_startups__startup_id__audits_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "startup_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Startup Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AuditRunResponse"
+                  },
+                  "title": "Response List Audit Runs V1 Startups  Startup Id  Audits Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "List audit runs",
+        "tags": [
+          "audit"
+        ]
+      },
+      "post": {
+        "description": "Queues an audit of this startup profile and returns the run to poll.\n\n**Idempotent on the profile's contents, not on the request.** Submitting twice without changing anything returns the *same* run -- with `200` rather than `202` -- because an audit is the most expensive operation the platform performs and a founder must not be charged twice for one verdict. Change the profile and the next submission is a new run.\n\n`422` when the profile is missing fields the audit needs; the response `details` carries `missing_fields`, the same list `GET /v1/startups/me/profile` returns.\n\nAudits run in the background and are **never** performed inline: a full audit is minutes of model time. Submit, then poll the status endpoint until `status` is `succeeded` or `failed`.",
+        "operationId": "request_audit_v1_startups__startup_id__audits_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "startup_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Startup Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "An audit of these exact inputs already exists; its run is returned unchanged and no new work was queued."
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditRunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Request an audit",
+        "tags": [
+          "audit"
+        ]
+      }
+    },
+    "/v1/startups/{startup_id}/audits/{run_id}": {
+      "get": {
+        "description": "The run's lifecycle status. **This endpoint never returns report content** -- the report is served by its own per-tier serializer, and a status poll is reachable long before a report exists.\n\nA run belonging to another founder returns `404`, not `403`: a `403` would confirm the id is real.\n\nAudits run in the background and are **never** performed inline: a full audit is minutes of model time. Submit, then poll the status endpoint until `status` is `succeeded` or `failed`.",
+        "operationId": "read_audit_run_v1_startups__startup_id__audits__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "startup_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Startup Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditRunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Poll one audit run",
+        "tags": [
+          "audit"
         ]
       }
     },

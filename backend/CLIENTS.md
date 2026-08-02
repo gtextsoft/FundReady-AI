@@ -223,6 +223,9 @@ before Phase 3 adds more collections.
 | `POST /v1/documents/{id}/complete` | Step 3 of upload |
 | `GET /v1/startups/{id}/documents` | List |
 | `GET /v1/documents/{id}/download` | Expiring signed URL |
+| `POST /v1/startups/{id}/audits` | Request an audit — see §5a |
+| `GET /v1/startups/{id}/audits` | This startup's runs, newest first |
+| `GET /v1/startups/{id}/audits/{run_id}` | Poll one run's status |
 
 If you omit `name` on profile creation it is derived from your company email
 domain — `founder@acme.com` → `Acme`. That is a starting point, not a verified
@@ -233,7 +236,7 @@ company name; send `name` explicitly to control it.
 | | |
 |---|---|
 | `POST /v1/admin/users` | Provision another admin |
-| `POST /v1/admin/users/{id}/suspend` · `/reactivate` | Suspension bumps `session_valid_after`, killing live sessions |
+| `POST /v1/admin/users/{id}/suspend` · `POST /v1/admin/users/{id}/reactivate` | Suspension bumps `session_valid_after`, killing live sessions |
 | `PATCH /v1/admin/users/{id}/role` | Change a role |
 | `GET /v1/benchmarks` · `GET /v1/benchmarks/{id}` | Browse and read the benchmark KB |
 | `POST /v1/benchmarks` · `PATCH /v1/benchmarks/{id}` · `POST /v1/benchmarks/{id}/retire` | Create, revise, retire |
@@ -297,6 +300,49 @@ short-lived signed URL, not the bytes.
 
 ---
 
+## 5a. Running an audit (submit, then poll)
+
+An audit is minutes of model time, so it never runs inside your request.
+
+```
+1. POST /v1/startups/{id}/audits          → 202 AuditRun { id, status: "queued" }
+2. GET  /v1/startups/{id}/audits/{run_id} → poll until status is terminal
+```
+
+**Poll no faster than every 5 seconds**, and back off after the first minute. A
+run typically finishes in under two.
+
+### The status codes carry meaning here
+
+| Code | Means |
+|---|---|
+| `202` | Queued. New work was created. |
+| `200` | **An audit of these exact inputs already exists** — the same run is returned and nothing new was queued. |
+| `422` | The profile is missing fields the audit needs. `details.missing_fields` lists them. |
+| `404` | No such startup, or not yours. |
+
+The `200` is not an error and not a race — it is the idempotency guarantee. An
+audit is the most expensive operation the platform performs, so submitting an
+unchanged profile twice returns the first verdict rather than buying a second
+one. **Change the profile and the next submission is a new run.** If you want a
+"re-run" button, it belongs behind a profile edit, not next to it.
+
+### Terminal states
+
+`succeeded` and `failed` are terminal; `queued` and `running` mean keep polling.
+A `failed` run carries `error_code` (stable — branch on this) and
+`error_message` (founder-safe prose — show it, do not parse it). Retrying a
+failed run means submitting again.
+
+### This endpoint never returns the report
+
+`AuditRun` is lifecycle only. The report is served by its own per-tier
+serializer, and a status poll is reachable long before a report exists — so
+there is deliberately no `report` field to read here, in any state. That
+endpoint lands with the founder report view; see §7.
+
+---
+
 ## 6. Enums
 
 Every value the client may switch on. Treat unknown values as forward
@@ -314,6 +360,7 @@ compatibility, not as an error — parse defensively.
 | `ScanStatus` | `pending`, `clean`, `infected`, `skipped` |
 | `FieldSource` | `founder`, `document`, `inferred` |
 | `BenchmarkMetric` | `gross_margin_percent`, `runway_months`, `ltv_cac_ratio`, `cac_payback_months`, `run_rate_vs_trailing_percent` |
+| `AuditStatus` | `queued`, `running`, `succeeded`, `failed` |
 
 `FieldSource` matters for UI, and will matter more once extraction is wired
 (T2.8). A profile field carries the source of its value:
@@ -336,8 +383,9 @@ exist for any of them today.
 
 | Area | Task | Affects |
 |---|---|---|
-| AuditRun persistence, background job, status endpoint · golden-set harness | T2.8, T2.9 | Founder mobile |
-| Extraction, consistency checking, scoring and synthesis — **built, not yet reachable**: no endpoint until T2.8 wires the pipeline | T2.4–T2.7 | Founder mobile |
+| **The report itself.** Audits run and finish (§5a), but nothing returns the verdict, scores, or action plan yet — that needs the per-tier serializer | T2.7/T4.2 | Founder mobile |
+| Document-driven audits. Uploads are stored but **not yet read by the audit**: today a run scores the profile fields only | T2.4a | Founder mobile |
+| Golden-set harness — no verdict has been tuned against hand-scored companies, so treat early scores as provisional in the product sense too | T2.9 | Founder mobile |
 
 When the audit does land, two rules will govern how you render it, and both are
 enforced server-side rather than left to the client:

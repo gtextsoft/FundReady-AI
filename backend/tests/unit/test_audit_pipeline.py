@@ -23,6 +23,7 @@ charge to a real founder.
 import json
 from dataclasses import fields
 from datetime import date
+from decimal import Decimal
 from typing import Any, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,8 +37,9 @@ from app.modules.audit.consistency import FindingCode
 from app.modules.audit.finance import Metric, compute
 from app.modules.audit.models import Benchmark
 from app.modules.audit.rubric import v1
+from app.modules.audit.schemas import report_to_storage
 from app.modules.audit.service import BenchmarkMatch
-from app.modules.audit.synthesis import VerdictLevel
+from app.modules.audit.synthesis import VerdictLevel, synthesise
 from app.modules.intake.fields import FieldSource, Stage
 from tests.unit.test_ai_client import _FakeAnthropic, _Message  # noqa: PLC2701
 
@@ -164,6 +166,29 @@ async def test_scoring_is_skipped_when_the_data_cannot_be_trusted() -> None:
         FindingCode.MORE_FOUNDERS_THAN_TEAM,
         FindingCode.MORE_FULL_TIME_THAN_FOUNDERS,
     }
+
+
+def test_a_report_from_the_skipped_path_is_still_storable() -> None:
+    """The branch a founder with contradictory data reaches first.
+
+    `synthesise(scores=())` builds both verdicts from nothing, and
+    `report_to_storage` reads `.scope.value` and `.level.value` off them. If
+    either were absent the failure would land **after** the audit was billed, in
+    a worker, with no request to surface it -- so the cheap assertion is here
+    rather than only in the success path's end-to-end test.
+    """
+    report = synthesise(
+        rubric_version="v1", scores=(), data_integrity_score=Decimal(10)
+    )
+
+    stored = report_to_storage(report)
+    json.dumps(stored)  # JSONB holds plain types; a Decimal would raise here
+
+    assert stored["fundability"]["level"] == "insufficient_data"
+    assert stored["saleability"]["level"] == "insufficient_data"
+    # A string, not a float: a coerced integrity score is no longer the score
+    # that was computed.
+    assert stored["data_integrity_score"] == "10"
 
 
 async def test_a_skipped_audit_still_tells_the_founder_it_was_not_a_failure() -> None:

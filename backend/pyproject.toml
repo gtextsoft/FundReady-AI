@@ -38,6 +38,11 @@ dependencies = [
     "anthropic>=0.120",
     "stripe>=11.0",
     "httpx>=0.27",
+    # Error reporting. Not a new decision: `SENTRY_DSN` has been a declared
+    # setting since T0.3 and nothing could read it, so a deployed process
+    # reported failures nowhere but its own stdout. The SDK is OSS and Sentry
+    # has a free tier; it stays inert unless a DSN is set (`core/monitoring.py`).
+    "sentry-sdk[fastapi]>=2.19",
     # Document text extraction (T2.4). Approved 2026-08-01.
     #
     # PDFs and images are NOT parsed here -- they go to the model as native

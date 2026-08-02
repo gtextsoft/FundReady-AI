@@ -202,6 +202,20 @@ Every response carries an `X-Request-ID` header. Send your own to have it
 honoured and echoed back; otherwise one is generated. Quote it in a support
 report and we can find the exact log line.
 
+## Deployment
+
+Render, from `render.yaml` at the **repository root** — not in `backend/`.
+Render only discovers a blueprint at the root, the same rule that once left CI
+undiscovered for weeks.
+
+**Two processes, and the second is not optional.** `fundready-api` answers
+requests; `fundready-worker` runs audits off the queue. Deploy the API alone and
+every audit submission sits in `queued` forever, because nothing picks it up.
+
+Full walkthrough — secret generation, Neon's two URLs, Redis, R2, and what a
+green health check does *not* prove — in **[`docs/DEPLOY.md`](docs/DEPLOY.md)**.
+Read it before the first deploy; two things there otherwise cost an afternoon.
+
 ## Layout
 
 ```

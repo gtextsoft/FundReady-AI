@@ -10,6 +10,53 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Audits are reachable over HTTP, 2026-08-02 (T2.8).** Three endpoints, all
+  founder-owned and ownership-checked. **Additive; nothing existing changed.**
+  - `POST /v1/startups/{startup_id}/audits` — queues a run. Returns **`202`**
+    for new work and **`200`** with the existing run when an audit of these
+    exact inputs already exists. That is the D14 idempotency guarantee surfaced
+    in the status code rather than hidden: an audit is the most expensive
+    operation the platform performs, so an unchanged resubmission returns the
+    first verdict instead of buying a second. `422` when the profile is missing
+    fields the audit needs, with `details.missing_fields` naming them.
+  - `GET /v1/startups/{startup_id}/audits` — this startup's runs, newest first.
+  - `GET /v1/startups/{startup_id}/audits/{run_id}` — poll one run.
+  - **`AuditRun` carries no report field, in any state.** The report is served
+    by its own per-tier serializer (`CLAUDE.md` §4) and a status poll is
+    reachable long before a report exists. A test asserts the field's absence on
+    the schema, so adding one later fails loudly rather than routing the full
+    internal report around the tier rules for every founder at once.
+  - Another founder's `run_id` returns **`404`, never `403`** — a 403 would
+    confirm the id is real. The `startup_id` in the path is checked against the
+    row rather than trusted, so a caller cannot pair their own startup with
+    someone else's run id and read the answer off the status code.
+  - New enum for clients: `AuditStatus` (`queued`, `running`, `succeeded`,
+    `failed`). Polling guidance and the terminal states are in `CLIENTS.md` §5a.
+- **The audit pipeline and its worker (T2.8).** `audit/pipeline.py` wires stages
+  2–5; `app/workers/queue.py` and `tasks.py` run them off RQ. Not an API change.
+  - **Scoring is skipped when `data_integrity_score` is below the floor** —
+    `synthesise` returns `insufficient_data` on both verdicts there regardless
+    of the scores, so the rubric call would buy a verdict already decided.
+  - **A dimension the model does not return is padded as `insufficient_data`.**
+    Synthesis measures coverage against the dimensions it is handed, so an
+    assessment returning one dimension out of eleven read as fully covered and a
+    single high score produced `ready` — a "fundable" off one data point, which
+    §5 forbids as a guarantee.
+- **`render.yaml` and `backend/docs/DEPLOY.md`.** Two Render services (web +
+  worker) and the first-deploy checklist. Neon, Redis, and R2 stay external.
+- **Sentry error reporting.** `SENTRY_DSN` had been a declared setting since
+  T0.3 that nothing read. Inert unless a DSN is set; `send_default_pii` is off,
+  because request bodies here carry bearer tokens and founder financials.
+
+### Fixed
+- **`CLIENTS.md` drift was only guarded in one direction.** The guide's paths
+  were checked for existence, but a **new endpoint that was never documented
+  passed silently** — the failure that actually happens. The reverse guard
+  (`live <= named`) is now in place and immediately found one:
+  `POST /v1/admin/users/{id}/reactivate` was written as a bare `/reactivate`
+  suffix and had never been extractable.
+
+### Added (earlier)
 - **`AuditRun` persistence and migration `0010`, 2026-08-02 (T2.8, partial).**
   One row per execution of the audit pipeline, carrying `rubric_version` (D12)
   so a verdict stays explainable after the rubric moves on. **No API change** —
