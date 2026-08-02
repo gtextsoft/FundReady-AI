@@ -39,6 +39,7 @@ from app.modules.audit.consistency import Finding
 from app.modules.audit.rubric.v1 import Dimension, DimensionScore, Scope, dimensions_for
 
 __all__ = [
+    "INTEGRITY_FLOOR",
     "READY_THRESHOLD",
     "ActionItem",
     "AuditReport",
@@ -63,12 +64,18 @@ data yields `insufficient-data`, never a confident answer, so the failure mode
 this guards against is one-sided.
 """
 
-_INTEGRITY_FLOOR: Final = Decimal(50)
+INTEGRITY_FLOOR: Final = Decimal(50)
 """Below this `data_integrity_score`, no verdict is offered at all.
 
 If the submitted figures contradict each other badly enough, scoring them is
 scoring noise. Better to tell the founder to fix the data than to hand them a
 verdict derived from numbers we already believe are wrong.
+
+**Public because the pipeline has to read it before spending.** The verdict is
+already decided below this line, so `pipeline.run_pipeline` skips the rubric
+call entirely -- the most expensive call the platform makes (D16). A second
+copy of the number in `pipeline.py` would drift the first time this one moved,
+and the drift would be a paid call for a verdict that was never in doubt.
 """
 
 
@@ -157,7 +164,7 @@ def _verdict_for(
         if score.sufficiency is DataSufficiency.INSUFFICIENT_DATA
     )
 
-    if integrity < _INTEGRITY_FLOOR:
+    if integrity < INTEGRITY_FLOOR:
         return Verdict(
             scope=scope,
             level=VerdictLevel.INSUFFICIENT_DATA,
