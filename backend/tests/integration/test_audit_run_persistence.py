@@ -78,13 +78,21 @@ async def test_a_duplicate_run_is_refused_by_the_database(
         await db_session.flush()
 
 
-async def test_a_new_rubric_version_is_allowed_for_the_same_inputs(
+async def test_rubric_version_is_redundant_in_the_constraint_by_design(
     db_session: AsyncSession,
 ) -> None:
-    """D12: a new rubric is a different audit of identical data.
+    """Documents a state production cannot actually reach, and why it is kept.
 
-    The constraint must not be so broad that it hands back a verdict formed
-    under criteria that no longer apply.
+    `input_fingerprint` already hashes `rubric_version` into `input_hash`, so a
+    new rubric always changes the hash and the constraint's third column
+    discriminates nothing. **The D12 property that matters is proven in
+    `tests/unit/test_audit_runs.py::test_a_new_rubric_version_changes_the_hash`,
+    not here** -- this only pins the belt-and-braces behaviour.
+
+    It is kept in the constraint deliberately: if the fingerprint's inputs are
+    ever changed and `rubric_version` is dropped from the hashed payload, this
+    column is what stops a v2 audit silently reusing a v1 verdict. Cheap
+    insurance against a one-line edit in a different file.
     """
     profile = await _profile(db_session)
     db_session.add(_run(profile, input_hash=HASH_A, rubric="v1"))

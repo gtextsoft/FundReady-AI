@@ -138,9 +138,14 @@ class AuditRun(Base):
 
     **`rubric_version` is stored, not derived** (D12). A run must stay
     explainable after the rubric moves on; reading today's version to explain
-    last month's verdict would silently attribute the wrong criteria to it. It
-    is also part of the fingerprint, so a new rubric correctly forces a re-run
-    rather than reusing a verdict formed under different rules.
+    last month's verdict would silently attribute the wrong criteria to it.
+
+    In the constraint it is **redundant by design, not discriminating**:
+    `input_fingerprint` already hashes the rubric version into `input_hash`, so
+    a new rubric changes the hash on its own and D12 is enforced there. The
+    column stays in the key as insurance -- if the fingerprint's inputs are ever
+    changed and the rubric is dropped from the hashed payload, this is what
+    stops a v2 audit silently reusing a v1 verdict.
 
     **No embedding column, deliberately.** The task lists embeddings, but
     Anthropic has no embeddings endpoint and the vector's *dimension* is

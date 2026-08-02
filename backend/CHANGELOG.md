@@ -21,8 +21,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     founder already has. The constraint closes the race an RQ `job_id` cannot:
     a job id prevents a duplicate only while the job is in flight and lapses
     the moment it finishes. Four integration tests against the real database
-    prove the `IntegrityError`, that a new `rubric_version` is still allowed,
-    and that changed inputs still produce a fresh run.
+    prove the `IntegrityError` and that changed inputs still produce a fresh
+    run. `rubric_version` is in the key but **redundant by design** — the
+    fingerprint already hashes it into `input_hash`, so D12 is enforced there;
+    the column stays as insurance against that payload ever changing.
   - **`input_fingerprint` must be computed from the persisted JSONB.**
     `startup_profiles.fields` round-trips through Postgres, so a value written
     as `Decimal("42.5000")` reads back as `42.5` and hashes differently —
