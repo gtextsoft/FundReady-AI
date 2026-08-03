@@ -22,7 +22,7 @@ from typing import Any, Final
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
-from app.core.email_domains import is_consumer_domain
+from app.core.email_domains import is_consumer_domain, is_disposable_domain
 from app.core.errors import (
     ConflictError,
     ForbiddenError,
@@ -174,6 +174,20 @@ async def register_user(
     # whether any account exists. Saying "that address is fine, but silently
     # nothing happened" would be the worse outcome -- the founder would sit
     # waiting for an email that was never going to arrive.
+    # **Every role, not just founders.** The consumer rule below is about
+    # identity and D20 exempts investors from it; this one is about account
+    # takeover and exempts nobody. Most throwaway inboxes are publicly readable
+    # -- a mailinator address has no password -- so an account on one hands its
+    # verification link, and every future password-reset link, to anyone who
+    # knows the address. An investor reading summary-tier startup data through a
+    # public mailbox is the same breach as a founder doing it.
+    if is_disposable_domain(normalised):
+        raise InvalidRequestError(
+            "That email provider cannot be used here. Please register with an "
+            "address you control privately.",
+            {"field": "email", "reason": "disposable_email_domain"},
+        )
+
     if role is Role.FOUNDER and is_consumer_domain(normalised):
         raise InvalidRequestError(
             "Use your company email address to register as a founder.",

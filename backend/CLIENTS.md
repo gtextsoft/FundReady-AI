@@ -253,6 +253,169 @@ descriptions do.
 
 ---
 
+## 4a. Founder onboarding, end to end
+
+Everything a founder is asked, in the order you should ask it. Steps 1–3 are
+required before an audit can run; steps 4–5 are how the profile gets good enough
+to produce a verdict rather than `insufficient_data`.
+
+```
+1. POST /v1/auth/register          → account (founder, company email only)
+2. POST /v1/auth/verify-email      → email proven, account usable
+3. POST /v1/startups               → profile created (5 required columns)
+4. PATCH /v1/startups/{id}         → fill in the question catalogue below
+5. POST /v1/startups/{id}/documents → deck + financials (§5)
+6. POST /v1/startups/{id}/audits   → submit, then poll (§5a)
+```
+
+### Step 1 — Register
+
+`POST /v1/auth/register` with `email`, `password`, `role: "founder"`,
+`first_name`, `last_name`.
+
+> ⚠️ **This is currently broken for the mobile client.** `first_name` and
+> `last_name` have been required since 2026-07-30 and `signUp` in
+> `frontend/src/api/http.ts` does not send them, so every mobile registration
+> returns `422`. The sign-up screen already collects and validates both — the
+> two lines just need restoring in the request body.
+
+**Two domain rules apply, and they are not the same rule.** Both return `422`
+with `details.reason`, so branch on that:
+
+| `reason` | Applies to | Means |
+|---|---|---|
+| `consumer_email_domain` | **Founders only** | gmail, yahoo, outlook and similar. Investors are exempt — an angel investing personally has no company domain (D20). |
+| `disposable_email_domain` | **Everyone** | A throwaway inbox: mailinator, 10minutemail, guerrillamail and similar. No role is exempt. |
+
+The second one is stricter on purpose. Most throwaway inboxes are **publicly
+readable** — a mailinator address has no password — so an account on one hands
+its verification link, and every future password-reset link, to anyone who knows
+the address. That is account takeover, not a weak identity signal, which is why
+it applies to investors too.
+
+Three things follow for your UI:
+
+- **Validate before submitting.** A founder who types their gmail address and is
+  rejected three fields later has a bad first experience. Reject inline:
+  *"Please use your company email address — we use your domain to identify your
+  business."*
+- **Show different help for the two reasons.** "Use your company address" is
+  wrong advice for a throwaway domain; the user needs *"Please use an address
+  you control privately."* Do not collapse them into one message.
+- **The domain becomes the first company name on the profile.** `acme.com` →
+  "Acme". Pre-fill the profile `name` field at step 3 and let the founder
+  correct it. Refused domains return no name, so there is nothing to prefill.
+
+Password: at least 12 characters, and must not contain the email address.
+
+### Step 2 — Verify email
+
+The account exists but is not usable until the address is proven. The link in
+the email points at `APP_LINK_BASE_URL` — your deep link, not the API — and your
+handler calls `POST /v1/auth/verify-email` with the token from the URL.
+
+Tokens are **single-use and expire in 24 hours**. Do not prefetch or preview the
+link anywhere: mail scanners that follow URLs will burn the token before the
+founder taps it.
+
+### Step 3 — Create the profile
+
+`POST /v1/startups`. Every field is optional — a founder can start with just a
+name — but these five are the indexed columns an audit needs, and they are the
+ones to ask for on the first screen:
+
+| Column | Ask | Notes |
+|---|---|---|
+| `name` | "What is your business called?" | Pre-fill from the email domain |
+| `sector` | "What sector are you in?" | **Free text, not a dropdown.** D11 requires accepting sectors that don't exist yet. Offer suggestions, allow anything. |
+| `stage` | "What stage are you at?" | Enum, see §6: `idea`, `pre_seed`, `seed`, `series_a`, `series_b_plus`, `growth` |
+| `country` | "Where is the business registered?" | ISO 3166-1 alpha-2, e.g. `NG` |
+| `currency` | "What currency do you report in?" | ISO 4217, e.g. `NGN` |
+
+### Step 4 — The question catalogue
+
+Everything else lives in a `fields` object. Each entry is
+`{"value": ..., "source": "founder"}` — send `source: "founder"` for anything a
+person typed. (`document` and `inferred` are what extraction writes; you never
+send those.)
+
+```json
+{
+  "fields": {
+    "description": { "value": "Same-day parcel delivery for Lagos merchants.", "source": "founder" },
+    "monthly_revenue_minor": { "value": 4500000, "source": "founder" }
+  }
+}
+```
+
+**Required for an audit** — the profile is not auditable without these six, and
+`missing_fields` will keep naming them until they are present:
+
+| Field | Ask the founder | Type |
+|---|---|---|
+| `description` | "What does your business do?" | text |
+| `business_model` | "How do you make money?" | text |
+| `team_size` | "How many people work on this, including founders?" | integer |
+| `monthly_revenue_minor` | "Revenue in your most recent full month" | money |
+| `monthly_costs_minor` | "Total operating costs in that same month" | money |
+| `cash_on_hand_minor` | "How much cash do you have available right now?" | money |
+
+**Everything else** — optional, but each one that is missing is a dimension the
+audit has less to go on, and thin data yields `insufficient_data` rather than a
+verdict. Worth prompting for, not worth blocking on:
+
+| Field | Ask the founder | Type |
+|---|---|---|
+| `website` | "Do you have a website?" | text |
+| `founded_year` | "What year did the business start trading?" | year |
+| `founder_count` | "How many founders are there?" | integer |
+| `founders_full_time` | "How many founders work on this full time?" | integer |
+| `cost_of_revenue_minor` | "What does it cost you directly to deliver that revenue?" | money |
+| `last_12m_revenue_minor` | "Revenue over the last twelve months" | money |
+| `active_customers` | "How many paying customers do you have today?" | integer |
+| `monthly_active_users` | "How many monthly active users?" | integer |
+| `customer_acquisition_cost_minor` | "On average, what does it cost to win one customer?" | money |
+| `average_revenue_per_customer_minor` | "On average, how much does one customer pay you per month?" | money |
+| `monthly_churn_percent` | "What share of customers do you lose each month?" | percent |
+| `total_raised_minor` | "How much have you raised to date?" | money |
+| `current_raise_target_minor` | "How much are you raising now, if anything?" | money |
+| `cap_table_summary` | "Who owns what, in summary?" | text |
+| `ip_owned` | "Does the business own its core intellectual property?" | boolean |
+| `contracts_transferable` | "Would your customer contracts survive a change of ownership?" | boolean |
+| `key_person_dependency` | "What breaks if a specific person leaves?" | **text, not a yes/no** |
+
+The last three exist because the PRD audits **saleability** as well as
+fundability. Do not merge them into the funding screen — a founder answers them
+differently when they understand they are being asked what happens if they sell.
+
+### Validation the UI should enforce
+
+These are rejected server-side with `422`; enforcing them client-side saves a
+round trip and gives a better message.
+
+| Type | Rule | The mistake to prevent |
+|---|---|---|
+| **money** | Integer in **minor units** — kobo, cents. `₦45,000.00` is `4500000`. | Sending `45000` for ₦45,000, which is 100x light. Show a formatted major-unit field and convert on submit; never make the founder type kobo. |
+| **percent** | A number `0`–`100`. `2.5` means 2.5%. | Sending `0.025` for 2.5%. The server accepts it — it is a valid number in range — and it becomes a churn figure 100x too low, which inflates lifetime value. Nothing downstream can tell it apart from a genuinely low-churn business. **Label the input `%` and reject fractions.** |
+| **integer** | Whole number, not negative. `true` is refused. | — |
+| **year** | Four digits, 1800–2100. | — |
+| **boolean** | `true`/`false` only. | — |
+| **text** | Any string. | Sending `true` for `key_person_dependency`. It is a description, not a flag. |
+
+Money and percent are the two that fail silently: a wrong value is accepted,
+audited, and produces a wrong verdict. The consistency stage catches some of it
+(§5a findings) but only when another field disagrees by 10x or more.
+
+### `missing_fields` drives the completion UI
+
+Every profile response carries `missing_fields` — the required fields still
+absent, considering both the five columns and the `fields` document. Use it
+directly as the checklist on a "complete your profile" screen, and as the gate
+on the "Request audit" button: submitting an incomplete profile returns `422`
+with the same list in `details.missing_fields`.
+
+---
+
 ## 5. Document upload (three steps)
 
 Files never pass through this API — they go straight to object storage.

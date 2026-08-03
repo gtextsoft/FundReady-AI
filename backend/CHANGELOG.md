@@ -10,6 +10,30 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **The golden set is scored, 2026-08-03 (T2.9).** Not an API change — internal
+  test fixtures and documentation only. Recorded here because it turned up two
+  defects that will change API behaviour when they are fixed.
+  - **Every expectation carries `reviewed_by`.** Two companies are
+    `deterministic` (the verdict comes from the integrity floor or the coverage
+    ratio, so no judgement is in it); six are `assistant-draft`, scored by
+    Claude against the published rubric. The audit engine runs on the same model
+    family, so an eval report over those six measures agreement as much as
+    accuracy, and the loader groups by provenance so a report cannot blend the
+    two into one percentage.
+  - **`ready` and `not_yet` require every in-scope dimension to be evidenced.**
+    `_verdict_for` collapses a verdict to `provisional` if *any* dimension is
+    unevidenced or hedged. Five of the eight fixtures asserted a level their own
+    profile could never produce; four were enriched to reach it and the rest
+    corrected. A client rendering audit results should expect `provisional` to
+    be the common case today, not the exception.
+  - **Two rubric dimensions have no profile field behind them.**
+    `market_opportunity` and `scalability` are graded against criteria the
+    Startup Profile never collects, which is why `provisional` dominates. Fixing
+    it means new intake fields and so a change to the founder-facing form — see
+    `TASKS.md` open follow-ups before building that screen.
+  - **`DimensionSpec.weight` is not applied.** Documented as being applied by
+    synthesis; it is not. Fixing it will move every audit score, including ones
+    already shown to founders.
 - **Audits are reachable over HTTP, 2026-08-02 (T2.8).** Three endpoints, all
   founder-owned and ownership-checked. **Additive; nothing existing changed.**
   - `POST /v1/startups/{startup_id}/audits` — queues a run. Returns **`202`**
@@ -49,6 +73,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   because request bodies here carry bearer tokens and founder financials.
 
 ### Fixed
+- **Throwaway email inboxes were accepted at registration, 2026-08-03.** The
+  consumer-domain rule (D20) recognised gmail and its peers and nothing else, so
+  `founder@mailinator.com`, `@10minutemail.com`, `@guerrillamail.com` and every
+  other throwaway provider registered cleanly — and were handed a company name
+  read off the domain ("Mailinator", "Temp Mail").
+  - **This was account takeover, not a weak identity signal.** Most of those
+    services serve inboxes with no password: a mailinator address is readable by
+    anyone who knows it. An account on one publishes its own verification link,
+    and every future password-reset link, to whoever cares to look.
+  - Refused for **every** self-service role, unlike the consumer rule which is
+    founders-only. An investor reads summary-tier startup data, and a stranger
+    holding that mailbox reads it too. New stable
+    `error_code` reason: `disposable_email_domain`, distinct from
+    `consumer_email_domain` because the two need different help text — "use your
+    company address" is wrong advice for a throwaway domain. `CLIENTS.md` §4a
+    documents both.
+  - **No MX lookup was added**, deliberately. It would prove a domain *can*
+    receive mail; the verification email already proves it *did* — and a DNS
+    call on the registration path buys a new failure mode on an endpoint that
+    must not wobble, for a check the next step performs anyway.
 - **A `failed` audit run could never be retried, 2026-08-03.** `CLIENTS.md` §5a,
   `AuditStatus.FAILED`, and the founder-facing failure message all promised that
   resubmitting retries a failed run. None of it was true: the re-dispatch check

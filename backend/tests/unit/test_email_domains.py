@@ -11,9 +11,11 @@ import pytest
 
 from app.core.email_domains import (
     CONSUMER_EMAIL_DOMAINS,
+    DISPOSABLE_EMAIL_DOMAINS,
     company_name_from_email,
     email_domain,
     is_consumer_domain,
+    is_disposable_domain,
 )
 
 
@@ -35,6 +37,75 @@ class TestEmailDomain:
     )
     def test_unparseable_gives_none(self, address: str) -> None:
         assert email_domain(address) is None
+
+
+class TestDisposableDomains:
+    """Throwaway inboxes, which is a takeover problem rather than an identity one.
+
+    Every address below passed founder registration before these existed, and
+    several of them -- mailinator, yopmail, dispostable -- serve inboxes with no
+    password at all. An account on one publishes its own verification link and
+    every future password-reset link to anybody who knows the address.
+    """
+
+    @pytest.mark.parametrize(
+        "address",
+        [
+            "founder@mailinator.com",
+            "founder@MAILINATOR.COM",
+            "founder@yopmail.com",
+            "founder@10minutemail.com",
+            "founder@guerrillamail.com",
+            "founder@sharklasers.com",
+            "founder@temp-mail.org",
+            "founder@trashmail.com",
+            "founder@getnada.com",
+            "founder@dispostable.com",
+            "founder@maildrop.cc",
+        ],
+    )
+    def test_throwaway_providers_are_recognised(self, address: str) -> None:
+        assert is_disposable_domain(address)
+
+    @pytest.mark.parametrize(
+        "address",
+        [
+            "founder@acme.com",
+            "founder@kanmi.com.ng",
+            "founder@gmail.com",
+            "founder@example.test",
+        ],
+    )
+    def test_real_and_consumer_domains_are_not_disposable(self, address: str) -> None:
+        """Consumer is a different rule: different message, different scope."""
+        assert not is_disposable_domain(address)
+
+    def test_a_rotating_subdomain_does_not_slip_through(self) -> None:
+        """Guerrilla Mail issues addresses on subdomains; exact matching misses them."""
+        assert is_disposable_domain("founder@inbox.guerrillamail.com")
+
+    def test_a_lookalike_domain_is_not_matched(self) -> None:
+        assert not is_disposable_domain("founder@notmailinator.com")
+
+    def test_unparseable_is_not_reported_as_disposable(self) -> None:
+        assert not is_disposable_domain("no-at-sign")
+
+    def test_a_throwaway_never_becomes_a_company_name(self) -> None:
+        """ "Temp Mail" as a startup name is worse than a blank field."""
+        for address in ("founder@mailinator.com", "founder@temp-mail.org"):
+            assert company_name_from_email(address) is None
+
+    def test_the_two_lists_are_disjoint(self) -> None:
+        """A domain in both would get whichever message the checks happen to reach.
+
+        The two rules differ in scope and in what they tell the user -- one says
+        "use your company address" and applies to founders, the other says "use
+        an address you control privately" and applies to everyone. Overlap would
+        make which one fires an accident of ordering in `register_user`.
+        """
+        overlap = CONSUMER_EMAIL_DOMAINS & DISPOSABLE_EMAIL_DOMAINS
+
+        assert not overlap, f"a domain cannot be both: {sorted(overlap)}"
 
 
 class TestConsumerDomains:

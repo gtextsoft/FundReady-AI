@@ -195,6 +195,93 @@ class TestFoundersNeedACompanyAddress:
         assert user.role is Role.INVESTOR
 
 
+class TestThrowawayInboxesAreRefusedForEveryone:
+    """A takeover control, not an identity one -- so no role is exempt.
+
+    Before this existed, every address here passed founder registration. Several
+    of the providers serve inboxes with **no password**: a mailinator address is
+    readable by anyone who knows it. An account on one publishes its own
+    verification link, and every later password-reset link, to whoever looks --
+    which is account takeover by design rather than a weak signal of identity.
+
+    The investor case is the one that would be easy to leave out, since D20
+    exempts investors from the *company* address rule. It must not be exempt
+    here: an investor reads summary-tier startup data, and a stranger holding
+    that mailbox reads it too.
+    """
+
+    async def test_a_founder_cannot_use_one(self, db_session: AsyncSession) -> None:
+        with pytest.raises(InvalidRequestError):
+            await identity.register_user(
+                db_session,
+                email=f"founder-{uuid.uuid4().hex}@mailinator.com",
+                password=PASSWORD,
+                role=Role.FOUNDER,
+                first_name="Ada",
+                last_name="Tester",
+            )
+
+    async def test_an_investor_cannot_either(self, db_session: AsyncSession) -> None:
+        """The rule D20 exempts investors from is the other one."""
+        with pytest.raises(InvalidRequestError):
+            await identity.register_user(
+                db_session,
+                email=f"investor-{uuid.uuid4().hex}@guerrillamail.com",
+                password=PASSWORD,
+                role=Role.INVESTOR,
+                first_name="Ada",
+                last_name="Tester",
+            )
+
+    async def test_the_refusal_names_its_own_reason(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Distinct from `consumer_email_domain`: the client shows different help."""
+        with pytest.raises(InvalidRequestError) as refusal:
+            await identity.register_user(
+                db_session,
+                email=f"founder-{uuid.uuid4().hex}@10minutemail.com",
+                password=PASSWORD,
+                role=Role.FOUNDER,
+                first_name="Ada",
+                last_name="Tester",
+            )
+
+        assert refusal.value.details == {
+            "field": "email",
+            "reason": "disposable_email_domain",
+        }
+
+    async def test_a_rotating_subdomain_does_not_evade_it(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Guerrilla Mail hands out addresses on subdomains it rotates."""
+        with pytest.raises(InvalidRequestError):
+            await identity.register_user(
+                db_session,
+                email=f"founder-{uuid.uuid4().hex}@inbox.guerrillamail.com",
+                password=PASSWORD,
+                role=Role.FOUNDER,
+                first_name="Ada",
+                last_name="Tester",
+            )
+
+    async def test_no_account_is_left_behind(self, db_session: AsyncSession) -> None:
+        """Refused before the row is written, like the consumer rule above."""
+        address = f"founder-{uuid.uuid4().hex}@yopmail.com"
+        with pytest.raises(InvalidRequestError):
+            await identity.register_user(
+                db_session,
+                email=address,
+                password=PASSWORD,
+                role=Role.FOUNDER,
+                first_name="Ada",
+                last_name="Tester",
+            )
+
+        assert await UserRepository(db_session).get_by_email(address) is None
+
+
 class TestTheDomainNamesTheProfile:
     async def test_the_name_is_read_from_the_domain(
         self, db_session: AsyncSession

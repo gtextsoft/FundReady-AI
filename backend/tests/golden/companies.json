@@ -1,0 +1,356 @@
+{
+  "_readme": [
+    "T2.9 golden set. Every `expected` block carries `reviewed_by`, which says",
+    "whose judgement it is. Three values:",
+    "",
+    "  deterministic    -- the verdict follows from arithmetic in `synthesis.py`",
+    "                      (integrity floor, coverage ratio) and no judgement of",
+    "                      mine is in it. Zero circularity.",
+    "  assistant-draft  -- scored by Claude against the published rubric, at the",
+    "                      owner's explicit instruction. Better than unreviewed,",
+    "                      weaker than a human analyst. An eval report MUST say so",
+    "                      rather than printing the result as plain accuracy.",
+    "  human            -- an analyst read the profile and decided. None yet.",
+    "",
+    "Money is integer minor units (kobo for NGN, cents for USD), per CLAUDE.md",
+    "section 6. Figures inside each company are internally consistent on purpose:",
+    "`consistency.check_scale` fires at a 10x discrepancy, so an unintended",
+    "mismatch would flag a finding the expectations do not predict. Company",
+    "`unit-error-kobo` breaks that deliberately and says so.",
+    "",
+    "`data_integrity_min` and `data_integrity_max` are EQUAL everywhere. That",
+    "score is arithmetic over a fixed penalty table, so a band would be slack",
+    "hiding a wrong answer -- the exact figure is derivable and is asserted.",
+    "",
+    "`saleability_below_fundability` is optional and set on one company. It says",
+    "the fixture's claim is the GAP between the two verdicts rather than either",
+    "band on its own, and the accuracy half must compare the observed scores",
+    "directly -- two bands, however tight, are both satisfied by a run that",
+    "scored the two verdicts the same.",
+    "",
+    "`verdict_is_model_dependent` marks companies whose verdict cannot be",
+    "predicted without a real model call: the dimension scores come from",
+    "claude-opus-5. Where it is false, the verdict is decided by arithmetic",
+    "alone and the deterministic layer can assert it with no API call.",
+    "",
+    "THREE STRUCTURAL FACTS THE SCORING PASS UNCOVERED. Read these before",
+    "trusting any band below; all three are recorded in TASKS.md T2.9.",
+    "",
+    "1. Score bands assume the UNWEIGHTED floor mean that `_verdict_for`",
+    "   actually computes. `DimensionSpec.weight` is defined on all 11",
+    "   dimensions, its docstring claims 'Synthesis (T2.7) applies these', and",
+    "   nothing reads it. Applying the weights would move every band here.",
+    "",
+    "2. `ready` and `not_yet` both require EVERY in-scope dimension to come back",
+    "   `sufficient` -- `thin = unevidenced or any(PROVISIONAL)` in",
+    "   `_verdict_for`. One hedged dimension out of ten collapses the whole",
+    "   verdict to `provisional`. That makes the four non-provisional",
+    "   expectations below the most fragile assertions in this file.",
+    "",
+    "3. Nothing in `PROFILE_FIELDS` supplies `market_opportunity` or",
+    "   `scalability`. Their criteria ask for market sizing, competition, and a",
+    "   named capital constraint; the profile has no field for any of it, so the",
+    "   substance has to be written into `description` and `business_model` by",
+    "   hand. Combined with fact 2 and an empty benchmark table, this is why",
+    "   `healthy-seed-fintech` expecting `ready` is a claim about what SHOULD",
+    "   happen. If it comes back `provisional`, look at the field set before",
+    "   blaming the model."
+  ],
+  "companies": [
+    {
+      "id": "healthy-seed-fintech",
+      "why_this_case": "The unambiguous pass, and the only fixture that asserts `ready`. If this does not come out ready on fundability, either the bar is wrong, the rubric is broken, or -- most likely on the first run -- `market_opportunity` and `scalability` came back hedged because the profile has no field for them and no benchmark band matched. Check that before touching READY_THRESHOLD. Enriched deliberately: the narrative carries a bottom-up market derivation that reconciles with the submitted figures (900 customers x NGN 5,000 = the stated monthly revenue) and names the constraint capital would relieve, because those are the two dimensions the field set cannot supply.",
+      "verdict_is_model_dependent": true,
+      "profile": {
+        "name": "Kanmi Pay",
+        "sector": "fintech",
+        "stage": "seed",
+        "country": "NG",
+        "currency": "NGN",
+        "fields": {
+          "description": { "value": "Payment collection for Lagos pharmacies, settling same-day. Lagos State has roughly 12,000 registered pharmacy outlets; at our current NGN 5,000 average monthly fee that is a serviceable market of about NGN 60m a month, and we hold 900 of those outlets today. Expansion beyond Lagos needs state-by-state pharmacy council registration, so the addressable market is deliberately stated as Lagos only. We compete against cash reconciliation done by hand and against general-purpose POS terminals from Moniepoint and OPay, neither of which reconciles a payment back to the pharmacy's stock ledger.", "source": "founder" },
+          "business_model": { "value": "1.2% per transaction plus a monthly SaaS fee of NGN 5,000 per outlet. The binding constraint on growth is field onboarding, not technology: one field agent signs about 40 outlets a month and we run three agents. An outlet costs nothing further to serve once it is live, so gross margin rises with every cohort. New capital funds field agents and the pharmacy council registrations that open the next state, which is the same motion we have already run twice inside Lagos.", "source": "founder" },
+          "founded_year": { "value": 2022, "source": "founder" },
+          "monthly_revenue_minor": { "value": 450000000, "source": "document" },
+          "last_12m_revenue_minor": { "value": 4100000000, "source": "document" },
+          "monthly_costs_minor": { "value": 300000000, "source": "document" },
+          "cost_of_revenue_minor": { "value": 120000000, "source": "document" },
+          "cash_on_hand_minor": { "value": 5400000000, "source": "document" },
+          "active_customers": { "value": 900, "source": "founder" },
+          "average_revenue_per_customer_minor": { "value": 500000, "source": "founder" },
+          "customer_acquisition_cost_minor": { "value": 1500000, "source": "founder" },
+          "monthly_churn_percent": { "value": 3.5, "source": "founder" },
+          "team_size": { "value": 14, "source": "founder" },
+          "founder_count": { "value": 2, "source": "founder" },
+          "founders_full_time": { "value": 2, "source": "founder" },
+          "ip_owned": { "value": true, "source": "founder" },
+          "contracts_transferable": { "value": true, "source": "founder" },
+          "key_person_dependency": { "value": "Nothing critical. Both founders can cover sales and ops, and the settlement integration is documented and run by two engineers. We hold a CBN mobile money operator licence in the company name, not personally.", "source": "founder" },
+          "cap_table_summary": { "value": "The two founders hold 78% between them, a 2022 pre-seed angel round holds 12%, and 10% sits in an employee option pool. No debt and no convertible instruments outstanding. All engineering IP is assigned to the company by written agreement, including the two contractors used in 2023.", "source": "founder" },
+          "total_raised_minor": { "value": 12000000000, "source": "founder" },
+          "current_raise_target_minor": { "value": 30000000000, "source": "founder" }
+        }
+      },
+      "expected": {
+        "reviewed": true,
+        "reviewed_by": "assistant-draft",
+        "fundability": { "level": "ready", "score_min": 72, "score_max": 92 },
+        "saleability": { "level": "ready", "score_min": 70, "score_max": 90 },
+        "data_integrity_min": 100,
+        "data_integrity_max": 100,
+        "must_flag": []
+      }
+    },
+    {
+      "id": "burning-preseed",
+      "why_this_case": "Enough evidence to judge, and it does not meet the bar. Guards against a rubric that never says not_yet -- which is why it is enriched rather than left thin: a thin profile can only ever produce `provisional`, so an unenriched fixture would guard nothing. Two months of runway, LTV/CAC of 1.4, and one of three founders working full time.",
+      "verdict_is_model_dependent": true,
+      "profile": {
+        "name": "Swiftly Errands",
+        "sector": "last-mile delivery",
+        "stage": "pre_seed",
+        "country": "NG",
+        "currency": "NGN",
+        "fields": {
+          "description": { "value": "On-demand errand running for Abuja households. We estimate 180,000 households in Abuja can afford a paid errand service, and at our NGN 5,000 monthly average that is a serviceable market of about NGN 900m a month, of which we hold 30 households. The estimate is our own, derived from national household income bands rather than from a published market study, and should be treated as soft. Our competition is the informal okada rider a household already uses, and increasingly Chowdeck and Glovo, both of which are better capitalised than we are.", "source": "founder" },
+          "business_model": { "value": "Flat fee per errand, averaging NGN 5,000 a household a month. The constraint is rider supply in the neighbourhoods we cover, and capital would fund rider guarantees to hold them. Cost per errand has not fallen as we have grown: at 30 households we pay the same per-trip rate we paid at 10, because riders are paid per job and no neighbourhood yet has the density to batch trips. The plan assumes a guaranteed rider pool holds retention long enough for that density to arrive. That is a step change we have never demonstrated, and we would be asking an investor to fund the attempt.", "source": "founder" },
+          "founded_year": { "value": 2025, "source": "founder" },
+          "monthly_revenue_minor": { "value": 15000000, "source": "founder" },
+          "monthly_costs_minor": { "value": 105000000, "source": "founder" },
+          "cash_on_hand_minor": { "value": 180000000, "source": "founder" },
+          "active_customers": { "value": 30, "source": "founder" },
+          "average_revenue_per_customer_minor": { "value": 500000, "source": "founder" },
+          "customer_acquisition_cost_minor": { "value": 4000000, "source": "founder" },
+          "monthly_churn_percent": { "value": 9.0, "source": "founder" },
+          "team_size": { "value": 9, "source": "founder" },
+          "founder_count": { "value": 3, "source": "founder" },
+          "founders_full_time": { "value": 1, "source": "founder" },
+          "ip_owned": { "value": false, "source": "founder" },
+          "contracts_transferable": { "value": false, "source": "founder" },
+          "key_person_dependency": { "value": "The one full-time founder does dispatch, support and collections personally. Nothing runs for more than a day without him.", "source": "founder" },
+          "cap_table_summary": { "value": "Three founders hold the company equally at 33.3% each. No outside investment, no option pool, and no written IP assignment from the contractor who built the dispatch app.", "source": "founder" }
+        }
+      },
+      "expected": {
+        "reviewed": true,
+        "reviewed_by": "assistant-draft",
+        "fundability": { "level": "not_yet", "score_min": 20, "score_max": 52 },
+        "saleability": { "level": "not_yet", "score_min": 12, "score_max": 45 },
+        "data_integrity_min": 100,
+        "data_integrity_max": 100,
+        "must_flag": []
+      }
+    },
+    {
+      "id": "thin-profile",
+      "why_this_case": "CLAUDE.md section 5's hard rule: thin data yields insufficient_data, never a confident answer. The failure this guards is a false 'not fundable' for someone who was simply never assessed. No dimension has any citable evidence, so coverage is 0 and the verdict is decided before any model call.",
+      "verdict_is_model_dependent": false,
+      "profile": {
+        "name": "Untitled Venture",
+        "sector": "agritech",
+        "stage": "idea",
+        "country": "NG",
+        "currency": "NGN",
+        "fields": {
+          "description": { "value": "Something in agriculture. Still working it out.", "source": "founder" }
+        }
+      },
+      "expected": {
+        "reviewed": true,
+        "reviewed_by": "deterministic",
+        "fundability": { "level": "insufficient_data", "score_min": null, "score_max": null },
+        "saleability": { "level": "insufficient_data", "score_min": null, "score_max": null },
+        "data_integrity_min": 100,
+        "data_integrity_max": 100,
+        "must_flag": []
+      }
+    },
+    {
+      "id": "unit-error-kobo",
+      "why_this_case": "Whole naira typed into a kobo field, by a founder who also miscounted the team. Integrity must fall below the floor (50) and BOTH verdicts must be withheld without the rubric ever being called -- the pipeline skips the most expensive call in the platform when the verdict is already decided. Note it takes three findings to get there: two LIKELY at 15 each only reach 70, so a fixture meant to breach the floor needs a CERTAIN in it. The first draft of this company did not, and the determinism suite caught it. 100 - 15 - 15 - 25 = 45.",
+      "verdict_is_model_dependent": false,
+      "profile": {
+        "name": "Ibadan Grains Co",
+        "sector": "agritech",
+        "stage": "seed",
+        "country": "NG",
+        "currency": "NGN",
+        "fields": {
+          "description": { "value": "Grain aggregation and resale to processors.", "source": "founder" },
+          "business_model": { "value": "Buy at farmgate, sell to mills.", "source": "founder" },
+          "monthly_revenue_minor": { "value": 8000000, "source": "founder" },
+          "monthly_costs_minor": { "value": 6000000, "source": "founder" },
+          "cash_on_hand_minor": { "value": 40000000, "source": "founder" },
+          "active_customers": { "value": 40, "source": "founder" },
+          "average_revenue_per_customer_minor": { "value": 20000000, "source": "founder" },
+          "monthly_churn_percent": { "value": 0.02, "source": "founder" },
+          "team_size": { "value": 6, "source": "founder" },
+          "founder_count": { "value": 2, "source": "founder" },
+          "founders_full_time": { "value": 3, "source": "founder" }
+        }
+      },
+      "expected": {
+        "reviewed": true,
+        "reviewed_by": "deterministic",
+        "fundability": { "level": "insufficient_data", "score_min": null, "score_max": null },
+        "saleability": { "level": "insufficient_data", "score_min": null, "score_max": null },
+        "data_integrity_min": 45,
+        "data_integrity_max": 45,
+        "must_flag": ["revenue_vs_customers", "churn_implausibly_low", "more_full_time_than_founders"]
+      }
+    },
+    {
+      "id": "pre-revenue-deeptech",
+      "why_this_case": "Revenue is absent, not zero. finance.py returns None-plus-a-reason rather than 0.0 precisely so this does not get scored as a real 0% margin, which would be the false verdict section 5 forbids. Also the fixture that proves the two narrative dimensions move independently: the description carries a real market derivation, and `business_model` is left as one line because a pre-clinical company genuinely cannot evidence scalability. Without that split, fundability coverage lands on exactly 4/8 -- and since `covered < 0.5` is a strict comparison, a single dimension flipping would swing the whole verdict between provisional and insufficient_data. A fixture should not sit on that edge by accident.",
+      "verdict_is_model_dependent": true,
+      "profile": {
+        "name": "Sahel Diagnostics",
+        "sector": "medtech",
+        "stage": "pre_seed",
+        "country": "NG",
+        "currency": "NGN",
+        "fields": {
+          "description": { "value": "Low-cost malaria diagnostic strips, pre-clinical. Nigeria records around 60 million malaria cases a year, and the National Malaria Elimination Programme puts rapid-test consumption near 30 million units annually; at our target price of NGN 250 a strip that is a serviceable market of roughly NGN 7.5bn a year. We can address none of it until NAFDAC certification completes, so the reachable market today is zero. The incumbent tests are imported SD Bioline and Abbott kits, which we expect to undercut on landed cost rather than on sensitivity.", "source": "founder" },
+          "business_model": { "value": "Per-unit sales to clinics once certified.", "source": "founder" },
+          "founded_year": { "value": 2024, "source": "founder" },
+          "monthly_costs_minor": { "value": 90000000, "source": "document" },
+          "cash_on_hand_minor": { "value": 1080000000, "source": "document" },
+          "team_size": { "value": 5, "source": "founder" },
+          "founder_count": { "value": 2, "source": "founder" },
+          "founders_full_time": { "value": 2, "source": "founder" },
+          "ip_owned": { "value": true, "source": "founder" },
+          "key_person_dependency": { "value": "The chief scientist holds the assay formulation. There is no second person who could complete certification.", "source": "founder" },
+          "total_raised_minor": { "value": 1500000000, "source": "founder" },
+          "current_raise_target_minor": { "value": 4000000000, "source": "founder" }
+        }
+      },
+      "expected": {
+        "reviewed": true,
+        "reviewed_by": "assistant-draft",
+        "fundability": { "level": "provisional", "score_min": 35, "score_max": 70 },
+        "saleability": { "level": "provisional", "score_min": 28, "score_max": 65 },
+        "data_integrity_min": 100,
+        "data_integrity_max": 100,
+        "must_flag": []
+      }
+    },
+    {
+      "id": "founder-dependent-agency",
+      "why_this_case": "The two verdicts must be able to diverge. A profitable agency that dies without its founder is fundable-ish and clearly less saleable; if both verdicts always move together, the saleability dimensions are not doing any work. Note how little they can currently diverge: 7 of the 10 saleability dimensions are shared with fundability, and because the unweighted mean ignores `DimensionSpec.weight`, the three saleability-only dimensions carry 30% of the verdict instead of the 50% the declared weights give them. The gap below is roughly 10 points; under the declared weights it would be about twice that. The ordering is the claim and the bands are only its shadow, so this is the one fixture carrying `saleability_below_fundability`: the accuracy half must compare the two observed scores directly, not just check each against its band. The bands are also deliberately made not to overlap (46-69 against 32-45), because two overlapping bands are both satisfied by a run that scored the verdicts identically -- which is the exact failure this company exists to catch.",
+      "verdict_is_model_dependent": true,
+      "profile": {
+        "name": "Adeyemi Creative",
+        "sector": "marketing agency",
+        "stage": "seed",
+        "country": "NG",
+        "currency": "NGN",
+        "fields": {
+          "description": { "value": "Brand campaigns for consumer goods, sold personally by the founder. About 400 consumer-goods companies in Nigeria run paid brand campaigns of the size we service, and at our NGN 200,000 monthly average that is a serviceable market near NGN 80m a month; we hold 14 of those accounts. We compete against the Lagos offices of the network agencies for the largest accounts and against freelancers below us, and we win on the founder's personal relationships rather than on price or on any proprietary method.", "source": "founder" },
+          "business_model": { "value": "Project retainers, averaging NGN 200,000 a client a month. Growth is constrained by senior creative hours, which scale linearly with headcount -- capital buys people, not leverage, and we have never demonstrated a way around that. Delivery cost per additional client has been flat for three years at roughly 40% of that client's fee, and we hold no template, product, or reusable method that would bend it. Every naira of new revenue needs about the same share of a senior creative as the last one did, so capital would fund a larger version of the same shape.", "source": "founder" },
+          "founded_year": { "value": 2019, "source": "founder" },
+          "monthly_revenue_minor": { "value": 280000000, "source": "document" },
+          "last_12m_revenue_minor": { "value": 3100000000, "source": "document" },
+          "monthly_costs_minor": { "value": 190000000, "source": "document" },
+          "cost_of_revenue_minor": { "value": 110000000, "source": "document" },
+          "cash_on_hand_minor": { "value": 900000000, "source": "document" },
+          "active_customers": { "value": 14, "source": "founder" },
+          "average_revenue_per_customer_minor": { "value": 20000000, "source": "founder" },
+          "customer_acquisition_cost_minor": { "value": 30000000, "source": "founder" },
+          "monthly_churn_percent": { "value": 2.0, "source": "founder" },
+          "team_size": { "value": 11, "source": "founder" },
+          "founder_count": { "value": 1, "source": "founder" },
+          "founders_full_time": { "value": 1, "source": "founder" },
+          "ip_owned": { "value": false, "source": "founder" },
+          "contracts_transferable": { "value": false, "source": "founder" },
+          "key_person_dependency": { "value": "Every client was won personally by the founder and renews on that relationship. There is no account manager and no written pipeline.", "source": "founder" },
+          "cap_table_summary": { "value": "The founder holds 100%. No outside investors, no option pool, no debt. Campaign creative is delivered under client contracts that assign copyright to the client, so the agency owns no reusable IP.", "source": "founder" }
+        }
+      },
+      "expected": {
+        "reviewed": true,
+        "reviewed_by": "assistant-draft",
+        "saleability_below_fundability": true,
+        "fundability": { "level": "not_yet", "score_min": 46, "score_max": 69 },
+        "saleability": { "level": "not_yet", "score_min": 32, "score_max": 45 },
+        "data_integrity_min": 100,
+        "data_integrity_max": 100,
+        "must_flag": []
+      }
+    },
+    {
+      "id": "borderline-seventy",
+      "why_this_case": "Sits deliberately near READY_THRESHOLD (70, currently untuned). Hand-scoring puts it at about 68 on fundability, which is the point: this is the company whose verdict should move when the threshold is tuned. Treat a score of 70 or above here as a signal to look at the threshold, NOT automatically as a regression -- the band below stops just under 70 so the level assertion stays meaningful, but an eval report should surface this company's raw score every run rather than only its pass or fail.",
+      "verdict_is_model_dependent": true,
+      "profile": {
+        "name": "Zaria Logistics",
+        "sector": "last-mile delivery",
+        "stage": "seed",
+        "country": "NG",
+        "currency": "NGN",
+        "fields": {
+          "description": { "value": "Inter-city parcel delivery across northern Nigeria. The eight northern states we cover generate roughly 90,000 inter-city commercial parcels a month at the weights we carry, which at our NGN 5,000 average is a serviceable market of about NGN 450m a month; we move 420 accounts' worth of that today. The figure is derived from state trade-association parcel counts rather than a purchased market report. Our competition is GIG Logistics on the trunk routes and the informal luxury-bus parcel trade everywhere else, and the second is much larger than the first.", "source": "founder" },
+          "business_model": { "value": "Per-parcel pricing by weight and distance, averaging NGN 5,000 a month an account. The constraint is depot coverage: each new depot opens a route cluster and costs about NGN 18m to stand up, after which marginal cost per parcel on that cluster falls with volume. Capital funds depots, which is a motion we have run four times and can evidence the unit cost of.", "source": "founder" },
+          "founded_year": { "value": 2021, "source": "founder" },
+          "monthly_revenue_minor": { "value": 210000000, "source": "document" },
+          "last_12m_revenue_minor": { "value": 2300000000, "source": "document" },
+          "monthly_costs_minor": { "value": 205000000, "source": "document" },
+          "cost_of_revenue_minor": { "value": 140000000, "source": "document" },
+          "cash_on_hand_minor": { "value": 820000000, "source": "document" },
+          "active_customers": { "value": 420, "source": "founder" },
+          "average_revenue_per_customer_minor": { "value": 500000, "source": "founder" },
+          "customer_acquisition_cost_minor": { "value": 2200000, "source": "founder" },
+          "monthly_churn_percent": { "value": 5.5, "source": "founder" },
+          "team_size": { "value": 12, "source": "founder" },
+          "founder_count": { "value": 2, "source": "founder" },
+          "founders_full_time": { "value": 2, "source": "founder" },
+          "ip_owned": { "value": false, "source": "founder" },
+          "contracts_transferable": { "value": true, "source": "founder" },
+          "key_person_dependency": { "value": "Routes and pricing are documented and the ops lead runs them day to day. The founders are replaceable within a quarter.", "source": "founder" },
+          "cap_table_summary": { "value": "Two founders hold 70%, a 2021 friends-and-family round holds 20%, and 10% is an unallocated option pool. No debt. The dispatch software is a licensed third-party product, not owned, which is why ip_owned is false.", "source": "founder" }
+        }
+      },
+      "expected": {
+        "reviewed": true,
+        "reviewed_by": "assistant-draft",
+        "fundability": { "level": "not_yet", "score_min": 58, "score_max": 69 },
+        "saleability": { "level": "not_yet", "score_min": 55, "score_max": 69 },
+        "data_integrity_min": 100,
+        "data_integrity_max": 100,
+        "must_flag": []
+      }
+    },
+    {
+      "id": "impossible-team",
+      "why_this_case": "Arithmetically impossible rather than merely improbable: more founders than people. A CERTAIN-severity finding, so it must fire regardless of how forgiving the thresholds are. 100 - 25 = 75, which is above the integrity floor, so unlike unit-error-kobo the rubric IS called and the finding has to survive into a real verdict rather than short-circuiting it. Left deliberately thin -- the claim here is about the finding, not about the score, and enriching it would only add noise to a fixture whose job is one CERTAIN check.",
+      "verdict_is_model_dependent": true,
+      "profile": {
+        "name": "Enugu Softworks",
+        "sector": "software",
+        "stage": "pre_seed",
+        "country": "NG",
+        "currency": "NGN",
+        "fields": {
+          "description": { "value": "Custom internal tooling for mid-sized manufacturers.", "source": "founder" },
+          "business_model": { "value": "Fixed-scope build plus support retainer.", "source": "founder" },
+          "monthly_revenue_minor": { "value": 60000000, "source": "founder" },
+          "monthly_costs_minor": { "value": 75000000, "source": "founder" },
+          "cash_on_hand_minor": { "value": 450000000, "source": "founder" },
+          "active_customers": { "value": 12, "source": "founder" },
+          "average_revenue_per_customer_minor": { "value": 5000000, "source": "founder" },
+          "team_size": { "value": 3, "source": "founder" },
+          "founder_count": { "value": 5, "source": "founder" },
+          "founders_full_time": { "value": 2, "source": "founder" }
+        }
+      },
+      "expected": {
+        "reviewed": true,
+        "reviewed_by": "assistant-draft",
+        "fundability": { "level": "provisional", "score_min": 25, "score_max": 58 },
+        "saleability": { "level": "provisional", "score_min": 22, "score_max": 55 },
+        "data_integrity_min": 75,
+        "data_integrity_max": 75,
+        "must_flag": ["more_founders_than_team"]
+      }
+    }
+  ]
+}
