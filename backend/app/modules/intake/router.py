@@ -56,6 +56,8 @@ def _serialise(profile: StartupProfile) -> ProfileResponse:
         currency=profile.currency,
         fields=profile.fields or {},
         missing_fields=service.missing_fields(profile),
+        investor_visible=profile.investor_visible,
+        published_at=profile.published_at,
         created_at=profile.created_at,
         updated_at=profile.updated_at,
     )
@@ -142,6 +144,69 @@ async def update_profile(
 ) -> ProfileResponse:
     profile = await service.update_profile(
         session, actor, profile_id, payload.model_dump(exclude_unset=True, mode="json")
+    )
+    return _serialise(profile)
+
+
+PUBLISH_NOTE = (
+    "\n\n**Publishing is consent, not eligibility.** Opting in says the founder "
+    "is willing to be seen. Whether there is anything to *show* is decided "
+    "separately: a startup appears in `GET /v1/discover` only once it also has "
+    "a **succeeded audit**, because a card with no verdict tells an investor "
+    "nothing and invites them to approach the founder directly — which is what "
+    "the brokerage exists to prevent.\n\n"
+    "So publishing before the first audit finishes is allowed and is not an "
+    "error. The client should say so: *\"You'll appear to investors once your "
+    'audit completes."* Poll the audit, not this endpoint.\n\n'
+    "**What an investor then sees is the summary tier only** — the two verdict "
+    "levels and scores, plus sector, stage and country. Never the submitted "
+    "figures, the findings, the action plan, or any contact detail. The full "
+    "report is revealed by a SACI admin at the meeting and by no other path."
+)
+
+
+@router.post(
+    "/startups/{profile_id}/publish",
+    response_model=ProfileResponse,
+    summary="Publish to investors",
+    description=(
+        "Opt this startup in to investor discovery.\n\n"
+        "Idempotent: publishing an already-published profile refreshes "
+        "`published_at` and changes nothing else." + PUBLISH_NOTE + OWNERSHIP_NOTE
+    ),
+    responses=error_responses(401, 403, 404, 422),
+)
+async def publish_profile(
+    profile_id: uuid.UUID, actor: CurrentUserDep, session: SessionDep
+) -> ProfileResponse:
+    profile = await service.set_discoverability(
+        session, actor, profile_id, visible=True
+    )
+    return _serialise(profile)
+
+
+@router.post(
+    "/startups/{profile_id}/unpublish",
+    response_model=ProfileResponse,
+    summary="Withdraw from investor discovery",
+    description=(
+        "Opt out again. Takes effect immediately: the startup stops appearing "
+        "in discovery and its card returns `404`.\n\n"
+        "**Unconditional, unlike publishing.** Withdrawing consent is never "
+        "harder than giving it, so there is no audit check and no waiting "
+        "period.\n\n"
+        "This does **not** retract a report a SACI admin has already revealed "
+        "to an investor — that disclosure happened, and pretending otherwise "
+        "would be worse than recording it. The reveal is kept in the audit log."
+        + OWNERSHIP_NOTE
+    ),
+    responses=error_responses(401, 403, 404, 422),
+)
+async def unpublish_profile(
+    profile_id: uuid.UUID, actor: CurrentUserDep, session: SessionDep
+) -> ProfileResponse:
+    profile = await service.set_discoverability(
+        session, actor, profile_id, visible=False
     )
     return _serialise(profile)
 

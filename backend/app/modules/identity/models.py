@@ -63,6 +63,13 @@ class AuditAction(StrEnum):
     BENCHMARK_UPDATED = "admin.benchmark_updated"
     BENCHMARK_RETIRED = "admin.benchmark_retired"
 
+    # Brokerage (T4.5). Logged because SACI standing between an investor and a
+    # founder is the product, so who asked and who decided has to be
+    # reconstructable afterwards -- including the declines.
+    INTEREST_EXPRESSED = "brokerage.interest_expressed"
+    INTEREST_APPROVED = "brokerage.interest_approved"
+    INTEREST_DECLINED = "brokerage.interest_declined"
+
     # The one that matters most (DECISIONS.md D8)
     REPORT_REVEALED = "report.revealed"
     REPORT_TIER_CHANGED = "report.tier_changed"

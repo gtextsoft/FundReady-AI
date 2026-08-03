@@ -9,7 +9,82 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Infrastructure
+- **Document storage is live, 2026-08-04 (T1.5).** No API change — the upload
+  endpoints already existed and were tested against dummy credentials. What
+  changed is that R2 is now provisioned, so they work: a real file went
+  `PUT` → `head_object` → signed `GET` → `delete`, bytes matching.
+  - Buckets are `documents` and `evidence`, named **without the product in
+    them** so a rename costs nothing.
+  - **The mobile client's direct `PUT` to a signed URL is now worth testing on
+    a real device.** From a native build this is fine; from Expo Web it needs a
+    CORS policy on the bucket allowing `PUT` from the app origin, which is not
+    configured.
+- **The audit queue is live (T2.8).** Upstash Redis, real worker, real model
+  call — see the fixes below for the two bugs that surfaced.
+
+### Fixed
+- **The background worker could never start on Windows, 2026-08-03.** RQ's
+  default `Worker` forks a work horse per job and `os.fork` does not exist
+  there, so the worker claimed its first job and died with an `AttributeError`.
+  Not a production bug — Render runs Linux — but it is why no audit had ever
+  been run through the queue on a development machine, and therefore why the
+  transport went untested for so long. `SimpleWorker` is now selected where the
+  platform cannot fork; the forking worker, and its per-job isolation, is kept
+  everywhere else.
+- **A Redis connection pool was created per enqueue.** `Redis.from_url` builds a
+  new pool on every call and `get_queue()` runs once per dispatch, so a busy API
+  process leaked connections. Invisible on a self-hosted Redis; on a managed one
+  that caps concurrent connections it presents as an intermittently failing
+  queue. Now a single lazily-built client, keyed on the URL so a changed
+  `REDIS_URL` still takes effect, with `health_check_interval` and
+  `socket_keepalive` set because managed Redis closes idle connections while RQ
+  sits in a blocking read.
+
 ### Added
+- **The audit report is readable, 2026-08-03 (T4.2).** **Additive; nothing
+  existing changed.** Until now `AuditRun.report` was populated and served by
+  nothing — an audit could run, store a full report, and no caller could ever
+  read the result.
+  - `GET /v1/startups/{startup_id}/audits/{run_id}/report` — the founder's own
+    report in full: both verdicts with their reasoning, the data-integrity
+    score, every finding, and the action plan.
+  - `GET /v1/admin/startups/{startup_id}/audits/{run_id}/report` — **SACI admins
+    only**, everything including the engineer-facing `detail` on each finding.
+    A separate route rather than the founder route widened by role, so a change
+    to one cannot silently widen the other.
+  - **`404` until the run has succeeded.** No report exists while a run is
+    `queued`, `running`, or `failed`, and an empty `200` would have clients
+    rendering a blank verdict as a real one.
+  - **Three rendering rules the client must follow**, documented in
+    `CLIENTS.md` §5b: `insufficient_data` must never render as "not fundable"
+    (it is an absence, not a failure); `provisional` must be visibly labelled
+    provisional and will be the common case; `score` is `null` for
+    `insufficient_data` and must not be coerced to `0`.
+  - `data_integrity_score` is a **string**, not a float — it is a `Decimal`
+    server-side and JSON floats would change the value.
+  - An investor has **no access to either endpoint**. Summary-tier data reaches
+    them through discovery, and a full report only through a SACI reveal.
+- **Four market and growth questions on the Startup Profile, 2026-08-03.**
+  **Additive and optional — no existing request or response shape changed, and
+  no migration was needed** (profile fields live in a JSONB document).
+  `market_size_note`, `competition_note`, `growth_constraint`, `use_of_funds`.
+  - **Why:** rubric v1 grades `market_opportunity` and `scalability` against
+    criteria — a derived market size, named competitors, the constraint capital
+    would relieve, a capital plan that maps to it — that **nothing on the form
+    asked for**. Both dimensions therefore came back unevidenced on essentially
+    every profile, and `_verdict_for` requires *every* in-scope dimension to be
+    evidenced before a verdict can read `ready` or `not_yet`. A founder could
+    answer the whole form correctly and still be capped at `provisional`.
+  - **Mobile impact:** four new optional text inputs. Until they ship, the cap
+    above stays in place. `CLIENTS.md` §4a carries the labels, placeholder
+    guidance, and why `growth_constraint` and `use_of_funds` must stay separate.
+  - `total_raised_minor` and `current_raise_target_minor` are unchanged but are
+    now documented as **context only** — how much a founder wants is not
+    evidence about growth until `use_of_funds` says what it buys. Ask both or
+    neither.
+  - 17 further rubric criteria still have no question behind them. The
+    prioritised list is in `FOUNDER-ONBOARDING.md`; none is built.
 - **The golden set is scored, 2026-08-03 (T2.9).** Not an API change — internal
   test fixtures and documentation only. Recorded here because it turned up two
   defects that will change API behaviour when they are fixed.

@@ -30,9 +30,11 @@ from app.core.logging import (
 from app.core.monitoring import init_sentry
 from app.core.security import CurrentUser, set_user_loader
 from app.modules.audit import router as audit_router
+from app.modules.brokerage import router as brokerage_router
 from app.modules.identity import router as identity_router
 from app.modules.identity import service as identity_service
 from app.modules.intake import router as intake_router
+from app.modules.investor import router as investor_router
 
 API_V1_PREFIX = "/v1"
 
@@ -123,3 +125,5 @@ app.include_router(health.router, prefix=API_V1_PREFIX)
 app.include_router(identity_router.router, prefix=API_V1_PREFIX)
 app.include_router(intake_router.router, prefix=API_V1_PREFIX)
 app.include_router(audit_router.router, prefix=API_V1_PREFIX)
+app.include_router(investor_router.router, prefix=API_V1_PREFIX)
+app.include_router(brokerage_router.router, prefix=API_V1_PREFIX)

@@ -203,7 +203,7 @@ Scope: saleability only · weight 15
 
 ## 1. `healthy-seed-fintech`
 
-**Why this company is in the set.** The unambiguous pass, and the only fixture that asserts `ready`. If this does not come out ready on fundability, either the bar is wrong, the rubric is broken, or -- most likely on the first run -- `market_opportunity` and `scalability` came back hedged because the profile has no field for them and no benchmark band matched. Check that before touching READY_THRESHOLD. Enriched deliberately: the narrative carries a bottom-up market derivation that reconciles with the submitted figures (900 customers x NGN 5,000 = the stated monthly revenue) and names the constraint capital would relieve, because those are the two dimensions the field set cannot supply.
+**Why this company is in the set.** The unambiguous pass, and the only fixture that asserts `ready`. If this does not come out ready on fundability, either the bar is wrong, the rubric is broken, or -- most likely on the first run -- some dimension came back hedged because no benchmark band matched and the prompt tells the model to lower its confidence when none does. Check that before touching READY_THRESHOLD. Every dimension is answered from a real field, including the market derivation (12,000 Lagos outlets x NGN 5,000, reconciling with the stated monthly revenue) and the named growth constraint, so a `provisional` result here is about scoring rather than about missing data.
 
 ### What the founder submitted
 
@@ -216,9 +216,13 @@ country: NG
 currency: NGN
 
 Fields below are as submitted. Amounts ending in `_minor` are integer minor units (e.g. kobo, cents) of the currency above.
-description: Payment collection for Lagos pharmacies, settling same-day. Lagos State has roughly 12,000 registered pharmacy outlets; at our current NGN 5,000 average monthly fee that is a serviceable market of about NGN 60m a month, and we hold 900 of those outlets today. Expansion beyond Lagos needs state-by-state pharmacy council registration, so the addressable market is deliberately stated as Lagos only. We compete against cash reconciliation done by hand and against general-purpose POS terminals from Moniepoint and OPay, neither of which reconciles a payment back to the pharmacy's stock ledger. [source: founder]
-business_model: 1.2% per transaction plus a monthly SaaS fee of NGN 5,000 per outlet. The binding constraint on growth is field onboarding, not technology: one field agent signs about 40 outlets a month and we run three agents. An outlet costs nothing further to serve once it is live, so gross margin rises with every cohort. New capital funds field agents and the pharmacy council registrations that open the next state, which is the same motion we have already run twice inside Lagos. [source: founder]
+description: Payment collection for Lagos pharmacies, settling same-day. [source: founder]
+business_model: 1.2% per transaction plus a monthly SaaS fee of NGN 5,000 per outlet. An outlet costs nothing further to serve once it is live, so gross margin rises with every cohort. [source: founder]
 founded_year: 2022 [source: founder]
+market_size_note: Lagos State has roughly 12,000 registered pharmacy outlets. At our NGN 5,000 average monthly fee that is a serviceable market of about NGN 60m a month, and we hold 900 of those outlets. We cannot address the rest of Nigeria yet: each state needs its own pharmacy council registration, so the figure is deliberately Lagos-only rather than a national headline. [source: founder]
+competition_note: Cash reconciliation done by hand, which is what most outlets still do, and the general-purpose POS terminals from Moniepoint and OPay. Neither competitor reconciles a payment back to the pharmacy's stock ledger, which is the specific thing our customers stay for. [source: founder]
+growth_constraint: Field onboarding, not technology. One field agent signs about 40 outlets a month and we run three agents. An outlet costs nothing further to serve once live, so the constraint is purely how fast we can sign them. We have already run this motion twice inside Lagos and can evidence the per-agent numbers. [source: founder]
+use_of_funds: Field agents and the state-by-state pharmacy council registrations that open the next market. Roughly 70% headcount for agents, 30% registration and compliance. Both map directly to the onboarding constraint rather than to product work. [source: founder]
 team_size: 14 [source: founder]
 founder_count: 2 [source: founder]
 founders_full_time: 2 [source: founder]
@@ -308,9 +312,13 @@ country: NG
 currency: NGN
 
 Fields below are as submitted. Amounts ending in `_minor` are integer minor units (e.g. kobo, cents) of the currency above.
-description: On-demand errand running for Abuja households. We estimate 180,000 households in Abuja can afford a paid errand service, and at our NGN 5,000 monthly average that is a serviceable market of about NGN 900m a month, of which we hold 30 households. The estimate is our own, derived from national household income bands rather than from a published market study, and should be treated as soft. Our competition is the informal okada rider a household already uses, and increasingly Chowdeck and Glovo, both of which are better capitalised than we are. [source: founder]
-business_model: Flat fee per errand, averaging NGN 5,000 a household a month. The constraint is rider supply in the neighbourhoods we cover, and capital would fund rider guarantees to hold them. Cost per errand has not fallen as we have grown: at 30 households we pay the same per-trip rate we paid at 10, because riders are paid per job and no neighbourhood yet has the density to batch trips. The plan assumes a guaranteed rider pool holds retention long enough for that density to arrive. That is a step change we have never demonstrated, and we would be asking an investor to fund the attempt. [source: founder]
+description: On-demand errand running for Abuja households. [source: founder]
+business_model: Flat fee per errand, averaging NGN 5,000 a household a month. [source: founder]
 founded_year: 2025 [source: founder]
+market_size_note: We estimate 180,000 Abuja households can afford a paid errand service, which at our NGN 5,000 monthly average is about NGN 900m a month; we hold 30 of them. This is our own estimate derived from national household income bands, not a published market study, and should be treated as soft. [source: founder]
+competition_note: The informal okada rider a household already uses and knows, which is our real competition, and increasingly Chowdeck and Glovo. Both of those are far better capitalised than we are. [source: founder]
+growth_constraint: Rider supply in the neighbourhoods we cover. Cost per errand has not fallen as we have grown -- at 30 households we pay the same per-trip rate we paid at 10, because riders are paid per job and no neighbourhood yet has the density to batch trips. [source: founder]
+use_of_funds: Rider guarantees, to hold a pool long enough for density to build. We have never demonstrated that a guaranteed pool holds retention, so this is funding an attempt rather than scaling a proven motion, and we would say so to an investor. [source: founder]
 team_size: 9 [source: founder]
 founder_count: 3 [source: founder]
 founders_full_time: 1 [source: founder]
@@ -543,7 +551,7 @@ In `tests/golden/companies.json`, on `unit-error-kobo`:
 
 ## 5. `pre-revenue-deeptech`
 
-**Why this company is in the set.** Revenue is absent, not zero. finance.py returns None-plus-a-reason rather than 0.0 precisely so this does not get scored as a real 0% margin, which would be the false verdict section 5 forbids. Also the fixture that proves the two narrative dimensions move independently: the description carries a real market derivation, and `business_model` is left as one line because a pre-clinical company genuinely cannot evidence scalability. Without that split, fundability coverage lands on exactly 4/8 -- and since `covered < 0.5` is a strict comparison, a single dimension flipping would swing the whole verdict between provisional and insufficient_data. A fixture should not sit on that edge by accident.
+**Why this company is in the set.** Revenue is absent, not zero. finance.py returns None-plus-a-reason rather than 0.0 precisely so this does not get scored as a real 0% margin, which would be the false verdict section 5 forbids. Also the fixture that keeps market opportunity and scalability independent: it answers the market questions honestly (a real derivation, bounded by the certification it has not got) and leaves the growth questions empty, because a pre-clinical company genuinely cannot evidence that capital would produce output. Fundability lands at 5/8 rather than 4/8 as a result -- and 4/8 is exactly the `covered < 0.5` boundary, where a single field would swing the whole verdict between provisional and insufficient_data.
 
 ### What the founder submitted
 
@@ -556,9 +564,11 @@ country: NG
 currency: NGN
 
 Fields below are as submitted. Amounts ending in `_minor` are integer minor units (e.g. kobo, cents) of the currency above.
-description: Low-cost malaria diagnostic strips, pre-clinical. Nigeria records around 60 million malaria cases a year, and the National Malaria Elimination Programme puts rapid-test consumption near 30 million units annually; at our target price of NGN 250 a strip that is a serviceable market of roughly NGN 7.5bn a year. We can address none of it until NAFDAC certification completes, so the reachable market today is zero. The incumbent tests are imported SD Bioline and Abbott kits, which we expect to undercut on landed cost rather than on sensitivity. [source: founder]
+description: Low-cost malaria diagnostic strips, pre-clinical. [source: founder]
 business_model: Per-unit sales to clinics once certified. [source: founder]
 founded_year: 2024 [source: founder]
+market_size_note: Nigeria records around 60 million malaria cases a year, and the National Malaria Elimination Programme puts rapid-test consumption near 30 million units annually. At our target price of NGN 250 a strip that is roughly NGN 7.5bn a year. We can address none of it until NAFDAC certification completes, so the market we can actually serve today is zero. [source: founder]
+competition_note: Imported SD Bioline and Abbott rapid tests, which is what clinics buy now. We expect to undercut them on landed cost rather than beat them on sensitivity. [source: founder]
 team_size: 5 [source: founder]
 founder_count: 2 [source: founder]
 founders_full_time: 2 [source: founder]
@@ -639,9 +649,13 @@ country: NG
 currency: NGN
 
 Fields below are as submitted. Amounts ending in `_minor` are integer minor units (e.g. kobo, cents) of the currency above.
-description: Brand campaigns for consumer goods, sold personally by the founder. About 400 consumer-goods companies in Nigeria run paid brand campaigns of the size we service, and at our NGN 200,000 monthly average that is a serviceable market near NGN 80m a month; we hold 14 of those accounts. We compete against the Lagos offices of the network agencies for the largest accounts and against freelancers below us, and we win on the founder's personal relationships rather than on price or on any proprietary method. [source: founder]
-business_model: Project retainers, averaging NGN 200,000 a client a month. Growth is constrained by senior creative hours, which scale linearly with headcount -- capital buys people, not leverage, and we have never demonstrated a way around that. Delivery cost per additional client has been flat for three years at roughly 40% of that client's fee, and we hold no template, product, or reusable method that would bend it. Every naira of new revenue needs about the same share of a senior creative as the last one did, so capital would fund a larger version of the same shape. [source: founder]
+description: Brand campaigns for consumer goods, sold personally by the founder. [source: founder]
+business_model: Project retainers, averaging NGN 200,000 a client a month. [source: founder]
 founded_year: 2019 [source: founder]
+market_size_note: About 400 consumer-goods companies in Nigeria run paid brand campaigns of the size we service. At our NGN 200,000 monthly average that is a serviceable market near NGN 80m a month, of which we hold 14 accounts. The count comes from the industry association's member list rather than a purchased report. [source: founder]
+competition_note: The Lagos offices of the network agencies for the largest accounts, and freelancers below us on price. We win on the founder's personal relationships rather than on price or on any proprietary method, which is the honest answer. [source: founder]
+growth_constraint: Senior creative hours, which scale linearly with headcount. Delivery cost per additional client has been flat for three years at roughly 40% of that client's fee, and we hold no template, product, or reusable method that would bend it. [source: founder]
+use_of_funds: More senior creatives. Capital buys people, not leverage -- every naira of new revenue needs about the same share of a senior creative as the last one did, so this would fund a larger version of the same shape rather than a different one. [source: founder]
 team_size: 11 [source: founder]
 founder_count: 1 [source: founder]
 founders_full_time: 1 [source: founder]
@@ -729,9 +743,13 @@ country: NG
 currency: NGN
 
 Fields below are as submitted. Amounts ending in `_minor` are integer minor units (e.g. kobo, cents) of the currency above.
-description: Inter-city parcel delivery across northern Nigeria. The eight northern states we cover generate roughly 90,000 inter-city commercial parcels a month at the weights we carry, which at our NGN 5,000 average is a serviceable market of about NGN 450m a month; we move 420 accounts' worth of that today. The figure is derived from state trade-association parcel counts rather than a purchased market report. Our competition is GIG Logistics on the trunk routes and the informal luxury-bus parcel trade everywhere else, and the second is much larger than the first. [source: founder]
-business_model: Per-parcel pricing by weight and distance, averaging NGN 5,000 a month an account. The constraint is depot coverage: each new depot opens a route cluster and costs about NGN 18m to stand up, after which marginal cost per parcel on that cluster falls with volume. Capital funds depots, which is a motion we have run four times and can evidence the unit cost of. [source: founder]
+description: Inter-city parcel delivery across northern Nigeria. [source: founder]
+business_model: Per-parcel pricing by weight and distance, averaging NGN 5,000 a month an account. [source: founder]
 founded_year: 2021 [source: founder]
+market_size_note: The eight northern states we cover generate roughly 90,000 inter-city commercial parcels a month at the weights we carry, which at our NGN 5,000 average is a serviceable market of about NGN 450m a month. Derived from state trade-association parcel counts rather than a purchased market report. [source: founder]
+competition_note: GIG Logistics on the trunk routes, and the informal luxury-bus parcel trade everywhere else. The second is much larger than the first and is what we actually take share from. [source: founder]
+growth_constraint: Depot coverage. Each new depot opens a route cluster and costs about NGN 18m to stand up, after which marginal cost per parcel on that cluster falls with volume. We have run this four times and can evidence the unit cost. [source: founder]
+use_of_funds: Depots, at roughly NGN 18m each, plus the vehicles to serve each new cluster. This maps directly to the coverage constraint and is a motion we have already run four times. [source: founder]
 team_size: 12 [source: founder]
 founder_count: 2 [source: founder]
 founders_full_time: 2 [source: founder]

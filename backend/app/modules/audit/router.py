@@ -13,9 +13,16 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Response, status
 
 from app.core.deps import CurrentUserDep, SessionDep
-from app.core.errors import error_responses
+from app.core.errors import ForbiddenError, error_responses
+from app.core.security import Role
 from app.modules.audit import service
 from app.modules.audit.benchmarks import BenchmarkMetric, Stage
+from app.modules.audit.reports import (
+    AdminReport,
+    FounderReport,
+    admin_report,
+    founder_report,
+)
 from app.modules.audit.schemas import (
     AuditRunResponse,
     BenchmarkCreate,
@@ -255,3 +262,66 @@ async def read_audit_run(
 ) -> AuditRunResponse:
     run = await service.get_audit_run(session, actor, startup_id, run_id)
     return AuditRunResponse.model_validate(run)
+
+
+@router.get(
+    "/startups/{startup_id}/audits/{run_id}/report",
+    response_model=FounderReport,
+    summary="Read your audit report",
+    description=(
+        "The founder's own report, in full: both verdicts with their reasoning, "
+        "the data-integrity score, every finding, and the action plan.\n\n"
+        "**`404` until the run has succeeded.** A report does not exist while a "
+        "run is `queued`, `running`, or `failed`, and an empty `200` would have "
+        "clients rendering a blank verdict as a real one. Poll "
+        "`GET .../audits/{run_id}` first.\n\n"
+        "**Rendering rules the client must follow.** `insufficient_data` is an "
+        "*absence*, not a failure -- it must never be shown as 'not fundable', "
+        "because the founder has not been assessed and telling them otherwise "
+        "is a false verdict. `provisional` must be labelled as provisional "
+        "wherever it appears, never as a plain result; expect it to be the "
+        "common case. `score` is `null` whenever the level is "
+        "`insufficient_data` and must not be coerced to `0`.\n\n"
+        "`unevidenced_dimensions` on each verdict is the list to turn into "
+        '"answer these next" -- filling them is what moves a verdict off '
+        "`provisional`.\n\n"
+        "Another founder's run returns `404`, never `403`."
+    ),
+    responses=error_responses(401, 403, 404, 422),
+)
+async def read_audit_report(
+    startup_id: uuid.UUID,
+    run_id: uuid.UUID,
+    actor: CurrentUserDep,
+    session: SessionDep,
+) -> FounderReport:
+    stored = await service.get_audit_report(session, actor, startup_id, run_id)
+    return founder_report(stored)
+
+
+@router.get(
+    "/admin/startups/{startup_id}/audits/{run_id}/report",
+    response_model=AdminReport,
+    summary="Read any audit report in full",
+    description=(
+        "**SACI admins only.** Everything the run concluded, including the "
+        "engineer-facing `detail` on each finding that the founder tier "
+        "withholds.\n\n"
+        "This is the read behind the brokerage: an investor never reaches a "
+        "full report through their own entitlement, only through a SACI reveal "
+        "at the meeting. Serving it on a separate admin-only path -- rather "
+        "than widening the founder endpoint by role -- keeps the two audiences "
+        "in two routes, so a change to one cannot silently widen the other."
+    ),
+    responses=error_responses(401, 403, 404, 422),
+)
+async def read_audit_report_as_admin(
+    startup_id: uuid.UUID,
+    run_id: uuid.UUID,
+    actor: CurrentUserDep,
+    session: SessionDep,
+) -> AdminReport:
+    if actor.role is not Role.ADMIN:
+        raise ForbiddenError
+    stored = await service.get_audit_report(session, actor, startup_id, run_id)
+    return admin_report(stored)

@@ -42,7 +42,7 @@ EVIDENCE_FIELDS: Final[dict[Dimension, tuple[str, ...]]] = {
         "active_customers",
         "monthly_active_users",
     ),
-    Dimension.MARKET_OPPORTUNITY: (),
+    Dimension.MARKET_OPPORTUNITY: ("market_size_note", "competition_note"),
     Dimension.TEAM: (
         "team_size",
         "founder_count",
@@ -55,7 +55,13 @@ EVIDENCE_FIELDS: Final[dict[Dimension, tuple[str, ...]]] = {
         "monthly_costs_minor",
         "cash_on_hand_minor",
     ),
-    Dimension.SCALABILITY: (),
+    # `current_raise_target_minor` is deliberately NOT here. How much a founder
+    # wants is not evidence that capital would produce output rather than cost;
+    # it becomes meaningful only alongside `use_of_funds`, which names what the
+    # money buys. Counting the amount on its own would let a profile that
+    # answered nothing about growth read as evidenced -- the same over-generosity
+    # that keeps `description` out of this table.
+    Dimension.SCALABILITY: ("growth_constraint", "use_of_funds"),
     Dimension.OWNER_INDEPENDENCE: (
         "key_person_dependency",
         "team_size",
@@ -68,7 +74,7 @@ EVIDENCE_FIELDS: Final[dict[Dimension, tuple[str, ...]]] = {
         "monthly_churn_percent",
     ),
 }
-"""Which structured profile fields could be cited for each rubric dimension.
+"""Which profile fields could be cited for each rubric dimension.
 
 A reading of `rubric/v1`'s criteria against `intake/fields.py`, used to answer a
 question about the *fixtures* -- does this profile supply anything at all for
@@ -78,46 +84,17 @@ this dimension? -- with no model call and no guess about what a model would do.
 has both, so counting them would make the answer "yes" for every dimension of
 every company and the check would assert nothing.
 
-`MARKET_OPPORTUNITY` and `SCALABILITY` map to nothing on purpose, and the empty
-tuples are the finding: their criteria ask for market sizing, competition, a
-named capital constraint and a marginal-cost trend, and **the Startup Profile
-has no field for any of it**. The only place that substance can live today is
-the two narrative fields above, written by hand. Recorded in TASKS.md T2.9 --
-the fix is a field-set change, not a fixture change.
-"""
+`MARKET_OPPORTUNITY` and `SCALABILITY` mapped to **nothing** until 2026-08-03,
+and that emptiness was the finding: their criteria ask for market sizing,
+competition, a named capital constraint and a capital plan, and the form asked
+for none of it. Both now have real fields, so this table no longer needs the
+length-proxy workaround it carried while the substance lived in free prose.
 
-NARRATIVE_FIELDS: Final[dict[Dimension, str]] = {
-    Dimension.MARKET_OPPORTUNITY: "description",
-    Dimension.SCALABILITY: "business_model",
-}
-"""Where the two field-less dimensions have to find their evidence instead.
-
-Kept as one field each rather than both narrative fields for both dimensions,
-so a profile can evidence one without the other. That is not a technicality:
-`pre-revenue-deeptech` can state its market honestly and genuinely cannot
-evidence scalability, and a rule that made those move together would force a
-fixture to lie in one direction or the other.
-
-The split follows the criteria. Market sizing and named competitors belong in
-what the business does; the constraint capital would relieve and the
-marginal-cost trend belong in how it makes money.
-"""
-
-NARRATIVE_ONLY_DIMENSIONS: Final[frozenset[Dimension]] = frozenset(NARRATIVE_FIELDS)
-"""The dimensions no structured field can evidence. See `EVIDENCE_FIELDS`."""
-
-SUBSTANTIVE_NARRATIVE_CHARS: Final = 240
-"""Length above which a narrative field is treated as evidencing its dimension.
-
-**A crude proxy, and named as one** -- it cannot tell a market derivation from
-padding, and nothing at this layer can. It earns its place by discriminating:
-across the current set the enriched narratives run 300-560 characters and the
-unenriched ones 31-51, so there is no fixture anywhere near the line. Precedent
-is rubric v1's own "every criterion is over 30 characters" test, which TASKS.md
-already describes as crude and which still catches the adjective-shaped ones.
-
-If a future fixture lands within ~50 characters of this number, that fixture
-needs a human reading, not a tuned constant.
+One criterion is still unserved: scalability wants the marginal-cost trend
+("delivery cost per additional customer is falling, flat, or rising -- and
+which it is, is evidenced"), which no field asks for. Proposed in
+`FOUNDER-ONBOARDING.md` rather than added, because it is a form change and that
+is the owner's call.
 """
 
 
@@ -198,28 +175,13 @@ class GoldenCompany:
     def integrity_accepts(self, score: Decimal) -> bool:
         return self.data_integrity_min <= score <= self.data_integrity_max
 
-    def _text(self, name: str) -> str:
-        raw = self.snapshot.fields.get(name)
-        value = raw.get("value") if isinstance(raw, dict) else raw
-        return value.strip() if isinstance(value, str) else ""
-
     def evidence_for(self, dimension: Dimension) -> tuple[str, ...]:
         """The fields this profile actually supplies for one dimension.
 
         Empty means the profile says nothing a score on that dimension could
         cite -- which, per `_verdict_for`, forces the whole verdict to
         `provisional` however good the rest of the submission is.
-
-        For the two dimensions with no structured field, this falls back to
-        their narrative field and applies `SUBSTANTIVE_NARRATIVE_CHARS`. A
-        one-line description is not market sizing, but it is not nothing
-        either, so the length is what decides.
         """
-        narrative = NARRATIVE_FIELDS.get(dimension)
-        if narrative is not None:
-            text = self._text(narrative)
-            return (narrative,) if len(text) >= SUBSTANTIVE_NARRATIVE_CHARS else ()
-
         present = []
         for name in EVIDENCE_FIELDS[dimension]:
             raw = self.snapshot.fields.get(name)
@@ -230,10 +192,6 @@ class GoldenCompany:
                 continue
             present.append(name)
         return tuple(present)
-
-    def narrative_length(self, dimension: Dimension) -> int:
-        """Characters in the narrative field backing one field-less dimension."""
-        return len(self._text(NARRATIVE_FIELDS[dimension]))
 
 
 def _verdict(raw: Mapping[str, Any]) -> ExpectedVerdict:

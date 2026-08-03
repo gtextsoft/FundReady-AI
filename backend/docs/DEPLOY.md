@@ -85,6 +85,26 @@ Either works:
   private network.
 - **Upstash** — copy the `rediss://…` URL. Works from anywhere; adds latency.
 
+**If you are on Upstash, three things to get right.** TLS itself needs no code
+change — `Redis.from_url` reads the `rediss://` scheme — but:
+
+1. **Use the Redis-protocol connection string, not the REST endpoint.** Upstash
+   shows both. RQ speaks the wire protocol; the REST URL and token will not
+   connect, and the error does not say why.
+2. **The same URL must be set on both services.** A worker pointed at a
+   different Redis from the API is the failure where submissions look accepted
+   and nothing ever runs — the exact symptom §4 step 4 tells you to watch for.
+3. **Watch the command quota, not just the storage.** An idle RQ worker is not
+   free: it blocks on `BLPOP` and sends periodic heartbeats, so a worker left
+   running overnight consumes commands while doing nothing. If audits stop
+   dispatching for no visible reason, check the quota before the code.
+
+The client sets `health_check_interval` and `socket_keepalive` because managed
+Redis closes idle connections and RQ's worker sits in a blocking read for
+minutes at a time. Without those, a dropped connection surfaces as a
+`ConnectionError` in the middle of an audit rather than a transparent
+reconnect.
+
 ### 2.4 R2
 
 Create the two buckets and an API token scoped to them. You need
@@ -148,10 +168,19 @@ Check the real path instead:
    job. If the run stays `queued`, the worker is not running or `REDIS_URL`
    differs between the two services.
 5. Poll `GET /v1/startups/{id}/audits/{run_id}` until `succeeded`.
+6. `GET /v1/startups/{id}/audits/{run_id}/report` → the verdict, scores,
+   findings and action plan. **`404` before the run succeeds** — that is
+   correct, not a bug; a report does not exist until there is one.
 
 Step 5 spends real money — one `claude-opus-5` call at high effort. That is the
 smallest end-to-end proof there is; there is no cheaper way to learn that the
 queue, the worker, the database, and the API key all work together.
+
+**Expect `provisional`, not `ready`.** With an empty benchmark table the rubric
+is told to lower its confidence on every dimension, and a verdict needs *every*
+in-scope dimension evidenced to read `ready` or `not_yet`. A `provisional`
+result on the first live run means the pipeline worked; it is not a failure to
+debug.
 
 ---
 
@@ -168,6 +197,18 @@ queue, the worker, the database, and the API key all work together.
 
 If you want to trim, trim the web service, not the worker: an API that sleeps is
 an annoyance, a worker that is missing means audits never run at all.
+
+**Nothing requires email to be configured, and without it nobody can log in.**
+`RESEND_API_KEY` and `EMAIL_FROM_ADDRESS` are **absent from
+`missing_production_settings`**, so even `APP_ENV=production` boots happily
+without them. The failure is silent and total: registration succeeds, the
+account sits at `pending_verification`, the verification email never sends, and
+the founder can never authenticate. There is no error to read — the deploy looks
+healthy. Set both before you let anyone near it, and send yourself one real
+verification email as part of §4 step 1.
+
+Same shape for `APP_LINK_BASE_URL`: it *is* required in production, but in
+staging a blank value produces emails whose links point nowhere.
 
 **CI does not deploy.** `.github/workflows/ci.yml` runs lint, types, tests, and
 a secret scan. Render deploys on push to the default branch independently of
@@ -197,12 +238,12 @@ call times out. Starter or above for anything a client depends on.
 
 Deploying today gets you: auth (register, login, refresh, email verification,
 password reset, MFA), startup profiles, document upload to R2, the admin
-benchmark KB, and audits that run end-to-end and store a report.
+benchmark KB, audits that run end-to-end, **and the report they produce** —
+`GET /v1/startups/{id}/audits/{run_id}/report` for the founder and the
+admin-only path for SACI (T4.2, 2026-08-03).
 
 It does **not** get you:
 
-- **The report.** Audits finish and persist, but no endpoint returns the
-  verdict, scores, or action plan — that needs the per-tier serializer.
 - **Document-driven audits.** Uploads are stored but not yet read by the audit
   (T2.4a); a run scores the profile fields only.
 - Readiness tasks, evidence, Stripe, investor discovery, brokerage — Phases 3–5.

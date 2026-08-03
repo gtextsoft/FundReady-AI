@@ -9,7 +9,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, String, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, String, func
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -77,6 +77,26 @@ class StartupProfile(Base):
     fields: Mapped[dict[str, Any]] = mapped_column(
         JSONB, default=dict, server_default="{}"
     )
+
+    # -- Investor visibility (T4.3) ------------------------------------------
+    #
+    # **Opt-in, defaulting to false, and never derived.** It would be cheaper to
+    # treat "has a succeeded audit" as discoverable and skip this column
+    # entirely -- and it would publish a founder's confidential business data
+    # because they used the product. Running an audit is not consent to be shown
+    # to investors; those are two different decisions and a founder makes them
+    # separately.
+    #
+    # The publish action checks that an audit has succeeded, so this cannot be
+    # set on an unaudited shell. When the readiness gate lands (T3.6) it adds
+    # "and the required tasks are complete" to that same check -- this column
+    # does not change shape, only the guard in front of it gets stricter.
+    investor_visible: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", index=True
+    )
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    """When the founder last opted in. Cleared on unpublish, so the column also
+    answers "has this ever been discoverable" for a support conversation."""
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

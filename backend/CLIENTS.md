@@ -223,6 +223,7 @@ before Phase 3 adds more collections.
 | `POST /v1/documents/{id}/complete` | Step 3 of upload |
 | `GET /v1/startups/{id}/documents` | List |
 | `GET /v1/documents/{id}/download` | Expiring signed URL |
+| `POST /v1/startups/{id}/publish` · `POST /v1/startups/{id}/unpublish` | Opt in or out of investor discovery — see §5c |
 | `POST /v1/startups/{id}/audits` | Request an audit — see §5a |
 | `GET /v1/startups/{id}/audits` | This startup's runs, newest first |
 | `GET /v1/startups/{id}/audits/{run_id}` | Poll one run's status |
@@ -240,6 +241,14 @@ company name; send `name` explicitly to control it.
 | `PATCH /v1/admin/users/{id}/role` | Change a role |
 | `GET /v1/benchmarks` · `GET /v1/benchmarks/{id}` | Browse and read the benchmark KB |
 | `POST /v1/benchmarks` · `PATCH /v1/benchmarks/{id}` · `POST /v1/benchmarks/{id}/retire` | Create, revise, retire |
+| `GET /v1/admin/startups/{startup_id}/audits/{run_id}/report` | Any startup's report **in full** — see §5b |
+
+**The admin report path is separate from the founder's on purpose.** It is the
+same stored document served by a wider serializer, and keeping it on its own
+route means a change to the founder endpoint cannot silently widen what an
+admin-shaped request returns — or the reverse. It is the read behind the
+brokerage: an investor never reaches a full report through their own
+entitlement, only through a SACI reveal at the meeting.
 
 **All five benchmark endpoints are admin-only, including the reads.** Two
 reasons, and the second is easy to miss: a founder who could *write* benchmarks
@@ -388,6 +397,42 @@ The last three exist because the PRD audits **saleability** as well as
 fundability. Do not merge them into the funding screen — a founder answers them
 differently when they understand they are being asked what happens if they sell.
 
+**New on 2026-08-03 — four market and growth questions.** Additive and optional;
+nothing existing changed. They exist because two of the eleven dimensions the
+audit grades — market opportunity and scalability — had **no question behind
+them**, so both came back unevidenced on almost every profile. A verdict needs
+every in-scope dimension evidenced to read `ready` or `not_yet`, so the practical
+effect was that a founder could answer everything else perfectly and still be
+capped at `provisional`. **Until these four screens ship, that cap stays.**
+
+| Field | Ask the founder | Type |
+|---|---|---|
+| `market_size_note` | "How big is the market you can actually serve today, and how did you work that out?" | text |
+| `competition_note` | "Who else solves this problem for your customers today?" | text |
+| `growth_constraint` | "What is limiting your growth right now, and what have you already proven you can do about it?" | text |
+| `use_of_funds` | "If you raised money, what would it buy?" | text |
+
+Three notes for the UI, because these four are graded on substance rather than
+on being non-empty:
+
+- **Show a worked example as placeholder text on `market_size_note`.** It has to
+  elicit a number, how it was derived, and what bounds it today — e.g. *"12,000
+  registered pharmacies in Lagos × ₦5,000/month = ₦60m/month. We can't serve
+  other states yet, each needs its own council registration."* "Huge" scores
+  nothing.
+- **Do not merge `growth_constraint` and `use_of_funds`.** Naming the bottleneck
+  and saying what money buys are separate claims, and the audit grades whether
+  the second maps onto the first.
+- **Ask `use_of_funds` wherever you ask `current_raise_target_minor`.** The
+  amount on its own is not evidence of anything; it becomes meaningful only
+  next to what the money is for.
+
+A good place for all four is a second screen after the required core, or as a
+post-audit follow-up — see the staging note at the end of
+`FOUNDER-ONBOARDING.md`, which explains how to use the audit's own
+`unevidenced_dimensions` to ask only the questions that would change *this*
+founder's result.
+
 ### Validation the UI should enforce
 
 These are rejected server-side with `422`; enforcing them client-side saves a
@@ -468,8 +513,9 @@ short-lived signed URL, not the bytes.
 An audit is minutes of model time, so it never runs inside your request.
 
 ```
-1. POST /v1/startups/{id}/audits          → 202 AuditRun { id, status: "queued" }
-2. GET  /v1/startups/{id}/audits/{run_id} → poll until status is terminal
+1. POST /v1/startups/{id}/audits                 → 202 AuditRun { id, status: "queued" }
+2. GET  /v1/startups/{id}/audits/{run_id}        → poll until status is terminal
+3. GET  /v1/startups/{id}/audits/{run_id}/report → the verdict, once succeeded
 ```
 
 **Poll no faster than every 5 seconds**, and back off after the first minute. A
@@ -515,12 +561,207 @@ support", not as "try again". `error_code: "audit_requeue_failed"` is the
 transient sibling — the retry could not be dispatched, and submitting again is
 the correct response.
 
-### This endpoint never returns the report
+### The status endpoint never returns the report
 
-`AuditRun` is lifecycle only. The report is served by its own per-tier
-serializer, and a status poll is reachable long before a report exists — so
-there is deliberately no `report` field to read here, in any state. That
-endpoint lands with the founder report view; see §7.
+`AuditRun` is lifecycle only. There is deliberately no `report` field on it in
+any state — a status poll is reachable long before a report exists, and the
+report is served by its own per-tier serializer.
+
+### 5b. Reading the report
+
+`GET /v1/startups/{startup_id}/audits/{run_id}/report`
+
+**`404` until the run has succeeded.** A report does not exist while a run is
+`queued`, `running`, or `failed`. Do not call this until polling returns
+`succeeded`; an empty `200` would have you rendering a blank verdict as a real
+one, which is why it is a `404` instead.
+
+```json
+{
+  "rubric_version": "v1",
+  "data_integrity_score": "85",
+  "fundability": {
+    "scope": "fundability",
+    "level": "provisional",
+    "score": 58,
+    "sufficiency": "provisional",
+    "rationale": "Provisional: scored 58 out of 100 …",
+    "evidenced_dimensions": ["financial_health", "unit_economics"],
+    "unevidenced_dimensions": ["market_opportunity", "scalability"]
+  },
+  "saleability": { "…": "same shape" },
+  "findings": [
+    {
+      "code": "churn_implausibly_low",
+      "severity": "likely",
+      "fields": ["monthly_churn_percent"],
+      "message": "Your monthly churn is under 0.1% …"
+    }
+  ],
+  "action_plan": [
+    { "dimension": "legal_and_ip", "action": "Obtain a signed IP assignment …", "dimension_score": 40 }
+  ]
+}
+```
+
+**Three rendering rules that are not style preferences.** Getting these wrong
+tells a founder something untrue about their business.
+
+1. **`insufficient_data` must never render as "not fundable".** It is an
+   *absence*, not a failure — the assessment was not made. A founder who reads
+   it as a rejection has been told they failed something that never ran. Use
+   wording like *"We could not assess this yet"* and show
+   `unevidenced_dimensions` as what to fill in.
+2. **`provisional` must be visibly labelled provisional**, never shown as a
+   plain result. **Expect this to be the common case**, not the exception.
+3. **`score` is `null` whenever the level is `insufficient_data`. Do not coerce
+   it to `0`.** A zero renders as "scored 0 out of 100", which is the same false
+   rejection as rule 1 wearing a number.
+
+`data_integrity_score` is a **string**, not a float — it is a `Decimal`
+server-side and JSON floats would change the value. Parse it as a decimal or
+display it as given. Below `50` no verdict is formed at all and both levels read
+`insufficient_data`: the submitted figures disagree with each other too much to
+score, and `findings` says which ones.
+
+`action_plan` is already ordered worst-first, with unassessable dimensions
+ahead of low-scoring ones. Render it in the order given.
+
+`severity` is `certain` (arithmetically impossible — cannot be a false positive)
+or `likely` (crossed a threshold — a real business could look like this). Word
+`likely` findings as questions, not accusations.
+
+**Another founder's run returns `404`, never `403`.** Investors have no access
+to this endpoint at all; they see summary-tier data through discovery, and a
+full report only through a SACI reveal at the meeting.
+
+---
+
+## 5c. Investor discovery (T4.3)
+
+Two sides, two audiences. The founder controls whether they appear; the investor
+browses what founders have published.
+
+### Founder side — publishing
+
+| | |
+|---|---|
+| `POST /v1/startups/{id}/publish` | Opt in to discovery |
+| `POST /v1/startups/{id}/unpublish` | Opt out again, immediately |
+
+**Publishing is consent, not eligibility, and the difference matters for your
+UI.** Opting in says the founder is willing to be seen. Whether there is
+anything to *show* is decided separately: a startup appears in discovery only
+once it also has a **succeeded audit**.
+
+So publishing before the first audit finishes is allowed and is **not an
+error**. Say so plainly — *"You'll appear to investors once your audit
+completes."* Poll the audit, not the publish endpoint. `investor_visible` and
+`published_at` are on every `ProfileResponse`.
+
+Unpublishing is unconditional and takes effect at once. It does **not** retract
+a report SACI has already revealed to an investor: that disclosure happened, and
+the audit log keeps it.
+
+### Investor side — browsing
+
+| | |
+|---|---|
+| `GET /v1/discover` | Browse published startups, newest first |
+| `GET /v1/discover/{startup_id}` | One card |
+
+**Investors and SACI admins only — `403` for a founder.** Founders do not browse
+each other.
+
+Filters: `sector` (case-insensitive, because sector is free text), `stage`,
+`country`, plus `limit` (1–100, default 20) and `offset`. The response carries
+`total` ignoring pagination, so you can render "page N of M".
+
+A card is **summary tier** and carries only:
+
+```json
+{
+  "startup_id": "…", "name": "Kanmi Pay", "sector": "fintech",
+  "stage": "seed", "country": "NG",
+  "audit_run_id": "…", "rubric_version": "v1",
+  "fundability": { "scope": "fundability", "level": "ready", "score": 78 },
+  "saleability": { "scope": "saleability", "level": "not_yet", "score": 61 },
+  "published_at": "2026-08-03T12:00:00Z"
+}
+```
+
+**What a card never carries, and do not build UI expecting it:** the founder's
+name or contact details, any submitted figure (revenue, costs, runway, customers,
+churn), the verdict rationale, the findings, the action plan, or the
+data-integrity score. That is the brokerage — the verdict is enough to decide
+whether to ask for an introduction, and not enough to skip one.
+
+The same rendering rules as §5b apply to `level`: **`insufficient_data` must
+never read as "not fundable"**, and `provisional` must be labelled provisional.
+
+An unpublished startup returns **`404`**, identical to one that does not exist —
+a distinguishable answer would let a caller test which startup ids are real.
+
+---
+
+## 5d. Brokerage — interest, approval, reveal (T4.5, T4.6)
+
+**SACI stands between the two sides, and the API enforces it.** An investor
+never reaches a founder's full report by their own entitlement.
+
+```
+1. POST /v1/discover/{startup_id}/interest      investor asks for an intro
+2. POST /v1/admin/interests/{id}/approve        SACI agrees to broker it
+3. POST /v1/admin/interests/{id}/reveal         SACI opens ONE report
+4. GET  /v1/interests/{id}/reports/{run_id}     investor reads it
+```
+
+### Approval is not disclosure — build the UI this way
+
+Step 2 and step 3 are **separate on purpose**, and the gap between them is the
+product. An approved interest still shows the investor only the summary card.
+Do not render "approved" as "you can now see the report" — until a reveal
+happens, `GET .../reports/{run_id}` returns `404`.
+
+`InterestResponse.revealed_run_ids` is the flag to branch on. Empty means
+nothing has been opened; a run id in it means that report is readable.
+
+### Investor endpoints
+
+| | |
+|---|---|
+| `POST /v1/discover/{id}/interest` | Express interest. Idempotent — a repeat returns the original. `404` if the startup has not published. |
+| `GET /v1/interests` | Your own, newest first. Optional `?status=`. |
+| `GET /v1/interests/{id}/reports/{run_id}` | The full report, **only** if it was revealed to you. |
+
+**The founder is never told an interest exists.** They hear about it when SACI
+arranges the meeting. Do not build a founder-facing "someone viewed you" screen.
+
+### SACI admin endpoints (web)
+
+| | |
+|---|---|
+| `GET /v1/interests` | Every interest, **oldest first** — it is a work queue. |
+| `POST /v1/admin/interests/{id}/approve` · `POST /v1/admin/interests/{id}/decline` | One decision per interest; `409` if already decided. |
+| `POST /v1/admin/interests/{id}/reveal` | Opens the latest completed audit to that investor. `409` unless approved. |
+
+Every one of those writes an immutable audit-log entry. A reveal names **who
+opened what, for whom**.
+
+### Statuses
+
+| `status` | Means |
+|---|---|
+| `pending` | Waiting on SACI. |
+| `approved` | SACI will broker it. **Not a reveal.** |
+| `declined` | Terminal. |
+| `withdrawn` | Terminal, set by the investor. |
+
+### A reveal names a run, not a startup
+
+A founder who re-audits produces a new report, and an investor shown the old one
+has no claim on the new one. Always pass the `run_id` you were given —
+`audit_run_id` on the reveal, or an entry in `revealed_run_ids`.
 
 ---
 

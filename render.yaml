@@ -124,10 +124,22 @@ envVarGroups:
       # ---------------------------------------------------------------
       #
       # **Generate these fresh for this environment; never reuse a development
-      # value.** Not `generateValue: true`: `JWT_SECRET_KEY` has a minimum
-      # length the app enforces and `MFA_SECRET_ENCRYPTION_KEY` is a Fernet key
-      # with a fixed format, and Render's generator guarantees neither. The
-      # exact commands are in `backend/docs/DEPLOY.md`.
+      # value.** Reusing a development `JWT_SECRET_KEY` means anyone who has
+      # ever held the dev `.env` can mint a valid production admin token.
+      #
+      # Both are arbitrary high-entropy strings -- `token_urlsafe(48)` for each.
+      # `MFA_SECRET_ENCRYPTION_KEY` is **not** a pre-formatted Fernet key: it is
+      # a passphrase that `core/security.py:_fernet` stretches with HKDF, so an
+      # operator never has to know Fernet's key encoding. (An earlier version of
+      # this comment said otherwise and would have sent you looking for
+      # `Fernet.generate_key()`.)
+      #
+      # Not `generateValue: true`, because `JWT_SECRET_KEY` has a minimum length
+      # the app enforces in production and Render's generator does not guarantee
+      # it. Exact commands in `backend/docs/DEPLOY.md` section 2.1.
+      #
+      # `MFA_SECRET_ENCRYPTION_KEY` cannot be rotated casually: every stored
+      # TOTP secret is encrypted under a key derived from it.
       - key: JWT_SECRET_KEY
         sync: false
       - key: MFA_SECRET_ENCRYPTION_KEY

@@ -47,19 +47,24 @@
     "   verdict to `provisional`. That makes the four non-provisional",
     "   expectations below the most fragile assertions in this file.",
     "",
-    "3. Nothing in `PROFILE_FIELDS` supplies `market_opportunity` or",
-    "   `scalability`. Their criteria ask for market sizing, competition, and a",
-    "   named capital constraint; the profile has no field for any of it, so the",
-    "   substance has to be written into `description` and `business_model` by",
-    "   hand. Combined with fact 2 and an empty benchmark table, this is why",
-    "   `healthy-seed-fintech` expecting `ready` is a claim about what SHOULD",
-    "   happen. If it comes back `provisional`, look at the field set before",
-    "   blaming the model."
+    "3. `market_opportunity` and `scalability` had NO field behind them until",
+    "   2026-08-03 -- their substance was hand-written into `description` and",
+    "   `business_model`, and this file carried a length proxy to decide whether",
+    "   enough had been written. `market_size_note`, `competition_note`,",
+    "   `growth_constraint` and `use_of_funds` replaced that workaround, and the",
+    "   fixtures below now answer the real questions. One criterion is still",
+    "   unserved: scalability wants the marginal-cost-per-customer trend, which",
+    "   nothing asks for. See FOUNDER-ONBOARDING.md.",
+    "",
+    "   `healthy-seed-fintech` expecting `ready` is still a claim about what",
+    "   SHOULD happen rather than a prediction. The benchmark table is empty, so",
+    "   every dimension is scored with the model told to lower its confidence --",
+    "   and per fact 2 one hedged dimension is enough to collapse the verdict."
   ],
   "companies": [
     {
       "id": "healthy-seed-fintech",
-      "why_this_case": "The unambiguous pass, and the only fixture that asserts `ready`. If this does not come out ready on fundability, either the bar is wrong, the rubric is broken, or -- most likely on the first run -- `market_opportunity` and `scalability` came back hedged because the profile has no field for them and no benchmark band matched. Check that before touching READY_THRESHOLD. Enriched deliberately: the narrative carries a bottom-up market derivation that reconciles with the submitted figures (900 customers x NGN 5,000 = the stated monthly revenue) and names the constraint capital would relieve, because those are the two dimensions the field set cannot supply.",
+      "why_this_case": "The unambiguous pass, and the only fixture that asserts `ready`. If this does not come out ready on fundability, either the bar is wrong, the rubric is broken, or -- most likely on the first run -- some dimension came back hedged because no benchmark band matched and the prompt tells the model to lower its confidence when none does. Check that before touching READY_THRESHOLD. Every dimension is answered from a real field, including the market derivation (12,000 Lagos outlets x NGN 5,000, reconciling with the stated monthly revenue) and the named growth constraint, so a `provisional` result here is about scoring rather than about missing data.",
       "verdict_is_model_dependent": true,
       "profile": {
         "name": "Kanmi Pay",
@@ -68,34 +73,121 @@
         "country": "NG",
         "currency": "NGN",
         "fields": {
-          "description": { "value": "Payment collection for Lagos pharmacies, settling same-day. Lagos State has roughly 12,000 registered pharmacy outlets; at our current NGN 5,000 average monthly fee that is a serviceable market of about NGN 60m a month, and we hold 900 of those outlets today. Expansion beyond Lagos needs state-by-state pharmacy council registration, so the addressable market is deliberately stated as Lagos only. We compete against cash reconciliation done by hand and against general-purpose POS terminals from Moniepoint and OPay, neither of which reconciles a payment back to the pharmacy's stock ledger.", "source": "founder" },
-          "business_model": { "value": "1.2% per transaction plus a monthly SaaS fee of NGN 5,000 per outlet. The binding constraint on growth is field onboarding, not technology: one field agent signs about 40 outlets a month and we run three agents. An outlet costs nothing further to serve once it is live, so gross margin rises with every cohort. New capital funds field agents and the pharmacy council registrations that open the next state, which is the same motion we have already run twice inside Lagos.", "source": "founder" },
-          "founded_year": { "value": 2022, "source": "founder" },
-          "monthly_revenue_minor": { "value": 450000000, "source": "document" },
-          "last_12m_revenue_minor": { "value": 4100000000, "source": "document" },
-          "monthly_costs_minor": { "value": 300000000, "source": "document" },
-          "cost_of_revenue_minor": { "value": 120000000, "source": "document" },
-          "cash_on_hand_minor": { "value": 5400000000, "source": "document" },
-          "active_customers": { "value": 900, "source": "founder" },
-          "average_revenue_per_customer_minor": { "value": 500000, "source": "founder" },
-          "customer_acquisition_cost_minor": { "value": 1500000, "source": "founder" },
-          "monthly_churn_percent": { "value": 3.5, "source": "founder" },
-          "team_size": { "value": 14, "source": "founder" },
-          "founder_count": { "value": 2, "source": "founder" },
-          "founders_full_time": { "value": 2, "source": "founder" },
-          "ip_owned": { "value": true, "source": "founder" },
-          "contracts_transferable": { "value": true, "source": "founder" },
-          "key_person_dependency": { "value": "Nothing critical. Both founders can cover sales and ops, and the settlement integration is documented and run by two engineers. We hold a CBN mobile money operator licence in the company name, not personally.", "source": "founder" },
-          "cap_table_summary": { "value": "The two founders hold 78% between them, a 2022 pre-seed angel round holds 12%, and 10% sits in an employee option pool. No debt and no convertible instruments outstanding. All engineering IP is assigned to the company by written agreement, including the two contractors used in 2023.", "source": "founder" },
-          "total_raised_minor": { "value": 12000000000, "source": "founder" },
-          "current_raise_target_minor": { "value": 30000000000, "source": "founder" }
+          "description": {
+            "value": "Payment collection for Lagos pharmacies, settling same-day.",
+            "source": "founder"
+          },
+          "business_model": {
+            "value": "1.2% per transaction plus a monthly SaaS fee of NGN 5,000 per outlet. An outlet costs nothing further to serve once it is live, so gross margin rises with every cohort.",
+            "source": "founder"
+          },
+          "founded_year": {
+            "value": 2022,
+            "source": "founder"
+          },
+          "monthly_revenue_minor": {
+            "value": 450000000,
+            "source": "document"
+          },
+          "last_12m_revenue_minor": {
+            "value": 4100000000,
+            "source": "document"
+          },
+          "monthly_costs_minor": {
+            "value": 300000000,
+            "source": "document"
+          },
+          "cost_of_revenue_minor": {
+            "value": 120000000,
+            "source": "document"
+          },
+          "cash_on_hand_minor": {
+            "value": 5400000000,
+            "source": "document"
+          },
+          "active_customers": {
+            "value": 900,
+            "source": "founder"
+          },
+          "average_revenue_per_customer_minor": {
+            "value": 500000,
+            "source": "founder"
+          },
+          "customer_acquisition_cost_minor": {
+            "value": 1500000,
+            "source": "founder"
+          },
+          "monthly_churn_percent": {
+            "value": 3.5,
+            "source": "founder"
+          },
+          "team_size": {
+            "value": 14,
+            "source": "founder"
+          },
+          "founder_count": {
+            "value": 2,
+            "source": "founder"
+          },
+          "founders_full_time": {
+            "value": 2,
+            "source": "founder"
+          },
+          "ip_owned": {
+            "value": true,
+            "source": "founder"
+          },
+          "contracts_transferable": {
+            "value": true,
+            "source": "founder"
+          },
+          "key_person_dependency": {
+            "value": "Nothing critical. Both founders can cover sales and ops, and the settlement integration is documented and run by two engineers. We hold a CBN mobile money operator licence in the company name, not personally.",
+            "source": "founder"
+          },
+          "cap_table_summary": {
+            "value": "The two founders hold 78% between them, a 2022 pre-seed angel round holds 12%, and 10% sits in an employee option pool. No debt and no convertible instruments outstanding. All engineering IP is assigned to the company by written agreement, including the two contractors used in 2023.",
+            "source": "founder"
+          },
+          "total_raised_minor": {
+            "value": 12000000000,
+            "source": "founder"
+          },
+          "current_raise_target_minor": {
+            "value": 30000000000,
+            "source": "founder"
+          },
+          "market_size_note": {
+            "value": "Lagos State has roughly 12,000 registered pharmacy outlets. At our NGN 5,000 average monthly fee that is a serviceable market of about NGN 60m a month, and we hold 900 of those outlets. We cannot address the rest of Nigeria yet: each state needs its own pharmacy council registration, so the figure is deliberately Lagos-only rather than a national headline.",
+            "source": "founder"
+          },
+          "competition_note": {
+            "value": "Cash reconciliation done by hand, which is what most outlets still do, and the general-purpose POS terminals from Moniepoint and OPay. Neither competitor reconciles a payment back to the pharmacy's stock ledger, which is the specific thing our customers stay for.",
+            "source": "founder"
+          },
+          "growth_constraint": {
+            "value": "Field onboarding, not technology. One field agent signs about 40 outlets a month and we run three agents. An outlet costs nothing further to serve once live, so the constraint is purely how fast we can sign them. We have already run this motion twice inside Lagos and can evidence the per-agent numbers.",
+            "source": "founder"
+          },
+          "use_of_funds": {
+            "value": "Field agents and the state-by-state pharmacy council registrations that open the next market. Roughly 70% headcount for agents, 30% registration and compliance. Both map directly to the onboarding constraint rather than to product work.",
+            "source": "founder"
+          }
         }
       },
       "expected": {
         "reviewed": true,
         "reviewed_by": "assistant-draft",
-        "fundability": { "level": "ready", "score_min": 72, "score_max": 92 },
-        "saleability": { "level": "ready", "score_min": 70, "score_max": 90 },
+        "fundability": {
+          "level": "ready",
+          "score_min": 72,
+          "score_max": 92
+        },
+        "saleability": {
+          "level": "ready",
+          "score_min": 70,
+          "score_max": 90
+        },
         "data_integrity_min": 100,
         "data_integrity_max": 100,
         "must_flag": []
@@ -112,30 +204,105 @@
         "country": "NG",
         "currency": "NGN",
         "fields": {
-          "description": { "value": "On-demand errand running for Abuja households. We estimate 180,000 households in Abuja can afford a paid errand service, and at our NGN 5,000 monthly average that is a serviceable market of about NGN 900m a month, of which we hold 30 households. The estimate is our own, derived from national household income bands rather than from a published market study, and should be treated as soft. Our competition is the informal okada rider a household already uses, and increasingly Chowdeck and Glovo, both of which are better capitalised than we are.", "source": "founder" },
-          "business_model": { "value": "Flat fee per errand, averaging NGN 5,000 a household a month. The constraint is rider supply in the neighbourhoods we cover, and capital would fund rider guarantees to hold them. Cost per errand has not fallen as we have grown: at 30 households we pay the same per-trip rate we paid at 10, because riders are paid per job and no neighbourhood yet has the density to batch trips. The plan assumes a guaranteed rider pool holds retention long enough for that density to arrive. That is a step change we have never demonstrated, and we would be asking an investor to fund the attempt.", "source": "founder" },
-          "founded_year": { "value": 2025, "source": "founder" },
-          "monthly_revenue_minor": { "value": 15000000, "source": "founder" },
-          "monthly_costs_minor": { "value": 105000000, "source": "founder" },
-          "cash_on_hand_minor": { "value": 180000000, "source": "founder" },
-          "active_customers": { "value": 30, "source": "founder" },
-          "average_revenue_per_customer_minor": { "value": 500000, "source": "founder" },
-          "customer_acquisition_cost_minor": { "value": 4000000, "source": "founder" },
-          "monthly_churn_percent": { "value": 9.0, "source": "founder" },
-          "team_size": { "value": 9, "source": "founder" },
-          "founder_count": { "value": 3, "source": "founder" },
-          "founders_full_time": { "value": 1, "source": "founder" },
-          "ip_owned": { "value": false, "source": "founder" },
-          "contracts_transferable": { "value": false, "source": "founder" },
-          "key_person_dependency": { "value": "The one full-time founder does dispatch, support and collections personally. Nothing runs for more than a day without him.", "source": "founder" },
-          "cap_table_summary": { "value": "Three founders hold the company equally at 33.3% each. No outside investment, no option pool, and no written IP assignment from the contractor who built the dispatch app.", "source": "founder" }
+          "description": {
+            "value": "On-demand errand running for Abuja households.",
+            "source": "founder"
+          },
+          "business_model": {
+            "value": "Flat fee per errand, averaging NGN 5,000 a household a month.",
+            "source": "founder"
+          },
+          "founded_year": {
+            "value": 2025,
+            "source": "founder"
+          },
+          "monthly_revenue_minor": {
+            "value": 15000000,
+            "source": "founder"
+          },
+          "monthly_costs_minor": {
+            "value": 105000000,
+            "source": "founder"
+          },
+          "cash_on_hand_minor": {
+            "value": 180000000,
+            "source": "founder"
+          },
+          "active_customers": {
+            "value": 30,
+            "source": "founder"
+          },
+          "average_revenue_per_customer_minor": {
+            "value": 500000,
+            "source": "founder"
+          },
+          "customer_acquisition_cost_minor": {
+            "value": 4000000,
+            "source": "founder"
+          },
+          "monthly_churn_percent": {
+            "value": 9.0,
+            "source": "founder"
+          },
+          "team_size": {
+            "value": 9,
+            "source": "founder"
+          },
+          "founder_count": {
+            "value": 3,
+            "source": "founder"
+          },
+          "founders_full_time": {
+            "value": 1,
+            "source": "founder"
+          },
+          "ip_owned": {
+            "value": false,
+            "source": "founder"
+          },
+          "contracts_transferable": {
+            "value": false,
+            "source": "founder"
+          },
+          "key_person_dependency": {
+            "value": "The one full-time founder does dispatch, support and collections personally. Nothing runs for more than a day without him.",
+            "source": "founder"
+          },
+          "cap_table_summary": {
+            "value": "Three founders hold the company equally at 33.3% each. No outside investment, no option pool, and no written IP assignment from the contractor who built the dispatch app.",
+            "source": "founder"
+          },
+          "market_size_note": {
+            "value": "We estimate 180,000 Abuja households can afford a paid errand service, which at our NGN 5,000 monthly average is about NGN 900m a month; we hold 30 of them. This is our own estimate derived from national household income bands, not a published market study, and should be treated as soft.",
+            "source": "founder"
+          },
+          "competition_note": {
+            "value": "The informal okada rider a household already uses and knows, which is our real competition, and increasingly Chowdeck and Glovo. Both of those are far better capitalised than we are.",
+            "source": "founder"
+          },
+          "growth_constraint": {
+            "value": "Rider supply in the neighbourhoods we cover. Cost per errand has not fallen as we have grown -- at 30 households we pay the same per-trip rate we paid at 10, because riders are paid per job and no neighbourhood yet has the density to batch trips.",
+            "source": "founder"
+          },
+          "use_of_funds": {
+            "value": "Rider guarantees, to hold a pool long enough for density to build. We have never demonstrated that a guaranteed pool holds retention, so this is funding an attempt rather than scaling a proven motion, and we would say so to an investor.",
+            "source": "founder"
+          }
         }
       },
       "expected": {
         "reviewed": true,
         "reviewed_by": "assistant-draft",
-        "fundability": { "level": "not_yet", "score_min": 20, "score_max": 52 },
-        "saleability": { "level": "not_yet", "score_min": 12, "score_max": 45 },
+        "fundability": {
+          "level": "not_yet",
+          "score_min": 20,
+          "score_max": 52
+        },
+        "saleability": {
+          "level": "not_yet",
+          "score_min": 12,
+          "score_max": 45
+        },
         "data_integrity_min": 100,
         "data_integrity_max": 100,
         "must_flag": []
@@ -152,14 +319,25 @@
         "country": "NG",
         "currency": "NGN",
         "fields": {
-          "description": { "value": "Something in agriculture. Still working it out.", "source": "founder" }
+          "description": {
+            "value": "Something in agriculture. Still working it out.",
+            "source": "founder"
+          }
         }
       },
       "expected": {
         "reviewed": true,
         "reviewed_by": "deterministic",
-        "fundability": { "level": "insufficient_data", "score_min": null, "score_max": null },
-        "saleability": { "level": "insufficient_data", "score_min": null, "score_max": null },
+        "fundability": {
+          "level": "insufficient_data",
+          "score_min": null,
+          "score_max": null
+        },
+        "saleability": {
+          "level": "insufficient_data",
+          "score_min": null,
+          "score_max": null
+        },
         "data_integrity_min": 100,
         "data_integrity_max": 100,
         "must_flag": []
@@ -176,32 +354,77 @@
         "country": "NG",
         "currency": "NGN",
         "fields": {
-          "description": { "value": "Grain aggregation and resale to processors.", "source": "founder" },
-          "business_model": { "value": "Buy at farmgate, sell to mills.", "source": "founder" },
-          "monthly_revenue_minor": { "value": 8000000, "source": "founder" },
-          "monthly_costs_minor": { "value": 6000000, "source": "founder" },
-          "cash_on_hand_minor": { "value": 40000000, "source": "founder" },
-          "active_customers": { "value": 40, "source": "founder" },
-          "average_revenue_per_customer_minor": { "value": 20000000, "source": "founder" },
-          "monthly_churn_percent": { "value": 0.02, "source": "founder" },
-          "team_size": { "value": 6, "source": "founder" },
-          "founder_count": { "value": 2, "source": "founder" },
-          "founders_full_time": { "value": 3, "source": "founder" }
+          "description": {
+            "value": "Grain aggregation and resale to processors.",
+            "source": "founder"
+          },
+          "business_model": {
+            "value": "Buy at farmgate, sell to mills.",
+            "source": "founder"
+          },
+          "monthly_revenue_minor": {
+            "value": 8000000,
+            "source": "founder"
+          },
+          "monthly_costs_minor": {
+            "value": 6000000,
+            "source": "founder"
+          },
+          "cash_on_hand_minor": {
+            "value": 40000000,
+            "source": "founder"
+          },
+          "active_customers": {
+            "value": 40,
+            "source": "founder"
+          },
+          "average_revenue_per_customer_minor": {
+            "value": 20000000,
+            "source": "founder"
+          },
+          "monthly_churn_percent": {
+            "value": 0.02,
+            "source": "founder"
+          },
+          "team_size": {
+            "value": 6,
+            "source": "founder"
+          },
+          "founder_count": {
+            "value": 2,
+            "source": "founder"
+          },
+          "founders_full_time": {
+            "value": 3,
+            "source": "founder"
+          }
         }
       },
       "expected": {
         "reviewed": true,
         "reviewed_by": "deterministic",
-        "fundability": { "level": "insufficient_data", "score_min": null, "score_max": null },
-        "saleability": { "level": "insufficient_data", "score_min": null, "score_max": null },
+        "fundability": {
+          "level": "insufficient_data",
+          "score_min": null,
+          "score_max": null
+        },
+        "saleability": {
+          "level": "insufficient_data",
+          "score_min": null,
+          "score_max": null
+        },
         "data_integrity_min": 45,
         "data_integrity_max": 45,
-        "must_flag": ["revenue_vs_customers", "churn_implausibly_low", "more_full_time_than_founders"]
+        "must_flag": [
+          "revenue_vs_customers",
+          "churn_implausibly_low",
+          "more_full_time_than_founders"
+        ]
       }
     },
     {
       "id": "pre-revenue-deeptech",
-      "why_this_case": "Revenue is absent, not zero. finance.py returns None-plus-a-reason rather than 0.0 precisely so this does not get scored as a real 0% margin, which would be the false verdict section 5 forbids. Also the fixture that proves the two narrative dimensions move independently: the description carries a real market derivation, and `business_model` is left as one line because a pre-clinical company genuinely cannot evidence scalability. Without that split, fundability coverage lands on exactly 4/8 -- and since `covered < 0.5` is a strict comparison, a single dimension flipping would swing the whole verdict between provisional and insufficient_data. A fixture should not sit on that edge by accident.",
+      "why_this_case": "Revenue is absent, not zero. finance.py returns None-plus-a-reason rather than 0.0 precisely so this does not get scored as a real 0% margin, which would be the false verdict section 5 forbids. Also the fixture that keeps market opportunity and scalability independent: it answers the market questions honestly (a real derivation, bounded by the certification it has not got) and leaves the growth questions empty, because a pre-clinical company genuinely cannot evidence that capital would produce output. Fundability lands at 5/8 rather than 4/8 as a result -- and 4/8 is exactly the `covered < 0.5` boundary, where a single field would swing the whole verdict between provisional and insufficient_data.",
       "verdict_is_model_dependent": true,
       "profile": {
         "name": "Sahel Diagnostics",
@@ -210,25 +433,77 @@
         "country": "NG",
         "currency": "NGN",
         "fields": {
-          "description": { "value": "Low-cost malaria diagnostic strips, pre-clinical. Nigeria records around 60 million malaria cases a year, and the National Malaria Elimination Programme puts rapid-test consumption near 30 million units annually; at our target price of NGN 250 a strip that is a serviceable market of roughly NGN 7.5bn a year. We can address none of it until NAFDAC certification completes, so the reachable market today is zero. The incumbent tests are imported SD Bioline and Abbott kits, which we expect to undercut on landed cost rather than on sensitivity.", "source": "founder" },
-          "business_model": { "value": "Per-unit sales to clinics once certified.", "source": "founder" },
-          "founded_year": { "value": 2024, "source": "founder" },
-          "monthly_costs_minor": { "value": 90000000, "source": "document" },
-          "cash_on_hand_minor": { "value": 1080000000, "source": "document" },
-          "team_size": { "value": 5, "source": "founder" },
-          "founder_count": { "value": 2, "source": "founder" },
-          "founders_full_time": { "value": 2, "source": "founder" },
-          "ip_owned": { "value": true, "source": "founder" },
-          "key_person_dependency": { "value": "The chief scientist holds the assay formulation. There is no second person who could complete certification.", "source": "founder" },
-          "total_raised_minor": { "value": 1500000000, "source": "founder" },
-          "current_raise_target_minor": { "value": 4000000000, "source": "founder" }
+          "description": {
+            "value": "Low-cost malaria diagnostic strips, pre-clinical.",
+            "source": "founder"
+          },
+          "business_model": {
+            "value": "Per-unit sales to clinics once certified.",
+            "source": "founder"
+          },
+          "founded_year": {
+            "value": 2024,
+            "source": "founder"
+          },
+          "monthly_costs_minor": {
+            "value": 90000000,
+            "source": "document"
+          },
+          "cash_on_hand_minor": {
+            "value": 1080000000,
+            "source": "document"
+          },
+          "team_size": {
+            "value": 5,
+            "source": "founder"
+          },
+          "founder_count": {
+            "value": 2,
+            "source": "founder"
+          },
+          "founders_full_time": {
+            "value": 2,
+            "source": "founder"
+          },
+          "ip_owned": {
+            "value": true,
+            "source": "founder"
+          },
+          "key_person_dependency": {
+            "value": "The chief scientist holds the assay formulation. There is no second person who could complete certification.",
+            "source": "founder"
+          },
+          "total_raised_minor": {
+            "value": 1500000000,
+            "source": "founder"
+          },
+          "current_raise_target_minor": {
+            "value": 4000000000,
+            "source": "founder"
+          },
+          "market_size_note": {
+            "value": "Nigeria records around 60 million malaria cases a year, and the National Malaria Elimination Programme puts rapid-test consumption near 30 million units annually. At our target price of NGN 250 a strip that is roughly NGN 7.5bn a year. We can address none of it until NAFDAC certification completes, so the market we can actually serve today is zero.",
+            "source": "founder"
+          },
+          "competition_note": {
+            "value": "Imported SD Bioline and Abbott rapid tests, which is what clinics buy now. We expect to undercut them on landed cost rather than beat them on sensitivity.",
+            "source": "founder"
+          }
         }
       },
       "expected": {
         "reviewed": true,
         "reviewed_by": "assistant-draft",
-        "fundability": { "level": "provisional", "score_min": 35, "score_max": 70 },
-        "saleability": { "level": "provisional", "score_min": 28, "score_max": 65 },
+        "fundability": {
+          "level": "provisional",
+          "score_min": 35,
+          "score_max": 70
+        },
+        "saleability": {
+          "level": "provisional",
+          "score_min": 28,
+          "score_max": 65
+        },
         "data_integrity_min": 100,
         "data_integrity_max": 100,
         "must_flag": []
@@ -245,33 +520,114 @@
         "country": "NG",
         "currency": "NGN",
         "fields": {
-          "description": { "value": "Brand campaigns for consumer goods, sold personally by the founder. About 400 consumer-goods companies in Nigeria run paid brand campaigns of the size we service, and at our NGN 200,000 monthly average that is a serviceable market near NGN 80m a month; we hold 14 of those accounts. We compete against the Lagos offices of the network agencies for the largest accounts and against freelancers below us, and we win on the founder's personal relationships rather than on price or on any proprietary method.", "source": "founder" },
-          "business_model": { "value": "Project retainers, averaging NGN 200,000 a client a month. Growth is constrained by senior creative hours, which scale linearly with headcount -- capital buys people, not leverage, and we have never demonstrated a way around that. Delivery cost per additional client has been flat for three years at roughly 40% of that client's fee, and we hold no template, product, or reusable method that would bend it. Every naira of new revenue needs about the same share of a senior creative as the last one did, so capital would fund a larger version of the same shape.", "source": "founder" },
-          "founded_year": { "value": 2019, "source": "founder" },
-          "monthly_revenue_minor": { "value": 280000000, "source": "document" },
-          "last_12m_revenue_minor": { "value": 3100000000, "source": "document" },
-          "monthly_costs_minor": { "value": 190000000, "source": "document" },
-          "cost_of_revenue_minor": { "value": 110000000, "source": "document" },
-          "cash_on_hand_minor": { "value": 900000000, "source": "document" },
-          "active_customers": { "value": 14, "source": "founder" },
-          "average_revenue_per_customer_minor": { "value": 20000000, "source": "founder" },
-          "customer_acquisition_cost_minor": { "value": 30000000, "source": "founder" },
-          "monthly_churn_percent": { "value": 2.0, "source": "founder" },
-          "team_size": { "value": 11, "source": "founder" },
-          "founder_count": { "value": 1, "source": "founder" },
-          "founders_full_time": { "value": 1, "source": "founder" },
-          "ip_owned": { "value": false, "source": "founder" },
-          "contracts_transferable": { "value": false, "source": "founder" },
-          "key_person_dependency": { "value": "Every client was won personally by the founder and renews on that relationship. There is no account manager and no written pipeline.", "source": "founder" },
-          "cap_table_summary": { "value": "The founder holds 100%. No outside investors, no option pool, no debt. Campaign creative is delivered under client contracts that assign copyright to the client, so the agency owns no reusable IP.", "source": "founder" }
+          "description": {
+            "value": "Brand campaigns for consumer goods, sold personally by the founder.",
+            "source": "founder"
+          },
+          "business_model": {
+            "value": "Project retainers, averaging NGN 200,000 a client a month.",
+            "source": "founder"
+          },
+          "founded_year": {
+            "value": 2019,
+            "source": "founder"
+          },
+          "monthly_revenue_minor": {
+            "value": 280000000,
+            "source": "document"
+          },
+          "last_12m_revenue_minor": {
+            "value": 3100000000,
+            "source": "document"
+          },
+          "monthly_costs_minor": {
+            "value": 190000000,
+            "source": "document"
+          },
+          "cost_of_revenue_minor": {
+            "value": 110000000,
+            "source": "document"
+          },
+          "cash_on_hand_minor": {
+            "value": 900000000,
+            "source": "document"
+          },
+          "active_customers": {
+            "value": 14,
+            "source": "founder"
+          },
+          "average_revenue_per_customer_minor": {
+            "value": 20000000,
+            "source": "founder"
+          },
+          "customer_acquisition_cost_minor": {
+            "value": 30000000,
+            "source": "founder"
+          },
+          "monthly_churn_percent": {
+            "value": 2.0,
+            "source": "founder"
+          },
+          "team_size": {
+            "value": 11,
+            "source": "founder"
+          },
+          "founder_count": {
+            "value": 1,
+            "source": "founder"
+          },
+          "founders_full_time": {
+            "value": 1,
+            "source": "founder"
+          },
+          "ip_owned": {
+            "value": false,
+            "source": "founder"
+          },
+          "contracts_transferable": {
+            "value": false,
+            "source": "founder"
+          },
+          "key_person_dependency": {
+            "value": "Every client was won personally by the founder and renews on that relationship. There is no account manager and no written pipeline.",
+            "source": "founder"
+          },
+          "cap_table_summary": {
+            "value": "The founder holds 100%. No outside investors, no option pool, no debt. Campaign creative is delivered under client contracts that assign copyright to the client, so the agency owns no reusable IP.",
+            "source": "founder"
+          },
+          "market_size_note": {
+            "value": "About 400 consumer-goods companies in Nigeria run paid brand campaigns of the size we service. At our NGN 200,000 monthly average that is a serviceable market near NGN 80m a month, of which we hold 14 accounts. The count comes from the industry association's member list rather than a purchased report.",
+            "source": "founder"
+          },
+          "competition_note": {
+            "value": "The Lagos offices of the network agencies for the largest accounts, and freelancers below us on price. We win on the founder's personal relationships rather than on price or on any proprietary method, which is the honest answer.",
+            "source": "founder"
+          },
+          "growth_constraint": {
+            "value": "Senior creative hours, which scale linearly with headcount. Delivery cost per additional client has been flat for three years at roughly 40% of that client's fee, and we hold no template, product, or reusable method that would bend it.",
+            "source": "founder"
+          },
+          "use_of_funds": {
+            "value": "More senior creatives. Capital buys people, not leverage -- every naira of new revenue needs about the same share of a senior creative as the last one did, so this would fund a larger version of the same shape rather than a different one.",
+            "source": "founder"
+          }
         }
       },
       "expected": {
         "reviewed": true,
         "reviewed_by": "assistant-draft",
         "saleability_below_fundability": true,
-        "fundability": { "level": "not_yet", "score_min": 46, "score_max": 69 },
-        "saleability": { "level": "not_yet", "score_min": 32, "score_max": 45 },
+        "fundability": {
+          "level": "not_yet",
+          "score_min": 46,
+          "score_max": 69
+        },
+        "saleability": {
+          "level": "not_yet",
+          "score_min": 32,
+          "score_max": 45
+        },
         "data_integrity_min": 100,
         "data_integrity_max": 100,
         "must_flag": []
@@ -288,32 +644,113 @@
         "country": "NG",
         "currency": "NGN",
         "fields": {
-          "description": { "value": "Inter-city parcel delivery across northern Nigeria. The eight northern states we cover generate roughly 90,000 inter-city commercial parcels a month at the weights we carry, which at our NGN 5,000 average is a serviceable market of about NGN 450m a month; we move 420 accounts' worth of that today. The figure is derived from state trade-association parcel counts rather than a purchased market report. Our competition is GIG Logistics on the trunk routes and the informal luxury-bus parcel trade everywhere else, and the second is much larger than the first.", "source": "founder" },
-          "business_model": { "value": "Per-parcel pricing by weight and distance, averaging NGN 5,000 a month an account. The constraint is depot coverage: each new depot opens a route cluster and costs about NGN 18m to stand up, after which marginal cost per parcel on that cluster falls with volume. Capital funds depots, which is a motion we have run four times and can evidence the unit cost of.", "source": "founder" },
-          "founded_year": { "value": 2021, "source": "founder" },
-          "monthly_revenue_minor": { "value": 210000000, "source": "document" },
-          "last_12m_revenue_minor": { "value": 2300000000, "source": "document" },
-          "monthly_costs_minor": { "value": 205000000, "source": "document" },
-          "cost_of_revenue_minor": { "value": 140000000, "source": "document" },
-          "cash_on_hand_minor": { "value": 820000000, "source": "document" },
-          "active_customers": { "value": 420, "source": "founder" },
-          "average_revenue_per_customer_minor": { "value": 500000, "source": "founder" },
-          "customer_acquisition_cost_minor": { "value": 2200000, "source": "founder" },
-          "monthly_churn_percent": { "value": 5.5, "source": "founder" },
-          "team_size": { "value": 12, "source": "founder" },
-          "founder_count": { "value": 2, "source": "founder" },
-          "founders_full_time": { "value": 2, "source": "founder" },
-          "ip_owned": { "value": false, "source": "founder" },
-          "contracts_transferable": { "value": true, "source": "founder" },
-          "key_person_dependency": { "value": "Routes and pricing are documented and the ops lead runs them day to day. The founders are replaceable within a quarter.", "source": "founder" },
-          "cap_table_summary": { "value": "Two founders hold 70%, a 2021 friends-and-family round holds 20%, and 10% is an unallocated option pool. No debt. The dispatch software is a licensed third-party product, not owned, which is why ip_owned is false.", "source": "founder" }
+          "description": {
+            "value": "Inter-city parcel delivery across northern Nigeria.",
+            "source": "founder"
+          },
+          "business_model": {
+            "value": "Per-parcel pricing by weight and distance, averaging NGN 5,000 a month an account.",
+            "source": "founder"
+          },
+          "founded_year": {
+            "value": 2021,
+            "source": "founder"
+          },
+          "monthly_revenue_minor": {
+            "value": 210000000,
+            "source": "document"
+          },
+          "last_12m_revenue_minor": {
+            "value": 2300000000,
+            "source": "document"
+          },
+          "monthly_costs_minor": {
+            "value": 205000000,
+            "source": "document"
+          },
+          "cost_of_revenue_minor": {
+            "value": 140000000,
+            "source": "document"
+          },
+          "cash_on_hand_minor": {
+            "value": 820000000,
+            "source": "document"
+          },
+          "active_customers": {
+            "value": 420,
+            "source": "founder"
+          },
+          "average_revenue_per_customer_minor": {
+            "value": 500000,
+            "source": "founder"
+          },
+          "customer_acquisition_cost_minor": {
+            "value": 2200000,
+            "source": "founder"
+          },
+          "monthly_churn_percent": {
+            "value": 5.5,
+            "source": "founder"
+          },
+          "team_size": {
+            "value": 12,
+            "source": "founder"
+          },
+          "founder_count": {
+            "value": 2,
+            "source": "founder"
+          },
+          "founders_full_time": {
+            "value": 2,
+            "source": "founder"
+          },
+          "ip_owned": {
+            "value": false,
+            "source": "founder"
+          },
+          "contracts_transferable": {
+            "value": true,
+            "source": "founder"
+          },
+          "key_person_dependency": {
+            "value": "Routes and pricing are documented and the ops lead runs them day to day. The founders are replaceable within a quarter.",
+            "source": "founder"
+          },
+          "cap_table_summary": {
+            "value": "Two founders hold 70%, a 2021 friends-and-family round holds 20%, and 10% is an unallocated option pool. No debt. The dispatch software is a licensed third-party product, not owned, which is why ip_owned is false.",
+            "source": "founder"
+          },
+          "market_size_note": {
+            "value": "The eight northern states we cover generate roughly 90,000 inter-city commercial parcels a month at the weights we carry, which at our NGN 5,000 average is a serviceable market of about NGN 450m a month. Derived from state trade-association parcel counts rather than a purchased market report.",
+            "source": "founder"
+          },
+          "competition_note": {
+            "value": "GIG Logistics on the trunk routes, and the informal luxury-bus parcel trade everywhere else. The second is much larger than the first and is what we actually take share from.",
+            "source": "founder"
+          },
+          "growth_constraint": {
+            "value": "Depot coverage. Each new depot opens a route cluster and costs about NGN 18m to stand up, after which marginal cost per parcel on that cluster falls with volume. We have run this four times and can evidence the unit cost.",
+            "source": "founder"
+          },
+          "use_of_funds": {
+            "value": "Depots, at roughly NGN 18m each, plus the vehicles to serve each new cluster. This maps directly to the coverage constraint and is a motion we have already run four times.",
+            "source": "founder"
+          }
         }
       },
       "expected": {
         "reviewed": true,
         "reviewed_by": "assistant-draft",
-        "fundability": { "level": "not_yet", "score_min": 58, "score_max": 69 },
-        "saleability": { "level": "not_yet", "score_min": 55, "score_max": 69 },
+        "fundability": {
+          "level": "not_yet",
+          "score_min": 58,
+          "score_max": 69
+        },
+        "saleability": {
+          "level": "not_yet",
+          "score_min": 55,
+          "score_max": 69
+        },
         "data_integrity_min": 100,
         "data_integrity_max": 100,
         "must_flag": []
@@ -330,26 +767,66 @@
         "country": "NG",
         "currency": "NGN",
         "fields": {
-          "description": { "value": "Custom internal tooling for mid-sized manufacturers.", "source": "founder" },
-          "business_model": { "value": "Fixed-scope build plus support retainer.", "source": "founder" },
-          "monthly_revenue_minor": { "value": 60000000, "source": "founder" },
-          "monthly_costs_minor": { "value": 75000000, "source": "founder" },
-          "cash_on_hand_minor": { "value": 450000000, "source": "founder" },
-          "active_customers": { "value": 12, "source": "founder" },
-          "average_revenue_per_customer_minor": { "value": 5000000, "source": "founder" },
-          "team_size": { "value": 3, "source": "founder" },
-          "founder_count": { "value": 5, "source": "founder" },
-          "founders_full_time": { "value": 2, "source": "founder" }
+          "description": {
+            "value": "Custom internal tooling for mid-sized manufacturers.",
+            "source": "founder"
+          },
+          "business_model": {
+            "value": "Fixed-scope build plus support retainer.",
+            "source": "founder"
+          },
+          "monthly_revenue_minor": {
+            "value": 60000000,
+            "source": "founder"
+          },
+          "monthly_costs_minor": {
+            "value": 75000000,
+            "source": "founder"
+          },
+          "cash_on_hand_minor": {
+            "value": 450000000,
+            "source": "founder"
+          },
+          "active_customers": {
+            "value": 12,
+            "source": "founder"
+          },
+          "average_revenue_per_customer_minor": {
+            "value": 5000000,
+            "source": "founder"
+          },
+          "team_size": {
+            "value": 3,
+            "source": "founder"
+          },
+          "founder_count": {
+            "value": 5,
+            "source": "founder"
+          },
+          "founders_full_time": {
+            "value": 2,
+            "source": "founder"
+          }
         }
       },
       "expected": {
         "reviewed": true,
         "reviewed_by": "assistant-draft",
-        "fundability": { "level": "provisional", "score_min": 25, "score_max": 58 },
-        "saleability": { "level": "provisional", "score_min": 22, "score_max": 55 },
+        "fundability": {
+          "level": "provisional",
+          "score_min": 25,
+          "score_max": 58
+        },
+        "saleability": {
+          "level": "provisional",
+          "score_min": 22,
+          "score_max": 55
+        },
         "data_integrity_min": 75,
         "data_integrity_max": 75,
-        "must_flag": ["more_founders_than_team"]
+        "must_flag": [
+          "more_founders_than_team"
+        ]
       }
     }
   ]

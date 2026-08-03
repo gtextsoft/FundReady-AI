@@ -11,6 +11,184 @@
         "title": "AccountStatus",
         "type": "string"
       },
+      "ActionItemView": {
+        "additionalProperties": false,
+        "description": "One thing the founder can do to improve the verdict.\n\nOrdered worst-first by the synthesis stage, and unassessable dimensions\nsort ahead of low-scoring ones: \"we could not assess this\" is cheaper to fix\n*and* it is what blocks the verdict.",
+        "example": {
+          "action": "Obtain a signed IP assignment from the contractor who built the dispatch app.",
+          "dimension": "legal_and_ip",
+          "dimension_score": 40
+        },
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "dimension": {
+            "title": "Dimension",
+            "type": "string"
+          },
+          "dimension_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dimension Score"
+          }
+        },
+        "required": [
+          "dimension",
+          "action"
+        ],
+        "title": "ActionItemView",
+        "type": "object"
+      },
+      "AdminFindingView": {
+        "additionalProperties": false,
+        "description": "The founder's view plus the engineer-facing comparison.",
+        "example": {
+          "code": "more_founders_than_team",
+          "detail": "founder_count > team_size",
+          "fields": [
+            "team_size",
+            "founder_count"
+          ],
+          "message": "You have listed more founders than total team members.",
+          "severity": "certain"
+        },
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "severity",
+          "fields",
+          "message",
+          "detail"
+        ],
+        "title": "AdminFindingView",
+        "type": "object"
+      },
+      "AdminReport": {
+        "additionalProperties": false,
+        "description": "The SACI tier: everything, including the engineer-facing detail.",
+        "example": {
+          "action_plan": [
+            {
+              "action": "Obtain a signed IP assignment from the contractor who built the dispatch app.",
+              "dimension": "legal_and_ip",
+              "dimension_score": 40
+            }
+          ],
+          "data_integrity_score": "85",
+          "findings": [
+            {
+              "code": "more_founders_than_team",
+              "detail": "founder_count > team_size",
+              "fields": [
+                "team_size",
+                "founder_count"
+              ],
+              "message": "You have listed more founders than team members.",
+              "severity": "certain"
+            }
+          ],
+          "fundability": {
+            "evidenced_dimensions": [
+              "financial_health"
+            ],
+            "level": "provisional",
+            "rationale": "Provisional: scored 58 out of 100 on the evidence available, but some areas are still thin.",
+            "scope": "fundability",
+            "score": 58,
+            "sufficiency": "provisional",
+            "unevidenced_dimensions": [
+              "market_opportunity"
+            ]
+          },
+          "rubric_version": "v1",
+          "saleability": {
+            "evidenced_dimensions": [
+              "financial_health"
+            ],
+            "level": "provisional",
+            "rationale": "Provisional: scored 58 out of 100 on the evidence available, but some areas are still thin.",
+            "scope": "saleability",
+            "score": 58,
+            "sufficiency": "provisional",
+            "unevidenced_dimensions": [
+              "market_opportunity"
+            ]
+          }
+        },
+        "properties": {
+          "action_plan": {
+            "items": {
+              "$ref": "#/components/schemas/ActionItemView"
+            },
+            "title": "Action Plan",
+            "type": "array"
+          },
+          "data_integrity_score": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Data Integrity Score",
+            "type": "string"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/AdminFindingView"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "fundability": {
+            "$ref": "#/components/schemas/VerdictDetail"
+          },
+          "rubric_version": {
+            "title": "Rubric Version",
+            "type": "string"
+          },
+          "saleability": {
+            "$ref": "#/components/schemas/VerdictDetail"
+          }
+        },
+        "required": [
+          "rubric_version",
+          "data_integrity_score",
+          "fundability",
+          "saleability",
+          "findings",
+          "action_plan"
+        ],
+        "title": "AdminReport",
+        "type": "object"
+      },
       "AuditRunResponse": {
         "description": "One audit run's lifecycle -- **status only, never the report**.\n\nThis is the polling shape the mobile client reads while an audit runs, and\nthe boundary matters: `CLAUDE.md` section 4 requires report content to go\nthrough a per-tier serializer, and this endpoint is reachable by the founder\nthe moment the run is created. Adding a `report` field here would route the\nfull internal report around the tier rules for every caller at once. The\nreport is served separately once its serializer exists (T4.2 for the\ninvestor tier, T2.7's founder view alongside it).\n\n`error_message` is founder-facing and deliberately thin. Whatever an\nengineer needs to debug the failure is in the log line for the run, not in a\ncolumn the API hands back.",
         "examples": [
@@ -489,6 +667,46 @@
         "title": "ChangeRoleRequest",
         "type": "object"
       },
+      "DiscoveryPage": {
+        "additionalProperties": false,
+        "description": "One page of discovery results.\n\nCarries `total` because `CLAUDE.md` section 6 asks for consistent list\nconventions and no client can render \"page N of M\" without it. Noted in\nTASKS.md as the shape the other list endpoints should be retrofitted to.",
+        "example": {
+          "items": [],
+          "limit": 20,
+          "offset": 0,
+          "total": 0
+        },
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StartupCard"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "description": "Total matching startups, ignoring pagination.",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "DiscoveryPage",
+        "type": "object"
+      },
       "DocumentKind": {
         "description": "What the founder says this file is.\n\nThe three named in `fundready-prd.md` \u00a74.1, plus an escape hatch. It steers\nextraction (T2.4) -- a cap table and a financial model are read for\ndifferent things -- so it is the founder's declaration, not a fact, and\nextraction must cope with being told the wrong one.",
         "enum": [
@@ -724,6 +942,141 @@
         "title": "FieldSource",
         "type": "string"
       },
+      "FinderView": {
+        "additionalProperties": false,
+        "description": "One thing that does not add up, as the founder is shown it.\n\n`detail` is deliberately absent. `consistency.Finding` carries two texts for\ntwo audiences -- `message` is written for the founder and never accusatory,\n`detail` names the comparison that fired for whoever is debugging. Only the\nadmin tier gets the second.",
+        "example": {
+          "code": "churn_implausibly_low",
+          "fields": [
+            "monthly_churn_percent",
+            "active_customers"
+          ],
+          "message": "Your monthly churn is under 0.1%, which at your customer count would mean fewer than one customer leaves per month. If you meant 2% rather than 0.02, please enter it as 2.",
+          "severity": "likely"
+        },
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "severity",
+          "fields",
+          "message"
+        ],
+        "title": "FinderView",
+        "type": "object"
+      },
+      "FounderReport": {
+        "additionalProperties": false,
+        "description": "The founder tier: their own audit, in full, written for them.",
+        "example": {
+          "action_plan": [
+            {
+              "action": "Obtain a signed IP assignment from the contractor who built the dispatch app.",
+              "dimension": "legal_and_ip",
+              "dimension_score": 40
+            }
+          ],
+          "data_integrity_score": "85",
+          "findings": [
+            {
+              "code": "churn_implausibly_low",
+              "fields": [
+                "monthly_churn_percent"
+              ],
+              "message": "Your monthly churn is under 0.1%. If you meant 2% rather than 0.02, enter it as 2.",
+              "severity": "likely"
+            }
+          ],
+          "fundability": {
+            "evidenced_dimensions": [
+              "financial_health"
+            ],
+            "level": "provisional",
+            "rationale": "Provisional: scored 58 out of 100 on the evidence available, but some areas are still thin.",
+            "scope": "fundability",
+            "score": 58,
+            "sufficiency": "provisional",
+            "unevidenced_dimensions": [
+              "market_opportunity"
+            ]
+          },
+          "rubric_version": "v1",
+          "saleability": {
+            "evidenced_dimensions": [
+              "financial_health"
+            ],
+            "level": "provisional",
+            "rationale": "Provisional: scored 58 out of 100 on the evidence available, but some areas are still thin.",
+            "scope": "saleability",
+            "score": 58,
+            "sufficiency": "provisional",
+            "unevidenced_dimensions": [
+              "market_opportunity"
+            ]
+          }
+        },
+        "properties": {
+          "action_plan": {
+            "items": {
+              "$ref": "#/components/schemas/ActionItemView"
+            },
+            "title": "Action Plan",
+            "type": "array"
+          },
+          "data_integrity_score": {
+            "description": "0-100. Below 50 no verdict is formed at all and both levels read `insufficient_data` -- the figures disagree with each other too much to score.",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Data Integrity Score",
+            "type": "string"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/FinderView"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "fundability": {
+            "$ref": "#/components/schemas/VerdictDetail"
+          },
+          "rubric_version": {
+            "title": "Rubric Version",
+            "type": "string"
+          },
+          "saleability": {
+            "$ref": "#/components/schemas/VerdictDetail"
+          }
+        },
+        "required": [
+          "rubric_version",
+          "data_integrity_score",
+          "fundability",
+          "saleability",
+          "findings",
+          "action_plan"
+        ],
+        "title": "FounderReport",
+        "type": "object"
+      },
       "HealthResponse": {
         "description": "Service liveness.",
         "examples": [
@@ -759,6 +1112,114 @@
         ],
         "title": "HealthResponse",
         "type": "object"
+      },
+      "InterestCreate": {
+        "additionalProperties": false,
+        "description": "An investor asking SACI for an introduction.",
+        "example": {
+          "note": "Fits our Lagos fintech thesis. Cheque size 150-300k USD."
+        },
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Context for SACI. **The founder never sees this** \u2014 an investor writes differently when the subject is not reading.",
+            "title": "Note"
+          }
+        },
+        "title": "InterestCreate",
+        "type": "object"
+      },
+      "InterestResponse": {
+        "additionalProperties": false,
+        "description": "One expression of interest.\n\n**Carries no report content and no founder identity.** An investor holding\nan approved interest still sees only the summary card until a SACI admin\nreveals a report; approval means a conversation may proceed, not that the\ndata is open.",
+        "example": {
+          "created_at": "2026-08-04T09:00:00Z",
+          "id": "6b1f0e2a-0000-4000-8000-000000000001",
+          "note": "Fits our Lagos fintech thesis.",
+          "revealed_run_ids": [],
+          "startup_id": "5f2b1c9e-0000-4000-8000-000000000001",
+          "status": "pending"
+        },
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "revealed_run_ids": {
+            "description": "Audit runs whose **full report** SACI has opened to this investor. Empty until a reveal happens. Read one with `GET /v1/interests/{id}/reports/{run_id}`.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Revealed Run Ids",
+            "type": "array"
+          },
+          "startup_id": {
+            "format": "uuid",
+            "title": "Startup Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/InterestStatus",
+            "description": "`pending` \u2192 SACI has not decided. `approved` \u2192 SACI will broker it; **still not a reveal**. `declined` and `withdrawn` are terminal."
+          }
+        },
+        "required": [
+          "id",
+          "startup_id",
+          "status",
+          "created_at"
+        ],
+        "title": "InterestResponse",
+        "type": "object"
+      },
+      "InterestStatus": {
+        "description": "Where one expression of interest has got to.\n\nClients branch on these, so they are stable strings.",
+        "enum": [
+          "pending",
+          "approved",
+          "declined",
+          "withdrawn"
+        ],
+        "title": "InterestStatus",
+        "type": "string"
       },
       "KycStatus": {
         "description": "Investor identity verification, trusted from Stripe only (AUTH.md 8).",
@@ -1190,6 +1651,12 @@
             "title": "Id",
             "type": "string"
           },
+          "investor_visible": {
+            "default": false,
+            "description": "Whether the founder has opted in to investor discovery. **Opting in is consent, not eligibility** -- a published profile appears in discovery only once it also has a succeeded audit, so a founder who publishes first will start appearing when the audit lands.",
+            "title": "Investor Visible",
+            "type": "boolean"
+          },
           "missing_fields": {
             "description": "Fields an audit still needs, computed on read rather than stored -- it is a function of the field set and the rubric version, so a persisted copy would go stale as soon as either changed.",
             "items": {
@@ -1213,6 +1680,19 @@
             "format": "uuid",
             "title": "Owner Id",
             "type": "string"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When discovery was last opted in to.",
+            "title": "Published At"
           },
           "sector": {
             "anyOf": [
@@ -1403,6 +1883,39 @@
         "title": "RegistrationAccepted",
         "type": "object"
       },
+      "RevealResponse": {
+        "additionalProperties": false,
+        "description": "Confirmation that one full report was opened to one investor.",
+        "example": {
+          "audit_run_id": "b8eabf62-0000-4000-8000-000000000002",
+          "interest_id": "6b1f0e2a-0000-4000-8000-000000000001",
+          "revealed_at": "2026-08-04T10:30:00Z"
+        },
+        "properties": {
+          "audit_run_id": {
+            "format": "uuid",
+            "title": "Audit Run Id",
+            "type": "string"
+          },
+          "interest_id": {
+            "format": "uuid",
+            "title": "Interest Id",
+            "type": "string"
+          },
+          "revealed_at": {
+            "format": "date-time",
+            "title": "Revealed At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "interest_id",
+          "audit_run_id",
+          "revealed_at"
+        ],
+        "title": "RevealResponse",
+        "type": "object"
+      },
       "Role": {
         "description": "The three roles (AUTH.md section 2).",
         "enum": [
@@ -1436,6 +1949,118 @@
         ],
         "title": "Stage",
         "type": "string"
+      },
+      "StartupCard": {
+        "additionalProperties": false,
+        "description": "One discoverable startup, at summary tier.\n\n**What is deliberately absent**, beyond everything `SummaryReport` already\nexcludes:\n\n* **The founder's identity and contact details.** SACI brokers the\n  introduction; a card carrying an email is a card that routes around it.\n* **Every profile field.** Revenue, costs, runway, customer counts, churn\n  -- the submitted figures are the founder's confidential business data.\n  An investor gets the *verdict*, which is what the audit is for; the\n  figures behind it come with the brokered conversation.\n* **`data_integrity_score` and findings**, for the reason `SummaryReport`\n  gives: \"these numbers do not add up\" is a diagnosis, and the diagnosis is\n  what SACI brokers.\n\nWhat remains is the four discovery columns and the two verdicts -- enough\nto decide whether to ask for an introduction, and not enough to skip one.",
+        "example": {
+          "audit_run_id": "5f2b1c9e-0000-4000-8000-000000000002",
+          "country": "NG",
+          "fundability": {
+            "level": "ready",
+            "scope": "fundability",
+            "score": 78
+          },
+          "name": "Kanmi Pay",
+          "published_at": "2026-08-03T12:00:00Z",
+          "rubric_version": "v1",
+          "saleability": {
+            "level": "not_yet",
+            "scope": "saleability",
+            "score": 61
+          },
+          "sector": "fintech",
+          "stage": "seed",
+          "startup_id": "5f2b1c9e-0000-4000-8000-000000000001"
+        },
+        "properties": {
+          "audit_run_id": {
+            "description": "The run this card was built from. Quote it when expressing interest: a founder who re-audits produces a new verdict, and a reveal names the exact run that was disclosed.",
+            "format": "uuid",
+            "title": "Audit Run Id",
+            "type": "string"
+          },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
+          "fundability": {
+            "$ref": "#/components/schemas/VerdictSummary"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the founder opted in to discovery.",
+            "title": "Published At"
+          },
+          "rubric_version": {
+            "title": "Rubric Version",
+            "type": "string"
+          },
+          "saleability": {
+            "$ref": "#/components/schemas/VerdictSummary"
+          },
+          "sector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sector"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Stage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "startup_id": {
+            "format": "uuid",
+            "title": "Startup Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "startup_id",
+          "audit_run_id",
+          "rubric_version",
+          "fundability",
+          "saleability"
+        ],
+        "title": "StartupCard",
+        "type": "object"
       },
       "StartupProfileCreate": {
         "additionalProperties": false,
@@ -1856,6 +2481,120 @@
         "title": "UserResponse",
         "type": "object"
       },
+      "VerdictDetail": {
+        "additionalProperties": false,
+        "description": "What a founder may see: the answer plus why, and what is still thin.",
+        "example": {
+          "evidenced_dimensions": [
+            "financial_health",
+            "unit_economics"
+          ],
+          "level": "provisional",
+          "rationale": "Provisional: scored 58 out of 100 on the evidence available, but some areas are still thin. Filling the gaps below could move this in either direction.",
+          "scope": "fundability",
+          "score": 58,
+          "sufficiency": "provisional",
+          "unevidenced_dimensions": [
+            "market_opportunity",
+            "scalability"
+          ]
+        },
+        "properties": {
+          "evidenced_dimensions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidenced Dimensions",
+            "type": "array"
+          },
+          "level": {
+            "description": "`ready`, `not_yet`, `provisional`, or `insufficient_data`. **`insufficient_data` is an absence, not a failure** -- it must never be rendered as 'not fundable'.",
+            "title": "Level",
+            "type": "string"
+          },
+          "rationale": {
+            "description": "Founder-facing. Says what the verdict is and what would change it.",
+            "title": "Rationale",
+            "type": "string"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "0-100, or null when no score was formed (`insufficient_data`).",
+            "title": "Score"
+          },
+          "sufficiency": {
+            "title": "Sufficiency",
+            "type": "string"
+          },
+          "unevidenced_dimensions": {
+            "description": "Dimensions with nothing to score. **This is the list to drive the next questions from** -- filling these is what moves a verdict off `provisional`.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Unevidenced Dimensions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "scope",
+          "level",
+          "sufficiency",
+          "rationale",
+          "evidenced_dimensions",
+          "unevidenced_dimensions"
+        ],
+        "title": "VerdictDetail",
+        "type": "object"
+      },
+      "VerdictSummary": {
+        "additionalProperties": false,
+        "description": "What an investor may see of one verdict: the answer, and nothing else.",
+        "example": {
+          "level": "not_yet",
+          "scope": "fundability",
+          "score": 58
+        },
+        "properties": {
+          "level": {
+            "description": "`ready`, `not_yet`, `provisional`, or `insufficient_data`. **`insufficient_data` is an absence, not a failure** -- it must never be rendered as 'not fundable'.",
+            "title": "Level",
+            "type": "string"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "0-100, or null when no score was formed (`insufficient_data`).",
+            "title": "Score"
+          }
+        },
+        "required": [
+          "scope",
+          "level"
+        ],
+        "title": "VerdictSummary",
+        "type": "object"
+      },
       "VerifyEmailRequest": {
         "additionalProperties": false,
         "description": "The token from the verification link.",
@@ -1894,6 +2633,362 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/v1/admin/interests/{interest_id}/approve": {
+      "post": {
+        "description": "**SACI admins only.** Agrees to broker this introduction.\n\n**This is not a reveal.** The investor still sees only the summary card; opening the full report is a separate, deliberate action taken at the meeting.\n\n`409` if the interest has already been decided \u2014 the audit log records the decision that was taken, and a reversal would leave two contradictory rows. Reversing is a support conversation.\n\n**SACI is the broker.** An investor never reaches a founder's full report by their own entitlement: they express interest, a SACI admin decides, and a separate admin action opens one report. Approval is not disclosure \u2014 an approved interest still sees only the summary card.",
+        "operationId": "approve_interest_v1_admin_interests__interest_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "interest_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Interest Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Approve an interest",
+        "tags": [
+          "brokerage"
+        ]
+      }
+    },
+    "/v1/admin/interests/{interest_id}/decline": {
+      "post": {
+        "description": "**SACI admins only.** Terminal, and audit-logged like an approval \u2014 who was turned away matters as much as who was not.\n\n**SACI is the broker.** An investor never reaches a founder's full report by their own entitlement: they express interest, a SACI admin decides, and a separate admin action opens one report. Approval is not disclosure \u2014 an approved interest still sees only the summary card.",
+        "operationId": "decline_interest_v1_admin_interests__interest_id__decline_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "interest_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Interest Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Decline an interest",
+        "tags": [
+          "brokerage"
+        ]
+      }
+    },
+    "/v1/admin/interests/{interest_id}/reveal": {
+      "post": {
+        "description": "**SACI admins only, and the most consequential call in the API.** Opens the startup's latest completed audit \u2014 in full \u2014 to this one investor. Every call writes an immutable audit-log entry naming who opened what, for whom.\n\nRequires an **approved** interest; `409` otherwise, because revealing against a pending or declined one would make approval decorative.\n\n**Scoped to an audit run, not a startup.** A founder who re-audits produces a different report, and this investor's access is to what they were actually shown. Revealing again is idempotent \u2014 the same disclosure is returned, not a second one.\n\n`404` if the startup has no completed audit to reveal.",
+        "operationId": "reveal_report_v1_admin_interests__interest_id__reveal_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "interest_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Interest Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevealResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Reveal the full report to an investor",
+        "tags": [
+          "brokerage"
+        ]
+      }
+    },
+    "/v1/admin/startups/{startup_id}/audits/{run_id}/report": {
+      "get": {
+        "description": "**SACI admins only.** Everything the run concluded, including the engineer-facing `detail` on each finding that the founder tier withholds.\n\nThis is the read behind the brokerage: an investor never reaches a full report through their own entitlement, only through a SACI reveal at the meeting. Serving it on a separate admin-only path -- rather than widening the founder endpoint by role -- keeps the two audiences in two routes, so a change to one cannot silently widen the other.",
+        "operationId": "read_audit_report_as_admin_v1_admin_startups__startup_id__audits__run_id__report_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "startup_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Startup Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Read any audit report in full",
+        "tags": [
+          "audit"
+        ]
+      }
+    },
     "/v1/admin/users": {
       "post": {
         "description": "Creates an admin. This is the only way one comes into existence -- `/v1/auth/register` refuses the role.\n\nThe new admin lands `pending_verification` and without MFA, so they must verify their address and enrol a second factor before any admin capability opens to them. A verification email is sent.\n\nUnlike self-registration, a duplicate address returns `409` rather than a uniform success: the caller is already trusted, so there is no enumeration concern.\n\nRequires an admin account **with MFA enrolled**. An admin who has not enrolled receives `403` here until they do.",
@@ -3229,6 +4324,307 @@
         ]
       }
     },
+    "/v1/discover": {
+      "get": {
+        "description": "Startups that have published themselves, newest first.\n\nFilters are the four indexed columns. `sector` matches case-insensitively because sector is free text \u2014 a founder who typed `Fintech` and a filter of `fintech` mean the same thing.\n\n`total` is the count ignoring pagination, so a client can render \"page N of M\".\n\nA startup appears only once it has a **succeeded** audit. A published profile with no verdict is not listed: a card with nothing on it invites a direct approach, which is what the brokerage prevents.\n\n**Investors and SACI admins only; `403` for a founder.**\n\nEvery startup here opted in explicitly \u2014 running an audit does not make a founder discoverable, publishing does. Results carry the **summary tier** only: the two verdicts and the four discovery columns. There is no founder name, no contact detail, and none of the submitted figures. That is the brokerage: the verdict is enough to decide whether to ask for an introduction, and not enough to skip one.",
+        "operationId": "discover_v1_discover_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "sector",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sector"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stage",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Stage"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stage"
+            }
+          },
+          {
+            "in": "query",
+            "name": "country",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2,
+                  "minLength": 2,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Country"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoveryPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Browse discoverable startups",
+        "tags": [
+          "investor"
+        ]
+      }
+    },
+    "/v1/discover/{startup_id}": {
+      "get": {
+        "description": "The same card the list returns.\n\n**`404` for a startup that has not published**, exactly as for one that does not exist \u2014 a distinguishable answer would turn this into an oracle for which startup ids are real.\n\n**Investors and SACI admins only; `403` for a founder.**\n\nEvery startup here opted in explicitly \u2014 running an audit does not make a founder discoverable, publishing does. Results carry the **summary tier** only: the two verdicts and the four discovery columns. There is no founder name, no contact detail, and none of the submitted figures. That is the brokerage: the verdict is enough to decide whether to ask for an introduction, and not enough to skip one.",
+        "operationId": "read_startup_card_v1_discover__startup_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "startup_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Startup Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartupCard"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Read one discoverable startup",
+        "tags": [
+          "investor"
+        ]
+      }
+    },
+    "/v1/discover/{startup_id}/interest": {
+      "post": {
+        "description": "Asks SACI for an introduction. **The founder is not notified and cannot see this** \u2014 they hear about it when SACI arranges the meeting.\n\nIdempotent: expressing interest twice returns the original record rather than creating a second. One per investor per startup.\n\n`404` if the startup has not published itself, identical to a startup that does not exist \u2014 you cannot express interest in something you were never shown.\n\n**SACI is the broker.** An investor never reaches a founder's full report by their own entitlement: they express interest, a SACI admin decides, and a separate admin action opens one report. Approval is not disclosure \u2014 an approved interest still sees only the summary card.",
+        "operationId": "express_interest_v1_discover__startup_id__interest_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "startup_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Startup Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InterestCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Express interest in a startup",
+        "tags": [
+          "brokerage"
+        ]
+      }
+    },
     "/v1/documents/{document_id}/complete": {
       "post": {
         "description": "Call this after the `PUT` succeeds. The server reads the object back from storage and judges it on what actually arrived -- not on what you declared.\n\nA file that is missing, empty, larger than `max_bytes`, or of an unaccepted type is **deleted from storage** and the document is marked `rejected`; `422` carries the reason in `details.reason` (`object_missing`, `empty_file`, `file_too_large`, `unsupported_content_type`).\n\nSafe to retry: calling it again on a `ready` document returns it unchanged.\n\nYou can only reach your own profile. Another founder's id returns `404`, not `403` -- deliberately, so the API does not confirm which ids exist. SACI admins can read any profile.",
@@ -3406,6 +4802,174 @@
         "summary": "Liveness check",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/v1/interests": {
+      "get": {
+        "description": "An investor sees their own, newest first. A **SACI admin sees every interest**, oldest first \u2014 it is a work queue, so the one waiting longest comes first.\n\n`revealed_run_ids` names the audit runs whose full report has been opened to that investor. Empty until a reveal happens.\n\n**SACI is the broker.** An investor never reaches a founder's full report by their own entitlement: they express interest, a SACI admin decides, and a separate admin action opens one report. Approval is not disclosure \u2014 an approved interest still sees only the summary card.",
+        "operationId": "list_interests_v1_interests_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/InterestStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InterestResponse"
+                  },
+                  "title": "Response List Interests V1 Interests Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "List interests",
+        "tags": [
+          "brokerage"
+        ]
+      }
+    },
+    "/v1/interests/{interest_id}/reports/{run_id}": {
+      "get": {
+        "description": "The full report SACI opened to you at the meeting: both verdicts with their reasoning, the data-integrity score, every finding, and the action plan.\n\n**This is the only path by which an investor reads full report content.** Access is checked against an actual reveal, not against the interest's status \u2014 an approved interest with no reveal returns `404`.\n\nThe same rendering rules as the founder report apply: `insufficient_data` is an absence and must never read as 'not fundable', and `provisional` must be labelled as provisional.",
+        "operationId": "read_revealed_report_v1_interests__interest_id__reports__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "interest_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Interest Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Read a report revealed to you",
+        "tags": [
+          "brokerage"
         ]
       }
     },
@@ -3709,6 +5273,164 @@
         ]
       }
     },
+    "/v1/startups/{profile_id}/publish": {
+      "post": {
+        "description": "Opt this startup in to investor discovery.\n\nIdempotent: publishing an already-published profile refreshes `published_at` and changes nothing else.\n\n**Publishing is consent, not eligibility.** Opting in says the founder is willing to be seen. Whether there is anything to *show* is decided separately: a startup appears in `GET /v1/discover` only once it also has a **succeeded audit**, because a card with no verdict tells an investor nothing and invites them to approach the founder directly \u2014 which is what the brokerage exists to prevent.\n\nSo publishing before the first audit finishes is allowed and is not an error. The client should say so: *\"You'll appear to investors once your audit completes.\"* Poll the audit, not this endpoint.\n\n**What an investor then sees is the summary tier only** \u2014 the two verdict levels and scores, plus sector, stage and country. Never the submitted figures, the findings, the action plan, or any contact detail. The full report is revealed by a SACI admin at the meeting and by no other path.\n\nYou can only reach your own profile. Another founder's id returns `404`, not `403` -- deliberately, so the API does not confirm which ids exist. SACI admins can read any profile.",
+        "operationId": "publish_profile_v1_startups__profile_id__publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "profile_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Profile Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Publish to investors",
+        "tags": [
+          "intake"
+        ]
+      }
+    },
+    "/v1/startups/{profile_id}/unpublish": {
+      "post": {
+        "description": "Opt out again. Takes effect immediately: the startup stops appearing in discovery and its card returns `404`.\n\n**Unconditional, unlike publishing.** Withdrawing consent is never harder than giving it, so there is no audit check and no waiting period.\n\nThis does **not** retract a report a SACI admin has already revealed to an investor \u2014 that disclosure happened, and pretending otherwise would be worse than recording it. The reveal is kept in the audit log.\n\nYou can only reach your own profile. Another founder's id returns `404`, not `403` -- deliberately, so the API does not confirm which ids exist. SACI admins can read any profile.",
+        "operationId": "unpublish_profile_v1_startups__profile_id__unpublish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "profile_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Profile Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Withdraw from investor discovery",
+        "tags": [
+          "intake"
+        ]
+      }
+    },
     "/v1/startups/{startup_id}/audits": {
       "get": {
         "description": "This startup's audit runs, newest first. Status only -- no report content.\n\nAudits run in the background and are **never** performed inline: a full audit is minutes of model time. Submit, then poll the status endpoint until `status` is `succeeded` or `failed`.",
@@ -3963,6 +5685,95 @@
           }
         ],
         "summary": "Poll one audit run",
+        "tags": [
+          "audit"
+        ]
+      }
+    },
+    "/v1/startups/{startup_id}/audits/{run_id}/report": {
+      "get": {
+        "description": "The founder's own report, in full: both verdicts with their reasoning, the data-integrity score, every finding, and the action plan.\n\n**`404` until the run has succeeded.** A report does not exist while a run is `queued`, `running`, or `failed`, and an empty `200` would have clients rendering a blank verdict as a real one. Poll `GET .../audits/{run_id}` first.\n\n**Rendering rules the client must follow.** `insufficient_data` is an *absence*, not a failure -- it must never be shown as 'not fundable', because the founder has not been assessed and telling them otherwise is a false verdict. `provisional` must be labelled as provisional wherever it appears, never as a plain result; expect it to be the common case. `score` is `null` whenever the level is `insufficient_data` and must not be coerced to `0`.\n\n`unevidenced_dimensions` on each verdict is the list to turn into \"answer these next\" -- filling them is what moves a verdict off `provisional`.\n\nAnother founder's run returns `404`, never `403`.",
+        "operationId": "read_audit_report_v1_startups__startup_id__audits__run_id__report_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "startup_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Startup Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FounderReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Read your audit report",
         "tags": [
           "audit"
         ]

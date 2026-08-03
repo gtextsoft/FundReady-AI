@@ -581,3 +581,36 @@ async def list_audit_runs(
     """This startup's runs, newest first. Ownership is checked on the profile."""
     profile = await intake.get_profile(session, actor, startup_id)
     return await AuditRunRepository(session).list_for_startup(profile.id)
+
+
+async def get_audit_report(
+    session: AsyncSession,
+    actor: CurrentUser,
+    startup_id: uuid.UUID,
+    run_id: uuid.UUID,
+) -> dict[str, Any]:
+    """The stored report document for one run, for its owner or an admin.
+
+    Returns the **whole** stored document. Tier filtering is the router's
+    serializer choice (`audit.reports`), not this function's job -- keeping the
+    two apart is what lets one service method serve the founder endpoint and the
+    SACI reveal without either of them re-deriving ownership.
+
+    Ownership is delegated to `get_audit_run`, so the `startup_id` in the path
+    is checked against the row and a run belonging to another founder is `404`
+    rather than `403` -- see that function for why.
+
+    A run that has not succeeded has no report. That is `404` and not an empty
+    body: the report genuinely does not exist yet, and a `200` carrying nulls
+    would have clients rendering an empty verdict as a real one. The message
+    points at the status endpoint rather than explaining the lifecycle here.
+    """
+    run = await get_audit_run(session, actor, startup_id, run_id)
+
+    if run.status is not AuditStatus.SUCCEEDED or run.report is None:
+        raise NotFoundError(
+            "This audit has no report yet. Poll the audit run until its status "
+            "is `succeeded`."
+        )
+
+    return run.report

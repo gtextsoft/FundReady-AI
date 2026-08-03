@@ -19,6 +19,7 @@ follows applies the identical rule.
 
 import logging
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -154,6 +155,59 @@ async def get_own_profile(session: AsyncSession, actor: CurrentUser) -> StartupP
     profile = await StartupProfileRepository(session).get_for_owner(actor.id)
     if profile is None:
         raise NotFoundError("You do not have a startup profile yet.")
+    return profile
+
+
+async def set_discoverability(
+    session: AsyncSession,
+    actor: CurrentUser,
+    profile_id: uuid.UUID,
+    *,
+    visible: bool,
+) -> StartupProfile:
+    """Opt this startup in to, or out of, investor discovery (T4.3).
+
+    **Publishing is a separate decision from being audited**, which is why this
+    is an explicit action rather than something derived from having a report.
+    A founder who runs an audit has asked what their business looks like; they
+    have not agreed to show it to investors, and inferring the second from the
+    first would publish confidential data because somebody used the product.
+
+    **This flag is consent, not eligibility, and the two are enforced in
+    different places on purpose.** Setting it says "I am willing to be seen".
+    Whether there is anything *to* see is decided at read time: the discovery
+    query inner-joins to a succeeded audit, so a published profile with no
+    verdict simply does not appear. A founder may therefore publish before
+    auditing and will start appearing when the audit lands.
+
+    Checking the audit here instead would mean this module reaching into
+    `audit`, which already depends on `intake` -- a circular import, and a
+    boundary violation `ARCHITECTURE.md` section 3 forbids. It would also be
+    the weaker of the two guards: a check at write time says nothing about a
+    run that is later deleted or superseded, whereas the join cannot go stale.
+    The endpoint description tells the client to expect the delay.
+
+    **Unpublishing is unconditional.** Withdrawing consent must never be harder
+    than giving it.
+
+    When the readiness gate lands (T3.6) it constrains the publish branch only.
+    Nothing here changes shape.
+    """
+    profile = _authorise(await StartupProfileRepository(session).get(profile_id), actor)
+
+    profile.investor_visible = visible
+    profile.published_at = datetime.now(UTC) if visible else None
+    await session.flush()
+
+    logger.info(
+        "startup discoverability changed",
+        extra={
+            "context": {
+                "startup_id": str(profile.id),
+                "investor_visible": visible,
+            }
+        },
+    )
     return profile
 
 

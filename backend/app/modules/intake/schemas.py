@@ -285,6 +285,18 @@ class ProfileResponse(BaseModel):
             "persisted copy would go stale as soon as either changed."
         )
     )
+    investor_visible: bool = Field(
+        default=False,
+        description=(
+            "Whether the founder has opted in to investor discovery. **Opting "
+            "in is consent, not eligibility** -- a published profile appears in "
+            "discovery only once it also has a succeeded audit, so a founder "
+            "who publishes first will start appearing when the audit lands."
+        ),
+    )
+    published_at: datetime | None = Field(
+        default=None, description="When discovery was last opted in to."
+    )
     created_at: datetime
     updated_at: datetime
 

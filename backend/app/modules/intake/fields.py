@@ -92,6 +92,35 @@ PROFILE_FIELDS: Final[tuple[FieldSpec, ...]] = (
     ),
     FieldSpec("website", FieldKind.TEXT, "Public website, if any."),
     FieldSpec("founded_year", FieldKind.YEAR, "Year the business started trading."),
+    # -- Market and growth --------------------------------------------------
+    # Added 2026-08-03. Until these existed, `market_opportunity` and
+    # `scalability` were scored against criteria **nothing on the form asked
+    # for** -- so both routinely came back unevidenced, and a verdict needs
+    # every in-scope dimension evidenced to read `ready` or `not_yet`. The
+    # practical effect was that a founder could fill in the whole profile
+    # correctly and still be capped at `provisional`. Optional rather than
+    # required, because an audit that refuses to start is worse than one that
+    # starts and says which answers would sharpen it.
+    FieldSpec(
+        "market_size_note",
+        FieldKind.TEXT,
+        "How big the market they can serve today is, and how that was derived.",
+    ),
+    FieldSpec(
+        "competition_note",
+        FieldKind.TEXT,
+        "Who else solves this problem for their customers today.",
+    ),
+    FieldSpec(
+        "growth_constraint",
+        FieldKind.TEXT,
+        "What limits growth right now, and what they have already proven.",
+    ),
+    FieldSpec(
+        "use_of_funds",
+        FieldKind.TEXT,
+        "What new capital would buy, mapped to the constraint above.",
+    ),
     # -- Team --------------------------------------------------------------
     FieldSpec(
         "team_size",

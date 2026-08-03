@@ -48,14 +48,7 @@ from app.modules.audit.synthesis import (
 )
 from app.modules.intake.fields import FIELDS_BY_NAME, value_error
 from tests.golden import ExpectedVerdict, GoldenCompany, load_companies
-from tests.golden.loader import (
-    NARRATIVE_FIELDS,
-    NARRATIVE_ONLY_DIMENSIONS,
-    SUBSTANTIVE_NARRATIVE_CHARS,
-    ReviewedBy,
-    as_ids,
-    qualified_ids,
-)
+from tests.golden.loader import ReviewedBy, as_ids, qualified_ids
 
 # Ten was already the bar `test_audit_consistency` set for `data_integrity_score`.
 # Matched here so "stable" means the same thing across the suite.
@@ -272,26 +265,6 @@ def test_no_fixture_sits_on_the_coverage_boundary(company: GoldenCompany) -> Non
             f"{company.id}.{name}: coverage is exactly {evidenced}/{len(keys)}, "
             "the boundary itself. Add or remove evidence so the expectation "
             "does not hinge on one dimension"
-        )
-
-
-@pytest.mark.parametrize("company", COMPANIES, ids=as_ids(COMPANIES))
-def test_narrative_evidence_is_not_a_borderline_call(company: GoldenCompany) -> None:
-    """The length proxy must be deciding easy cases, not close ones.
-
-    `SUBSTANTIVE_NARRATIVE_CHARS` cannot tell a market derivation from padding.
-    It is defensible only while every fixture is far from it -- so this asserts
-    the margin rather than the threshold, and a fixture that lands near the
-    line is told to get a human reading instead of a tuned constant.
-    """
-    margin = 100
-    for dimension in NARRATIVE_ONLY_DIMENSIONS:
-        length = company.narrative_length(dimension)
-        assert abs(length - SUBSTANTIVE_NARRATIVE_CHARS) > margin, (
-            f"{company.id}: {NARRATIVE_FIELDS[dimension]} is {length} characters, "
-            f"within {margin} of the {SUBSTANTIVE_NARRATIVE_CHARS}-character "
-            f"threshold that decides whether {dimension.value} counts as "
-            "evidenced. Too close for a length proxy to be honest about"
         )
 
 
