@@ -11,6 +11,7 @@ import { Mono, Txt, TxtMed, TxtSemi } from '@/components/ui/text';
 import { C } from '@/theme/tokens';
 import { api, type DomainSso, type Role } from '@/api';
 import { checkFounderEmail, emailDomain, isValidEmail } from '@/domain/email';
+import { checkPassword, MIN_PASSWORD } from '@/domain/password';
 import { homeFor, ONBOARDING, SIGN_IN } from '@/lib/routes';
 import { useSession } from '@/store/session';
 
@@ -18,9 +19,6 @@ const ROLES = [
   { value: 'founder' as Role, label: "I'm raising" },
   { value: 'investor' as Role, label: "I'm investing" },
 ];
-
-/** Mirrors the server's minimum (identity/schemas.py). Kept in step by hand. */
-const MIN_PASSWORD = 12;
 
 /** The headline is the only copy above the form — the subhead was removed. */
 const HEADLINE: Record<Role, string> = {
@@ -115,13 +113,13 @@ export default function SignUp() {
     }
 
     // The server rejects anything shorter, so say so here rather than
-    // round-tripping to find out.
-    if (password.length < MIN_PASSWORD) {
-      setPasswordError(`Use at least ${MIN_PASSWORD} characters.`);
+    // round-tripping to find out. `confirm` also catches the typo before it
+    // becomes an account nobody can log into.
+    const passwordCheck = checkPassword(password, confirm);
+    if (!passwordCheck.ok) {
+      setPasswordError(passwordCheck.message);
       return;
     }
-
-    // Catches the typo before it becomes an account nobody can log into.
     if (confirm !== password) {
       setPasswordError('Both passwords must match.');
       return;

@@ -33,18 +33,30 @@ export default function Onboarding() {
   const uploadDeck = useFounder((s) => s.uploadDeck);
   const failUpload = useFounder((s) => s.failUpload);
 
+  const loaded = useFounder((s) => s.loaded);
+  const load = useFounder((s) => s.load);
+
   const email = useSession((s) => s.session?.email ?? '');
+
+  // Resume where they stopped. Onboarding is four screens of typing and it is
+  // routinely abandoned halfway; without this, reopening the app starts from
+  // an empty form even though the answers are on the server.
+  useEffect(() => {
+    if (!loaded) void load().catch(() => undefined);
+  }, [loaded, load]);
 
   // Seed the company name from the sign-up domain so the founder does not
   // retype what they already told us. Only ever fills a blank field, so it
-  // cannot overwrite something they typed, and it stays fully editable.
+  // cannot overwrite something they typed or something already saved, and it
+  // stays fully editable. Waits for the load so it cannot win a race against
+  // the stored name.
   useEffect(() => {
-    if (profile.company.trim()) return;
+    if (!loaded || profile.company.trim()) return;
     const suggestion = companyNameFromEmail(email);
     if (suggestion) setField('company', suggestion);
     // Runs on the address changing, not on every keystroke in the field.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [email, setField]);
+  }, [email, setField, loaded]);
 
   const valid = isStepValid(profile, step);
   const showError = touched && !valid;

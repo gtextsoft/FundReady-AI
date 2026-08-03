@@ -2,13 +2,17 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
 import { companyNameFromEmail, isPersonalEmailDomain } from '@/domain/email';
+import {
+  fromWireProfile,
+  toWireProfile,
+  type WireProfileResponse,
+} from './profile-mapping';
 import { storage } from '@/lib/storage';
 import type { VerificationStatus } from '@/domain/types';
 import type {
   Credentials,
   DomainLookup,
   FundMeApi,
-  Role,
   Session,
 } from './contract';
 import { ApiFailure } from './contract';
@@ -17,8 +21,9 @@ import { TRIAL_DAYS } from '@/domain/access';
 /**
  * The real backend.
  *
- * Only authentication exists server-side today: register, login, refresh,
- * logout and `/v1/users/me`. Every other method on `FundMeApi` has no endpoint
+ * Live today: authentication (register, login, refresh, logout,
+ * `/v1/users/me`), email verification, password reset, MFA, and the Startup
+ * Profile (`/v1/startups`). Every other method on `FundMeApi` has no endpoint
  * behind it yet, so it throws `not_implemented` rather than inventing an
  * answer — screens render an explicit "not available yet" state instead of
  * showing numbers nobody computed.
@@ -325,6 +330,22 @@ async function logIn(creds: Credentials): Promise<Session> {
   return establish(result.tokens);
 }
 
+/**
+ * The founder's own startup profile, or null when they have not made one.
+ *
+ * A `404` here is the ordinary "not onboarded yet" answer, not a failure — the
+ * endpoint deliberately returns it rather than an empty object, so there is no
+ * way to confuse "no profile" with "a profile with nothing in it".
+ */
+async function ownProfile(): Promise<WireProfileResponse | null> {
+  try {
+    return await request<WireProfileResponse>('/v1/startups/me', { auth: true });
+  } catch (error) {
+    if (error instanceof ApiFailure && error.code === 'not_found') return null;
+    throw error;
+  }
+}
+
 /** Every method with no endpoint behind it fails the same, nameable way. */
 function notYet<T>(feature: string, task: string): Promise<T> {
   return Promise.reject(
@@ -340,9 +361,9 @@ export const httpApi: FundMeApi = {
   signIn: logIn,
 
   async signUp({ email, password, role, firstName, lastName }) {
-    // NOTE: the server does not yet enforce the company-domain rule for
-    // founders, so this check is currently the only one there is. It belongs
-    // server-side — a client check can always be bypassed. Flagged in TASKS.md.
+    // The server enforces this too (T1.4a), and it is the authority — a client
+    // check can always be bypassed. This one exists to answer instantly and to
+    // name the reason, rather than surfacing a bare 422 after a round trip.
     if (role === 'founder' && isPersonalEmailDomain(email.split('@')[1] ?? '')) {
       throw new ApiFailure('validation', 'personal_email_domain');
     }
@@ -404,17 +425,38 @@ export const httpApi: FundMeApi = {
     });
   },
 
+  async resetPassword(token: string, password: string) {
+    await request<void>('/v1/auth/password-reset/confirm', {
+      method: 'POST',
+      body: { token: token.trim(), password },
+    });
+    // The server has just revoked every refresh token and invalidated every
+    // access token it had issued, so anything this device is still holding is
+    // dead. Dropping it here is what keeps the app from spending the next
+    // request discovering that — and, if a *different* person completed the
+    // reset, from leaving a live-looking session on a device they now control.
+    await clearTokens();
+  },
+
   // ── accounts ────────────────────────────────────────────
   async getFounderAccount() {
-    const me = await fetchMe();
+    // Two calls rather than one, deliberately. The company name now has a real
+    // home (T1.4), and a name read off a stored profile beats one guessed from
+    // an email domain everywhere it is shown. The profile read is tolerant:
+    // a founder who has not onboarded has no profile, which is not an error.
+    const [me, profile] = await Promise.all([
+      fetchMe(),
+      ownProfile().catch(() => null),
+    ]);
     const created = new Date(me.created_at).getTime();
+
     return {
       emailVerified: me.email_verified,
-      // No company record exists server-side yet (T1.4), so this is guessed
-      // from the sign-up domain purely as a display default. Anything the
-      // founder actually types wins over it everywhere it is shown.
-      companyName: companyNameFromEmail(me.email),
-      // Company-registration verification has no endpoint yet (T1.4). This is
+      // The stored name first; the domain guess only until one exists. The
+      // server fills the name in from the verified company domain at
+      // registration (T1.4a), so in practice this falls back rarely.
+      companyName: profile?.name || companyNameFromEmail(me.email),
+      // Company-registration verification still has no endpoint. This is
       // deliberately NOT read off `kyc_status`, which is investor identity.
       verification: 'unverified',
       registration: null,
@@ -464,7 +506,55 @@ export const httpApi: FundMeApi = {
 
   // ── founder ─────────────────────────────────────────────
   submitAssessment: () => notYet('The fundability assessment', 'Phase 2'),
-  getProfile: () => notYet('Your startup profile', 'T1.4'),
+
+  async getProfile() {
+    const stored = await ownProfile();
+    return stored ? fromWireProfile(stored) : null;
+  },
+
+  async saveProfile(profile) {
+    const { wire, unmapped } = toWireProfile(profile);
+    const existing = await ownProfile();
+
+    let saved: WireProfileResponse;
+    if (existing) {
+      saved = await request<WireProfileResponse>(`/v1/startups/${existing.id}`, {
+        method: 'PATCH',
+        body: wire,
+        auth: true,
+      });
+    } else {
+      try {
+        saved = await request<WireProfileResponse>('/v1/startups', {
+          method: 'POST',
+          body: wire,
+          auth: true,
+        });
+      } catch (error) {
+        // One profile per founder. Two devices onboarding at once both see
+        // "none yet" and both POST; the loser gets a 409 and should update the
+        // profile that now exists rather than report a failure.
+        if (!(error instanceof ApiFailure) || error.code !== 'conflict') throw error;
+        const created = await ownProfile();
+        if (!created) throw error;
+        saved = await request<WireProfileResponse>(`/v1/startups/${created.id}`, {
+          method: 'PATCH',
+          body: wire,
+          auth: true,
+        });
+      }
+    }
+
+    return {
+      // Read back what was stored rather than echoing what was sent: the
+      // server normalises (country upper-cased, unknown fields refused) and
+      // the form should show what actually exists.
+      profile: fromWireProfile(saved),
+      unmapped,
+      missingFields: saved.missing_fields ?? [],
+    };
+  },
+
   enrol: () => notYet('Programme enrolment', 'T3.2'),
   askMentor: () => notYet('The AI mentor', 'T3.7'),
 

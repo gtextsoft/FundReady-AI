@@ -45,7 +45,7 @@ export function ScheduleCallSheet({
   companyName: string;
   onSubmit: (input: { proposedAt: string; durationMinutes: number; note: string }) => Promise<void>;
 }) {
-  const days = useMemo(upcomingDays, []);
+  const days = useMemo(() => upcomingDays(), []);
   const [dayIndex, setDayIndex] = useState(0);
   const [hour, setHour] = useState(HOURS[1]);
   const [duration, setDuration] = useState<string>('30');

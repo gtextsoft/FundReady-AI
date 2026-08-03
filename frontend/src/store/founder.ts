@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { api, isUnavailable } from '@/api';
+import { api, isUnavailable, type SaveResult } from '@/api';
+import type { UnmappedAnswer } from '@/api/profile-mapping';
 import { assess } from '@/domain/scoring';
 import { EMPTY_PROFILE, type Assessment, type FounderProfile } from '@/domain/types';
 
@@ -12,6 +13,20 @@ type FounderState = {
   touched: boolean;
   deckError: boolean;
   assessment: Assessment | null;
+  /** True once the stored profile has been read back (or found not to exist). */
+  loaded: boolean;
+  /** True when the form holds edits the server has not been told about. */
+  dirty: boolean;
+  /**
+   * Answers the server had no field for on the last save. Surface these — they
+   * were typed by a person and are not being stored.
+   */
+  unmapped: UnmappedAnswer[];
+
+  /** Reads the saved profile back, so onboarding resumes where it stopped. */
+  load(): Promise<void>;
+  /** Persists the form. Returns what the server stored and what it refused. */
+  save(): Promise<SaveResult>;
 
   setField<K extends keyof FounderProfile>(key: K, value: FounderProfile[K]): void;
   setStep(step: Step): void;
@@ -52,9 +67,12 @@ export const useFounder = create<FounderState>((set, get) => ({
   touched: false,
   deckError: false,
   assessment: null,
+  loaded: false,
+  dirty: false,
+  unmapped: [],
 
   setField(key, value) {
-    set((s) => ({ profile: { ...s.profile, [key]: value } }));
+    set((s) => ({ profile: { ...s.profile, [key]: value }, dirty: true }));
   },
 
   setStep(step) {
@@ -66,7 +84,7 @@ export const useFounder = create<FounderState>((set, get) => ({
   },
 
   uploadDeck(filename) {
-    set((s) => ({ profile: { ...s.profile, deck: filename }, deckError: false }));
+    set((s) => ({ profile: { ...s.profile, deck: filename }, deckError: false, dirty: true }));
   },
 
   failUpload() {
@@ -78,16 +96,59 @@ export const useFounder = create<FounderState>((set, get) => ({
   },
 
   reset() {
-    set({ profile: { ...EMPTY_PROFILE }, step: 1, touched: false, deckError: false, assessment: null });
+    set({
+      profile: { ...EMPTY_PROFILE },
+      step: 1,
+      touched: false,
+      deckError: false,
+      assessment: null,
+      loaded: false,
+      dirty: false,
+      unmapped: [],
+    });
   },
 
   liveAssessment() {
     return assess(get().profile);
   },
 
-  async submit() {
+  async load() {
     try {
-      const result = await api.submitAssessment(get().profile);
+      const stored = await api.getProfile();
+      // Only adopt a stored profile over an untouched form. Someone who has
+      // started typing must not have it replaced underneath them by a slow
+      // request that resolves mid-edit.
+      if (stored && !get().dirty) set({ profile: stored, loaded: true });
+      else set({ loaded: true });
+    } catch (error) {
+      if (isUnavailable(error)) {
+        set({ loaded: true });
+        return;
+      }
+      throw error;
+    }
+  },
+
+  async save() {
+    // Persisted before scoring, and separately from it: the audit engine does
+    // not exist yet, and losing a founder's answers because the *scoring* is
+    // unbuilt would be the worst of both.
+    const result = await api.saveProfile(get().profile);
+    set({ profile: result.profile, unmapped: result.unmapped, dirty: false, loaded: true });
+    return result;
+  },
+
+  async submit() {
+    // Save first. If scoring is unavailable the answers still survive.
+    const saved = await get()
+      .save()
+      .catch((error: unknown) => {
+      if (isUnavailable(error)) return null;
+      throw error;
+    });
+
+    try {
+      const result = await api.submitAssessment(saved ? saved.profile : get().profile);
       set({ assessment: result });
       return result;
     } catch (error) {

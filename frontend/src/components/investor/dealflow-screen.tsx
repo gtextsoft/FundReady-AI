@@ -89,7 +89,15 @@ export function DealflowScreen({ mode }: { mode: 'deal' | 'watch' }) {
   }, [request, limit]);
 
   // A changed filter should return the list to the top of its first page.
+  //
+  // The lint rule is right in general — a setState in an effect body costs a
+  // second render pass — and the idiomatic fix is to key this component on the
+  // filter so React remounts it instead. That is a change to how the screen is
+  // mounted by its parents, and there is no rendering test in this project to
+  // catch what it breaks (`jest.config.js` explains why), so it is left as is
+  // deliberately rather than refactored blind. Revisit with F0.5.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLimit(PAGE);
   }, [query, minScore, match, sectors, stages, sort, mode]);
 

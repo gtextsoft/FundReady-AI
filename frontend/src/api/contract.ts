@@ -1,3 +1,4 @@
+import type { UnmappedAnswer } from './profile-mapping';
 import type { AppNotification, CallRequest } from '@/domain/notifications';
 import type {
   Assessment,
@@ -114,6 +115,16 @@ export function isUnavailable(error: unknown): error is ApiFailure {
   return error instanceof ApiFailure && error.code === 'not_implemented';
 }
 
+/** What came back from a profile save, including what could not be saved. */
+export type SaveResult = {
+  /** The profile as the server now holds it. */
+  profile: FounderProfile;
+  /** Answers with no field on the server. See `api/profile-mapping.ts`. */
+  unmapped: UnmappedAnswer[];
+  /** Fields an audit will still need, computed server-side on every read. */
+  missingFields: string[];
+};
+
 export type PaymentReceipt = {
   reference: string;
   amount: number;
@@ -148,6 +159,19 @@ export interface FundMeApi {
    * caller which emails are registered is an account-enumeration leak.
    */
   requestPasswordReset(email: string): Promise<void>;
+  /**
+   * Complete the reset with the token from the email and a new password.
+   *
+   * The token is single-use and expires in an hour; a second attempt with the
+   * same one fails. Succeeding **ends every session on every device** — the
+   * server revokes all refresh tokens and invalidates the access tokens it has
+   * already issued — so the caller must sign in again afterwards, and should
+   * say so rather than letting the sign-out look like a fault.
+   *
+   * Unknown, expired and already-used tokens come back as one indistinguishable
+   * `validation` failure, deliberately.
+   */
+  resetPassword(token: string, password: string): Promise<void>;
 
   // ── email verification ──────────────────────────────────
   /**
@@ -195,6 +219,16 @@ export interface FundMeApi {
   submitAssessment(profile: FounderProfile): Promise<Assessment>;
   /** Latest saved profile, or null for a founder who has not onboarded. */
   getProfile(): Promise<FounderProfile | null>;
+  /**
+   * Persists the onboarding form, creating the profile on first save.
+   *
+   * Returns what the server actually stored — read the form back from this
+   * rather than assuming it kept what was sent — together with any answers it
+   * had no field for. **Show `unmapped` to the founder.** They are answers
+   * someone typed that are not being saved, and a screen that stays silent
+   * about that is claiming to have stored them.
+   */
+  saveProfile(profile: FounderProfile): Promise<SaveResult>;
   enrol(programme: 'readiness' | 'wealth'): Promise<void>;
   /**
    * AI mentor. The mock answers from the founder's own metrics with rules;

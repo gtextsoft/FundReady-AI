@@ -60,8 +60,8 @@ export default function ForgotPassword() {
               {/* Deliberately does not confirm whether the address has an
                   account — that would leak which emails are registered. */}
               <Txt className="text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
-                If {email.trim() || 'that address'} has an account, a reset link is on its way. The link expires in 30
-                minutes.
+                If {email.trim() || 'that address'} has an account, a reset link is on its way. The
+                link can be used once and expires in an hour.
               </Txt>
             </View>
           ) : (

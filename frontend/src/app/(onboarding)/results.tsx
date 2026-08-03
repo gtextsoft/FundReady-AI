@@ -26,6 +26,8 @@ export default function Results() {
   const a: Assessment = stored ?? liveAssessment();
   const provisional = stored === null;
 
+  const unmapped = useFounder((s) => s.unmapped);
+
   const [openStrengths, setOpenStrengths] = useState(true);
   const [openRisks, setOpenRisks] = useState(true);
 
@@ -58,6 +60,31 @@ export default function Results() {
             verified against documents, and no investor can see it. The real scored audit arrives when the
             audit engine is built.
           </Txt>
+        </View>
+      ) : null}
+
+      {/* Answers the server has no field for. Saying nothing here would let
+          the screen imply everything typed was stored — and the audit would
+          later be silent about figures the founder knows they entered. */}
+      {unmapped.length > 0 ? (
+        <View
+          className="mb-4 rounded-[12px] p-[13px]"
+          style={{ borderWidth: 1, borderStyle: 'dashed', borderColor: C.lineDash }}>
+          <Mono className="text-[9px]" style={{ letterSpacing: 1.2, color: C.amb }}>
+            NOT SAVED YET
+          </Mono>
+          <Txt className="mt-[7px] text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+            {unmapped.length === 1 ? 'One answer has' : `${unmapped.length} answers have`} nowhere to
+            be stored yet, so {unmapped.length === 1 ? 'it is' : 'they are'} not part of any audit:
+          </Txt>
+          {unmapped.map((answer) => (
+            <Txt
+              key={answer.field}
+              className="mt-[6px] text-[12px] text-ink-faint"
+              style={{ lineHeight: 18 }}>
+              • {answer.field} — {answer.reason}
+            </Txt>
+          ))}
         </View>
       ) : null}
 
