@@ -131,12 +131,22 @@ export const useFounder = create<FounderState>((set, get) => ({
       // request that resolves mid-edit.
       if (stored && !get().dirty) set({ profile: stored, loaded: true });
       else set({ loaded: true });
-    } catch (error) {
-      if (isUnavailable(error)) {
-        set({ loaded: true });
-        return;
-      }
-      throw error;
+    } catch {
+      // **`loaded` is set whatever happens, and that is the point.** It means
+      // "we have finished trying", not "we succeeded" -- the form is gated on
+      // it, so leaving it false on a failure freezes onboarding on an empty
+      // form with no way forward.
+      //
+      // The case that actually bites: a founder who has just signed up is
+      // `pending_verification`, and the server answers `/v1/startups/me` with
+      // 403 until they confirm their address. That is the *normal* state for
+      // someone reaching this screen for the first time, not an error, and it
+      // used to leave the company-name suggestion permanently suppressed.
+      //
+      // Nothing is lost by continuing. A blank form cannot overwrite stored
+      // answers, because `toWireProfile` omits blanks rather than sending
+      // nulls, and saving is create-then-update, so the next save reconciles.
+      set({ loaded: true });
     }
   },
 
