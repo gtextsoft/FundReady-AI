@@ -199,9 +199,9 @@ export default function Onboarding() {
 
           {step === 2 ? (
             <View>
-              <Eyebrow>TRACTION &amp; REVENUE</Eyebrow>
+              <Eyebrow>MONEY</Eyebrow>
               <TxtSemi className="mb-1 mt-2 text-[23px]" style={{ letterSpacing: -0.7 }}>
-                How are you growing?
+                What comes in, what goes out
               </TxtSemi>
               <Txt className="mb-[22px] text-[13px] text-ink-dim" style={{ lineHeight: 20 }}>
                 Approximate is fine — you can revise before investors see it.
