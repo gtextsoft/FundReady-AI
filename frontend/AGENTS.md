@@ -19,12 +19,23 @@ https://docs.expo.dev/versions/v57.0.0/ before writing new integration code.
     bounce to. Each has a `(tabs)` group inside it plus full-screen pushes
     (`founder/verify`, `founder/paywall`, `investor/company/[id]`).
 - `src/api/` — **the only seam to the backend.** `contract.ts` is the interface,
-  `mock.ts` implements it from local seed data, `index.ts` picks one. To go
-  live, add `http.ts` implementing `FundMeApi` and flip the export in
-  `index.ts` — no screen changes.
-- `src/domain/` — types, the 24-company seed dataset, the Fundability scoring
-  model (ported verbatim from the design prototype), `access.ts` (trial /
-  payment / verification gates) and `pricing.ts` (the one-off unlock price).
+  `http.ts` is the one implementation, `index.ts` exports it.
+  `profile-mapping.ts` translates the onboarding form to and from the server's
+  Startup Profile.
+
+  **There is no mock, deliberately.** It was deleted along with its 24-company
+  seed dataset (`3925df7`). A mock that renders plausible numbers is
+  indistinguishable on screen from a working feature, and this app is far
+  enough ahead of the backend for that to matter. Anything without an endpoint
+  now rejects with `not_implemented`, which `components/unavailable.tsx` renders
+  as a dashed **NOT BUILT YET** panel — visibly different from the red **COULD
+  NOT LOAD** shown for a real failure. As each backend task lands, replace the
+  matching `notYet(...)`; the contract and the screens do not change.
+- `src/domain/` — types, the Fundability scoring model (ported verbatim from
+  the design prototype), `access.ts` (trial / payment / verification gates),
+  `email.ts` (the founder company-domain rule), `password.ts` (the one password
+  rule, shared by sign-up and reset) and `pricing.ts` (the one-off unlock
+  price).
 - `src/store/` — Zustand: `session` (auth, role, account state),
   `founder` (onboarding form + assessment), `investor` (filters + watchlist),
   `notifications` (alerts + call requests).
@@ -48,17 +59,17 @@ deliberately, so do not reintroduce them.
   and `signUp` in the API layer. The client check is a convenience; the server
   is the control.
 - **Login is part of the same rule.** Blocking sign-up is pointless if signing
-  in on a consumer domain lands you on the founder side — a founder account
-  cannot exist on such a domain, so `roleForSignIn` in the mock resolves any
-  personal address to the investor side. The real backend gets this for free by
-  reading the role off the stored account; keep the invariant if you replace
-  the mock.
+  in on a consumer domain lands you on the founder side. The server settles it:
+  the role is read off the stored account, so a founder account simply cannot
+  exist on such a domain.
 - **Corporate SSO is home-realm discovery, not social login.** On blur, the
   founder's domain goes to `lookupEmailDomain`; if the company runs an identity
-  provider, the password field is replaced by a hand-off button. The mock wires
-  exactly one domain (`acmecorp.com` → Okta) so the path is demonstrable. A
-  real implementation needs the backend to hold the per-domain IdP config and
-  do the OIDC/SAML exchange.
+  provider, the password field is replaced by a hand-off button. **That path is
+  currently unreachable**: `lookupEmailDomain` resolves on the device and
+  always returns `sso: null`, because no per-domain IdP directory exists
+  server-side and no backend task covers one. A real implementation needs the
+  backend to hold the config and do the OIDC/SAML exchange. Until then it is an
+  affordance with nothing behind it — see the open question in `TASKS.md`.
 
 ## Access model
 
@@ -111,6 +122,27 @@ Check rendered output in a browser, not just a green build.
    `gate(account, capability)` and pass `account` in, so the dependency is
    visible. Applies to any store getter that closes over `get()`.
 
+## Links from emails
+
+The backend sends `{APP_LINK_BASE_URL}/verify-email?token=…` and
+`{APP_LINK_BASE_URL}/reset-password?token=…` — links that point at **this app**,
+not at the API. Mail security scanners prefetch every URL in a message, so a
+`GET` endpoint on the API would have its single-use token spent before the
+recipient clicked.
+
+- **Those two path segments are a contract with the server.** Renaming either
+  route breaks every link already sitting in an inbox.
+- expo-router's own linking resolves the custom scheme, the Expo Go
+  `exp://…/--/…` form and the plain web URL onto the same route with the same
+  search params. There is no URL parser in this repo and there should not be —
+  `lib/deep-link.ts` only reads the parameter safely.
+- Both screens keep a paste-the-code field, because **`https://` links do not
+  open the app yet**: Universal Links (`associatedDomains`) and App Links
+  (`intentFilters`) are not configured in `app.json`. Until they are,
+  `APP_LINK_BASE_URL` must be the `sacifundme://` scheme to reach a phone.
+- Both screens work **signed out**. Whoever follows a reset link is often
+  locked out, and neither endpoint takes authorization.
+
 ## Running it
 
 This machine cannot run the Android emulator (see the notes in the session
@@ -119,10 +151,34 @@ memory) — preview on the web or a physical phone via Expo Go.
 ```bash
 # web preview; the larger heap is required, Metro OOMs at the default
 NODE_OPTIONS="--max-old-space-size=4096" npx expo start --web --port 8097
-npx tsc --noEmit
 ```
 
 Port 8081 is often taken by another project's Metro; pass `--port`.
+
+## Checks
+
+```bash
+npm run lint       # eslint, flat config on eslint-config-expo
+npm run typecheck  # tsc --noEmit
+npm test           # jest
+npm run format     # prettier --check (NOT a gate — see below)
+```
+
+All three of the first are run by the `frontend` job in
+`/.github/workflows/ci.yml` on every push, from `frontend/` as the working
+directory. `npm ci` there installs the lockfile exactly and without
+`--legacy-peer-deps`, which is a constraint on what can be added: see the note
+at the top of `jest.config.js` about why `jest-expo` is not a dependency.
+
+**Prettier is not a gate.** The app predates it by ~80 files, so `--check`
+fails everywhere; the CI step is advisory. Run `npm run format:write` to take
+that diff in one commit, then promote it.
+
+**What the tests do and do not cover.** `test/` covers the transport (token
+storage, the single-flight refresh, the error envelope), the entitlement gates,
+the email and password rules, and the profile mapping. **There are no component
+rendering tests** — every trap below still compiles, typechecks and passes
+`npm test` while rendering wrong.
 
 ## Verifying UI changes
 
@@ -142,12 +198,16 @@ investor-is-notified loop — asserting on computed styles and rendered text and
 dropping screenshots in `.ui-shots/`. It catches exactly the traps above, which
 a green build does not.
 
-Two things to know when editing it:
+**It is stale and will fail as written.** It was built against the deleted
+mock, and four of its steps still assume mock behaviour ("the mock approves on
+a timer", the mentor answering `1450/320 = 4.5:1`, and two comments about
+resetting mock module state). Everything past sign-in now hits
+`not_implemented`. Repairing it is task F0.5 in `TASKS.md`; decide there
+whether it re-targets a live local backend or narrows to auth plus the render
+traps.
 
-- **`page.goto` restarts the SPA and wipes the mock backend's module state.**
-  Anything that depends on earlier state (verification, call requests) must
-  happen before the first reload; the direct-URL guard checks run last for
-  this reason.
+One thing to know when editing it:
+
 - **Assertions on `document.body.innerText` are not scoped to the visible
   screen** — inactive tab screens stay mounted, so text from another tab is
   still in the DOM. Assert on something the target screen alone renders.
