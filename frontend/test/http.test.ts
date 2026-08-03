@@ -449,12 +449,11 @@ describe('api/http transport', () => {
 
       const result = await httpApi.saveProfile({
         ...EMPTY_FORM,
-        location: 'Lagos, Nigeria',
-        growth: '14',
-        tam: '12',
+        location: 'Atlantis',
+        stage: 'Bootstrapped',
       });
 
-      expect(result.unmapped.map((u) => u.field).sort()).toEqual(['growth', 'tam']);
+      expect(result.unmapped.map((u) => u.field).sort()).toEqual(['location', 'stage']);
     });
 
     it('prefers the stored company name over the guess from the email domain', async () => {

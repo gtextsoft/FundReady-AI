@@ -1,4 +1,4 @@
-import type { FounderProfile, RevModel } from '@/domain/types';
+import type { FounderProfile, RevModel, YesNo } from '@/domain/types';
 
 /**
  * Translating the onboarding form into the server's Startup Profile.
@@ -188,11 +188,15 @@ const founderField = (value: string | number | boolean): WireField => ({
  * to delete.
  */
 const NO_SERVER_FIELD: { field: keyof FounderProfile; reason: string }[] = [
-  { field: 'growth', reason: 'The profile has no growth field — it needs monthly history, not one number.' },
-  { field: 'tam', reason: 'The profile has no market-size field.' },
-  { field: 'margin', reason: 'The profile stores cost of revenue, not a margin percentage.' },
-  { field: 'ltv', reason: 'Lifetime value is computed from churn and revenue, not stored.' },
-  { field: 'technical', reason: 'The profile has no technical-founder field.' },
+  // Deliberately empty. Every question the form asks now has somewhere to go
+  // (`docs/INTAKE.md`): the five that did not were either replaced by the raw
+  // inputs the server actually wants, or removed because they asked the
+  // founder for a figure the platform computes itself.
+  //
+  // The machinery stays because the two field sets drift. `fields.py` is
+  // flagged provisional in the backend's own task list, so the next change
+  // there could orphan a question again -- and a founder typing an answer that
+  // is silently discarded is the failure this list exists to prevent.
 ];
 
 /**
@@ -237,11 +241,37 @@ export function toWireProfile(profile: FounderProfile): ProfileMapping {
     }
   }
 
+  // Free text, stored as given.
+  if (profile.description.trim()) fields.description = founderField(profile.description.trim());
+  if (profile.businessModel.trim()) fields.business_model = founderField(profile.businessModel.trim());
+  if (profile.website.trim()) fields.website = founderField(profile.website.trim());
+  if (profile.keyPersonDependency.trim()) {
+    fields.key_person_dependency = founderField(profile.keyPersonDependency.trim());
+  }
+
   const year = num(profile.year);
   if (year !== null) fields.founded_year = founderField(Math.round(year));
 
-  const founders = num(profile.founders);
-  if (founders !== null) fields.founder_count = founderField(Math.round(founders));
+  // Whole numbers of people and customers.
+  for (const [key, source] of [
+    ['founder_count', profile.founders],
+    ['founders_full_time', profile.foundersFullTime],
+    ['team_size', profile.teamSize],
+    ['active_customers', profile.customers],
+  ] as const) {
+    const value = num(source);
+    if (value !== null) fields[key] = founderField(Math.round(value));
+  }
+
+  const churn = num(profile.churn);
+  if (churn !== null) fields.monthly_churn_percent = founderField(churn);
+
+  // Yes/No maps to a real boolean; unanswered stays absent rather than false,
+  // because "we did not ask yet" and "no" are different findings.
+  if (profile.ipOwned) fields.ip_owned = founderField(profile.ipOwned === 'Yes');
+  if (profile.contractsTransferable) {
+    fields.contracts_transferable = founderField(profile.contractsTransferable === 'Yes');
+  }
 
   // Money needs a currency to be meaningful in minor units, and the currency
   // comes from the country. Without one, sending an integer would be storing a
@@ -252,12 +282,30 @@ export function toWireProfile(profile: FounderProfile): ProfileMapping {
     if (revenue !== null) {
       fields.monthly_revenue_minor = founderField(toMinorUnits(revenue, currency));
     }
-    const cac = num(profile.cac);
-    if (cac !== null) {
-      fields.customer_acquisition_cost_minor = founderField(toMinorUnits(cac, currency));
+    // Everything else is already a plain monthly or absolute amount.
+    for (const [key, source] of [
+      ['customer_acquisition_cost_minor', profile.cac],
+      ['monthly_costs_minor', profile.costs],
+      ['cost_of_revenue_minor', profile.costOfRevenue],
+      ['cash_on_hand_minor', profile.cash],
+      ['total_raised_minor', profile.totalRaised],
+      ['current_raise_target_minor', profile.raiseTarget],
+      ['average_revenue_per_customer_minor', profile.arpu],
+    ] as const) {
+      const value = num(source);
+      if (value !== null) fields[key] = founderField(toMinorUnits(value, currency));
     }
   } else {
-    for (const field of ['revenue', 'cac'] as const) {
+    for (const field of [
+      'revenue',
+      'cac',
+      'costs',
+      'costOfRevenue',
+      'cash',
+      'totalRaised',
+      'raiseTarget',
+      'arpu',
+    ] as const) {
       if (profile[field].trim()) {
         unmapped.push({
           field,
@@ -284,6 +332,11 @@ function fieldNumber(fields: Record<string, WireField>, name: string): number | 
   return typeof value === 'number' ? value : null;
 }
 
+function fieldText(fields: Record<string, WireField>, name: string): string {
+  const value = fields[name]?.value;
+  return typeof value === 'string' ? value : '';
+}
+
 /**
  * Rebuilds the form from a stored profile.
  *
@@ -297,12 +350,27 @@ export function fromWireProfile(response: WireProfileResponse): FounderProfile {
   const fields = response.fields ?? {};
   const currency = response.currency ?? 'USD';
 
-  const revenueMinor = fieldNumber(fields, 'monthly_revenue_minor');
-  const cacMinor = fieldNumber(fields, 'customer_acquisition_cost_minor');
   const foundedYear = fieldNumber(fields, 'founded_year');
-  const founderCount = fieldNumber(fields, 'founder_count');
-
   const country = COUNTRIES.find((c) => c.code === response.country);
+
+  /** A stored money amount, back in the units a person would type. */
+  const money = (name: string): string => {
+    const minor = fieldNumber(fields, name);
+    return minor === null ? '' : String(fromMinorUnits(minor, currency));
+  };
+
+  /** A stored whole number. */
+  const count = (name: string): string => {
+    const value = fieldNumber(fields, name);
+    return value === null ? '' : String(value);
+  };
+
+  /** A stored boolean, back as the form's tri-state. Absent stays unanswered. */
+  const yesNo = (name: string): YesNo => {
+    const raw = fields[name];
+    if (!raw || typeof raw.value !== 'boolean') return '';
+    return raw.value ? 'Yes' : 'No';
+  };
 
   return {
     company: response.name ?? '',
@@ -311,15 +379,32 @@ export function fromWireProfile(response: WireProfileResponse): FounderProfile {
     location: country ? country.names[0].replace(/\b\w/g, (m) => m.toUpperCase()) : '',
     year: foundedYear === null ? '' : String(foundedYear),
     stage: response.stage ? (WIRE_TO_STAGE[response.stage] ?? '') : '',
+    description: fieldText(fields, 'description'),
+    businessModel: fieldText(fields, 'business_model'),
+    website: fieldText(fields, 'website'),
+
+    // Always read back as monthly: that is how it is stored, whatever unit the
+    // founder originally typed it in.
     revModel: 'MRR',
-    revenue: revenueMinor === null ? '' : String(fromMinorUnits(revenueMinor, currency)),
-    growth: '',
-    tam: '',
-    margin: '',
-    cac: cacMinor === null ? '' : String(fromMinorUnits(cacMinor, currency)),
-    ltv: '',
-    founders: founderCount === null ? '' : String(founderCount),
-    technical: '',
+    revenue: money('monthly_revenue_minor'),
+    costs: money('monthly_costs_minor'),
+    costOfRevenue: money('cost_of_revenue_minor'),
+    cash: money('cash_on_hand_minor'),
+    totalRaised: money('total_raised_minor'),
+    raiseTarget: money('current_raise_target_minor'),
+
+    customers: count('active_customers'),
+    arpu: money('average_revenue_per_customer_minor'),
+    churn: count('monthly_churn_percent'),
+    cac: money('customer_acquisition_cost_minor'),
+
+    founders: count('founder_count'),
+    foundersFullTime: count('founders_full_time'),
+    teamSize: count('team_size'),
+    ipOwned: yesNo('ip_owned'),
+    contractsTransferable: yesNo('contracts_transferable'),
+    keyPersonDependency: fieldText(fields, 'key_person_dependency'),
+
     deck: '',
   };
 }

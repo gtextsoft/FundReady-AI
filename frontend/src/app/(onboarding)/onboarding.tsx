@@ -169,7 +169,29 @@ export default function Onboarding() {
                   value={profile.year}
                   onChangeText={(v) => setField('year', v)}
                   keyboardType="number-pad"
-                  mono
+                />
+                <Field
+                  label="What does the business do?"
+                  placeholder="One or two sentences, as you would say it out loud."
+                  value={profile.description}
+                  onChangeText={(v) => setField('description', v)}
+                  multiline
+                />
+                <Field
+                  label="How does it make money?"
+                  placeholder="Subscription, commission, one-off sales…"
+                  value={profile.businessModel}
+                  onChangeText={(v) => setField('businessModel', v)}
+                  multiline
+                />
+                <Field
+                  label="Website"
+                  placeholder="northwindlabs.com"
+                  value={profile.website}
+                  onChangeText={(v) => setField('website', v)}
+                  autoCapitalize="none"
+                  keyboardType="url"
+                  hint="Optional. It gives the audit somewhere to corroborate what you have said."
                 />
               </View>
             </View>
@@ -214,72 +236,119 @@ export default function Onboarding() {
                 </View>
 
                 <Field
-                  label="Month-over-month growth"
-                  suffix="% MoM"
-                  placeholder="14"
-                  value={profile.growth}
-                  onChangeText={(v) => setField('growth', v)}
-                  keyboardType="decimal-pad"
+                  label="Monthly costs"
+                  prefix="$"
+                  placeholder="62000"
+                  value={profile.costs}
+                  onChangeText={(v) => setField('costs', v)}
+                  keyboardType="number-pad"
                   mono
-                  hint="Seed benchmark: 8–15% · Top decile: 20%+"
+                  hint="Everything you spend in a normal month, including salaries."
                 />
+
+                <Field
+                  label="Cost of delivering that revenue"
+                  prefix="$"
+                  placeholder="9000"
+                  value={profile.costOfRevenue}
+                  onChangeText={(v) => setField('costOfRevenue', v)}
+                  keyboardType="number-pad"
+                  mono
+                  hint="Hosting, support, payment fees — what it costs to serve customers. We work out your margin from this."
+                />
+
+                <Field
+                  label="Cash in the bank"
+                  prefix="$"
+                  placeholder="410000"
+                  value={profile.cash}
+                  onChangeText={(v) => setField('cash', v)}
+                  keyboardType="number-pad"
+                  mono
+                  hint="With your costs above, this is what sets your runway."
+                />
+
+                <View className="flex-row gap-[10px]">
+                  <View className="flex-1">
+                    <Field
+                      label="Raised so far"
+                      prefix="$"
+                      placeholder="150000"
+                      value={profile.totalRaised}
+                      onChangeText={(v) => setField('totalRaised', v)}
+                      keyboardType="number-pad"
+                      mono
+                    />
+                  </View>
+                  <View className="flex-1">
+                    <Field
+                      label="Looking to raise"
+                      prefix="$"
+                      placeholder="500000"
+                      value={profile.raiseTarget}
+                      onChangeText={(v) => setField('raiseTarget', v)}
+                      keyboardType="number-pad"
+                      mono
+                    />
+                  </View>
+                </View>
               </View>
             </View>
           ) : null}
 
           {step === 3 ? (
             <View>
-              <Eyebrow>MARKET &amp; UNIT ECONOMICS</Eyebrow>
+              <Eyebrow>CUSTOMERS</Eyebrow>
               <TxtSemi className="mb-1 mt-2 text-[23px]" style={{ letterSpacing: -0.7 }}>
                 Does the maths work?
               </TxtSemi>
               <Txt className="mb-[22px] text-[13px] text-ink-dim" style={{ lineHeight: 20 }}>
-                This section moves your score more than any other.
+                Four numbers. We work out lifetime value and payback from them, so you do not have to.
               </Txt>
               <View className="gap-4">
                 <Field
-                  label="Total addressable market"
-                  prefix="$"
-                  suffix="Billion"
-                  placeholder="12"
-                  value={profile.tam}
-                  onChangeText={(v) => setField('tam', v)}
-                  keyboardType="decimal-pad"
-                  mono
-                />
-                <Field
-                  label="Gross margin"
-                  suffix="%"
-                  placeholder="78"
-                  value={profile.margin}
-                  onChangeText={(v) => setField('margin', v)}
-                  keyboardType="decimal-pad"
+                  label="Active customers"
+                  placeholder="180"
+                  value={profile.customers}
+                  onChangeText={(v) => setField('customers', v)}
+                  keyboardType="number-pad"
                   mono
                 />
                 <View className="flex-row gap-[10px]">
                   <View className="flex-1">
                     <Field
-                      label="CAC"
+                      label="Revenue per customer"
                       prefix="$"
-                      placeholder="320"
-                      value={profile.cac}
-                      onChangeText={(v) => setField('cac', v)}
+                      suffix="/mo"
+                      placeholder="270"
+                      value={profile.arpu}
+                      onChangeText={(v) => setField('arpu', v)}
                       keyboardType="number-pad"
                       mono
                     />
                   </View>
                   <View className="flex-1">
                     <Field
-                      label="LTV"
-                      prefix="$"
-                      placeholder="1450"
-                      value={profile.ltv}
-                      onChangeText={(v) => setField('ltv', v)}
-                      keyboardType="number-pad"
+                      label="Monthly churn"
+                      suffix="%"
+                      placeholder="3"
+                      value={profile.churn}
+                      onChangeText={(v) => setField('churn', v)}
+                      keyboardType="decimal-pad"
                       mono
                     />
                   </View>
                 </View>
+                <Field
+                  label="Cost to win a customer"
+                  prefix="$"
+                  placeholder="320"
+                  value={profile.cac}
+                  onChangeText={(v) => setField('cac', v)}
+                  keyboardType="number-pad"
+                  mono
+                  hint="Include the sales and marketing effort actually used, not just ad spend."
+                />
                 <RatioRow />
               </View>
             </View>
@@ -287,31 +356,74 @@ export default function Onboarding() {
 
           {step === 4 ? (
             <View>
-              <Eyebrow>TEAM &amp; DECK</Eyebrow>
+              <Eyebrow>TEAM &amp; OWNERSHIP</Eyebrow>
               <TxtSemi className="mb-1 mt-2 text-[23px]" style={{ letterSpacing: -0.7 }}>
                 Who is building it?
               </TxtSemi>
               <Txt className="mb-[22px] text-[13px] text-ink-dim" style={{ lineHeight: 20 }}>
-                Last step. Then the model runs.
+                Last step. The ownership questions are quick, and they decide whether the business
+                could ever be sold.
               </Txt>
               <View className="gap-5">
+                <View className="flex-row gap-[10px]">
+                  <View className="flex-1">
+                    <Field
+                      label="Founders"
+                      placeholder="2"
+                      value={profile.founders}
+                      onChangeText={(v) => setField('founders', v)}
+                      keyboardType="number-pad"
+                      mono
+                    />
+                  </View>
+                  <View className="flex-1">
+                    <Field
+                      label="Full time"
+                      placeholder="2"
+                      value={profile.foundersFullTime}
+                      onChangeText={(v) => setField('foundersFullTime', v)}
+                      keyboardType="number-pad"
+                      mono
+                    />
+                  </View>
+                </View>
+
                 <Field
-                  label="Full-time founders"
-                  placeholder="2"
-                  value={profile.founders}
-                  onChangeText={(v) => setField('founders', v)}
+                  label="People in the company"
+                  placeholder="7"
+                  value={profile.teamSize}
+                  onChangeText={(v) => setField('teamSize', v)}
                   keyboardType="number-pad"
                   mono
+                  hint="Everyone, not just founders."
                 />
 
                 <View className="gap-[9px]">
-                  <FieldLabel>Technical co-founder in-house?</FieldLabel>
+                  <FieldLabel>Does the company own the work its people built?</FieldLabel>
                   <OptionGrid
                     options={['Yes', 'No'] as const}
-                    value={profile.technical}
-                    onChange={(v) => setField('technical', v)}
+                    value={profile.ipOwned}
+                    onChange={(v) => setField('ipOwned', v)}
                   />
                 </View>
+
+                <View className="gap-[9px]">
+                  <FieldLabel>Would customer contracts survive a change of owner?</FieldLabel>
+                  <OptionGrid
+                    options={['Yes', 'No'] as const}
+                    value={profile.contractsTransferable}
+                    onChange={(v) => setField('contractsTransferable', v)}
+                  />
+                </View>
+
+                <Field
+                  label="What can only you do?"
+                  placeholder="Sales relationships, the pricing calls, anything nobody else could pick up."
+                  value={profile.keyPersonDependency}
+                  onChangeText={(v) => setField('keyPersonDependency', v)}
+                  multiline
+                  hint="Optional, and honest answers score better than empty ones."
+                />
 
                 <View className="gap-[9px]">
                   <FieldLabel>Pitch deck / financial model</FieldLabel>

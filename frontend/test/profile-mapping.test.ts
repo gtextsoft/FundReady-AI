@@ -122,27 +122,55 @@ describe('toWireProfile', () => {
   });
 
   it('reports every answer the server has no field for', () => {
+    // The form no longer asks anything the profile cannot store, so the only
+    // way to land here is an unrecognised location or stage. Both are answers
+    // the founder gave that we decline to guess at.
     const { unmapped } = toWireProfile(
       form({
-        location: 'Lagos, Nigeria',
-        growth: '14',
-        tam: '12',
-        margin: '78',
-        ltv: '1450',
-        technical: 'Yes',
+        location: 'Somewhere Unmappable',
+        stage: 'Bootstrapped',
       }),
     );
 
-    expect(unmapped.map((u) => u.field).sort()).toEqual([
-      'growth',
-      'ltv',
-      'margin',
-      'tam',
-      'technical',
-    ]);
+    expect(unmapped.map((u) => u.field).sort()).toEqual(['location', 'stage']);
     for (const answer of unmapped) {
       expect(answer.reason.length).toBeGreaterThan(20);
     }
+  });
+
+  it('asks nothing the profile cannot store', () => {
+    // The guard against the form drifting ahead of `fields.py` again. A fully
+    // answered form, in a country we know, must produce no unmapped answers at
+    // all — if this fails, a question was added with nowhere to put it.
+    const { unmapped } = toWireProfile({
+      ...form({}),
+      company: 'Northwind Labs',
+      sector: 'Fintech',
+      location: 'Lagos, Nigeria',
+      year: '2023',
+      stage: 'Seed',
+      description: 'Reconciliation software for payment processors.',
+      businessModel: 'Monthly subscription per processor.',
+      website: 'northwindlabs.com',
+      revenue: '48000',
+      costs: '62000',
+      costOfRevenue: '9000',
+      cash: '410000',
+      totalRaised: '150000',
+      raiseTarget: '500000',
+      customers: '180',
+      arpu: '270',
+      churn: '3',
+      cac: '320',
+      founders: '2',
+      foundersFullTime: '2',
+      teamSize: '7',
+      ipOwned: 'Yes',
+      contractsTransferable: 'Yes',
+      keyPersonDependency: 'Enterprise pricing decisions.',
+    });
+
+    expect(unmapped).toEqual([]);
   });
 
   it('reports an unrecognised location rather than picking a country', () => {
@@ -169,13 +197,17 @@ describe('toWireProfile', () => {
     expect(unmapped.find((u) => u.field === 'stage')?.value).toBe('Bootstrapped');
   });
 
-  it('does not derive cost of revenue from the margin', () => {
-    // Revenue x (1 - margin) is arithmetic the client could do, but a figure
-    // nobody entered must not arrive at the audit labelled `founder`.
-    const { wire } = toWireProfile(
-      form({ location: 'Lagos, Nigeria', revenue: '48000', margin: '78' }),
-    );
+  it('sends cost of revenue only when the founder gave one', () => {
+    // The client must never infer it. Revenue x (1 - margin) is arithmetic it
+    // could do, but a figure nobody entered must not reach the audit labelled
+    // `founder` — the form asks for the cost directly for exactly this reason.
+    const { wire } = toWireProfile(form({ location: 'Lagos, Nigeria', revenue: '48000' }));
     expect(wire.fields?.cost_of_revenue_minor).toBeUndefined();
+
+    const given = toWireProfile(
+      form({ location: 'Lagos, Nigeria', revenue: '48000', costOfRevenue: '9000' }),
+    );
+    expect(given.wire.fields?.cost_of_revenue_minor?.value).toBe(900000);
   });
 
   it('marks everything it does send as founder-reported', () => {
@@ -242,10 +274,12 @@ describe('fromWireProfile', () => {
 
   it('returns blanks for what was never storable', () => {
     const profile = fromWireProfile(stored);
-    expect(profile.growth).toBe('');
-    expect(profile.margin).toBe('');
-    expect(profile.ltv).toBe('');
-    expect(profile.tam).toBe('');
+    // The deck is a document, not a profile field, so it never round-trips.
+    expect(profile.deck).toBe('');
+    // Absent booleans stay unanswered rather than becoming "No": not asked and
+    // answered no are different findings.
+    expect(profile.ipOwned).toBe('');
+    expect(profile.contractsTransferable).toBe('');
   });
 
   it('survives a profile with nothing in it', () => {

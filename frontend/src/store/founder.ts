@@ -49,12 +49,23 @@ type FounderState = {
   submit(): Promise<Assessment | null>;
 };
 
-/** Which fields each onboarding step requires before it will advance. */
+/**
+ * Which fields each onboarding step requires before it will advance.
+ *
+ * Deliberately close to the set the *server* needs before it will run an audit
+ * (`description`, `business_model`, `team_size`, and monthly revenue, costs and
+ * cash). Letting someone finish onboarding and only then discover their
+ * profile cannot be audited would be the worst version of this.
+ *
+ * Everything else stays optional. A half-known profile is the normal case, not
+ * an error — extraction fills gaps from documents, and thin data earns a
+ * provisional verdict rather than a false one.
+ */
 const REQUIRED: Record<Step, (keyof FounderProfile)[]> = {
-  1: ['company', 'sector', 'location', 'year'],
-  2: ['stage', 'revenue', 'growth'],
-  3: ['tam', 'margin'],
-  4: ['founders', 'technical'],
+  1: ['company', 'sector', 'location', 'year', 'description', 'businessModel'],
+  2: ['stage', 'revenue', 'costs', 'cash'],
+  3: [],
+  4: ['founders', 'teamSize'],
 };
 
 export function isStepValid(profile: FounderProfile, step: Step): boolean {

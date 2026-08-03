@@ -60,25 +60,67 @@ export type Company = {
 
 export type RevModel = 'MRR' | 'ARR';
 
+/** A yes/no the founder has not answered yet. */
+export type YesNo = '' | 'Yes' | 'No';
+
 /**
  * The founder onboarding form. Every field is a string because these are raw
  * text inputs — scoring parses them. An empty string means "not answered yet".
+ *
+ * **Every question here asks for something the founder knows, never something
+ * the platform can work out.** Gross margin, lifetime value and market size
+ * used to be asked directly; all three were removed (`docs/INTAKE.md`). The
+ * server computes the first two from raw figures, and the audit rubric marks
+ * down a market size quoted as a single unsourced number — so asking for one
+ * handed the founder a way to score badly. Cost of revenue, ARPU and churn are
+ * their replacements: smaller questions, and checkable.
  */
 export type FounderProfile = {
+  // -- About the company ---------------------------------------------------
   company: string;
   sector: string;
   location: string;
   year: string;
   stage: string;
+  /** What the business does. Required before an audit can run. */
+  description: string;
+  /** How it makes money. Required before an audit can run. */
+  businessModel: string;
+  website: string;
+
+  // -- Money ---------------------------------------------------------------
+  /** Whether `revenue` is stated monthly or annually. A unit, not a figure. */
   revModel: RevModel;
   revenue: string;
-  growth: string;
-  tam: string;
-  margin: string;
+  /** Total monthly costs. Required before an audit can run. */
+  costs: string;
+  /** Cost of delivering the revenue. The server derives gross margin from it. */
+  costOfRevenue: string;
+  /** Cash in the bank. Required before an audit can run — it sets runway. */
+  cash: string;
+  totalRaised: string;
+  raiseTarget: string;
+
+  // -- Customers -----------------------------------------------------------
+  customers: string;
+  /** Average revenue per customer per month. Half of lifetime value. */
+  arpu: string;
+  /** Monthly churn, as a percentage. The other half. */
+  churn: string;
   cac: string;
-  ltv: string;
+
+  // -- Team and ownership --------------------------------------------------
   founders: string;
-  technical: '' | 'Yes' | 'No';
+  foundersFullTime: string;
+  /** Everyone, not just founders. Required before an audit can run. */
+  teamSize: string;
+  /** Whether the company owns what its people built. */
+  ipOwned: YesNo;
+  /** Whether customer contracts survive a change of owner. */
+  contractsTransferable: YesNo;
+  /** What only the founder can currently do. */
+  keyPersonDependency: string;
+
   /** Filename of the uploaded deck, or '' when nothing is on file. */
   deck: string;
 };
@@ -89,15 +131,26 @@ export const EMPTY_PROFILE: FounderProfile = {
   location: '',
   year: '',
   stage: '',
+  description: '',
+  businessModel: '',
+  website: '',
   revModel: 'MRR',
   revenue: '',
-  growth: '',
-  tam: '',
-  margin: '',
+  costs: '',
+  costOfRevenue: '',
+  cash: '',
+  totalRaised: '',
+  raiseTarget: '',
+  customers: '',
+  arpu: '',
+  churn: '',
   cac: '',
-  ltv: '',
   founders: '',
-  technical: '',
+  foundersFullTime: '',
+  teamSize: '',
+  ipOwned: '',
+  contractsTransferable: '',
+  keyPersonDependency: '',
   deck: '',
 };
 
