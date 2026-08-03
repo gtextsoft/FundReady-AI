@@ -43,20 +43,39 @@ MIN_ARGON2_MEMORY_COST_KIB: Final = 19456  # OWASP minimum
 MIN_ARGON2_TIME_COST: Final = 2
 
 
+def _is_comment_only(raw: str) -> bool:
+    """True when a value is really this key's trailing comment.
+
+    `FOO=  # note` parses as the *value* `# note`, because the key is blank and
+    dotenv only strips an inline comment when there is a value in front of it.
+    A setting can never legitimately begin with `#`, so treating that as unset
+    is safe and catches the whole class rather than one file's formatting.
+    """
+    return raw.strip().startswith("#")
+
+
 def _blank_to_none(value: Any) -> Any:
-    """Treat an empty environment value as unset.
+    """Treat an empty -- or comment-only -- environment value as unset.
 
     `.env.example` ships every key with an empty value, so a copied file would
     otherwise fail to parse on the first optional number it meets -- `FOO=` is
     an empty string, not a missing key.
     """
-    if isinstance(value, str) and not value.strip():
+    if isinstance(value, str) and (not value.strip() or _is_comment_only(value)):
         return None
     return value
 
 
+def _blank_str(value: Any) -> Any:
+    """Same rule as `_blank_to_none`, for settings that default to `""`."""
+    return "" if _blank_to_none(value) is None else value
+
+
 OptionalInt = Annotated[int | None, BeforeValidator(_blank_to_none)]
 """An integer setting that may be left blank in `.env`."""
+
+BlankableStr = Annotated[str, BeforeValidator(_blank_str)]
+"""A string setting whose blank form must survive a trailing `.env` comment."""
 
 
 def _is_blank(value: SecretStr | str | None) -> bool:
@@ -141,8 +160,11 @@ class Settings(BaseSettings):
     # Model ids and budget values are chosen in T2.1/T5.5 (DECISIONS.md D16);
     # left unset here so no model choice is smuggled in as a default.
     anthropic_api_key: SecretStr | None = None
-    ai_model_audit: str = ""
-    ai_model_chat: str = ""
+    # `BlankableStr`, not `str`: a blank key carrying a trailing comment parses
+    # as that comment, and a model id is the one setting where a wrong value
+    # fails as a confusing 404 rather than a validation error.
+    ai_model_audit: BlankableStr = ""
+    ai_model_chat: BlankableStr = ""
     ai_max_output_tokens: OptionalInt = None
     ai_daily_budget_tokens_per_user: OptionalInt = None
 

@@ -10,13 +10,14 @@ No business logic, no database access, no LLM calls.
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Query, Response, status
 
 from app.core.deps import CurrentUserDep, SessionDep
 from app.core.errors import error_responses
 from app.modules.audit import service
 from app.modules.audit.benchmarks import BenchmarkMetric, Stage
 from app.modules.audit.schemas import (
+    AuditRunResponse,
     BenchmarkCreate,
     BenchmarkResponse,
     BenchmarkUpdate,
@@ -156,3 +157,92 @@ async def retire_benchmark(
     return BenchmarkResponse.of(
         await service.retire_benchmark(session, actor, benchmark_id)
     )
+
+
+# ---------------------------------------------------------------------------
+# Audit runs (T2.8)
+# ---------------------------------------------------------------------------
+
+AUDIT_NOTE = (
+    "\n\nAudits run in the background and are **never** performed inline: a "
+    "full audit is minutes of model time. Submit, then poll the status "
+    "endpoint until `status` is `succeeded` or `failed`."
+)
+
+
+@router.post(
+    "/startups/{startup_id}/audits",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=AuditRunResponse,
+    summary="Request an audit",
+    description=(
+        "Queues an audit of this startup profile and returns the run to poll.\n\n"
+        "**Idempotent on the profile's contents, not on the request.** Submitting "
+        "twice without changing anything returns the *same* run -- with `200` "
+        "rather than `202` -- because an audit is the most expensive operation "
+        "the platform performs and a founder must not be charged twice for one "
+        "verdict. Change the profile and the next submission is a new run.\n\n"
+        "`422` when the profile is missing fields the audit needs; the response "
+        "`details` carries `missing_fields`, the same list "
+        "`GET /v1/startups/me/profile` returns." + AUDIT_NOTE
+    ),
+    responses={
+        200: {
+            "description": (
+                "An audit of these exact inputs already exists; its run is "
+                "returned unchanged and no new work was queued."
+            )
+        },
+        **error_responses(401, 403, 404, 422),
+    },
+)
+async def request_audit(
+    startup_id: uuid.UUID,
+    actor: CurrentUserDep,
+    session: SessionDep,
+    response: Response,
+) -> AuditRunResponse:
+    run, created = await service.request_audit(session, actor, startup_id)
+    if not created:
+        response.status_code = status.HTTP_200_OK
+    return AuditRunResponse.model_validate(run)
+
+
+@router.get(
+    "/startups/{startup_id}/audits",
+    response_model=list[AuditRunResponse],
+    summary="List audit runs",
+    description=(
+        "This startup's audit runs, newest first. Status only -- no report "
+        "content." + AUDIT_NOTE
+    ),
+    responses=error_responses(401, 403, 404, 422),
+)
+async def list_audit_runs(
+    startup_id: uuid.UUID, actor: CurrentUserDep, session: SessionDep
+) -> list[AuditRunResponse]:
+    runs = await service.list_audit_runs(session, actor, startup_id)
+    return [AuditRunResponse.model_validate(run) for run in runs]
+
+
+@router.get(
+    "/startups/{startup_id}/audits/{run_id}",
+    response_model=AuditRunResponse,
+    summary="Poll one audit run",
+    description=(
+        "The run's lifecycle status. **This endpoint never returns report "
+        "content** -- the report is served by its own per-tier serializer, and "
+        "a status poll is reachable long before a report exists.\n\n"
+        "A run belonging to another founder returns `404`, not `403`: a `403` "
+        "would confirm the id is real." + AUDIT_NOTE
+    ),
+    responses=error_responses(401, 403, 404, 422),
+)
+async def read_audit_run(
+    startup_id: uuid.UUID,
+    run_id: uuid.UUID,
+    actor: CurrentUserDep,
+    session: SessionDep,
+) -> AuditRunResponse:
+    run = await service.get_audit_run(session, actor, startup_id, run_id)
+    return AuditRunResponse.model_validate(run)

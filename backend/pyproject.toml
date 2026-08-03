@@ -38,6 +38,21 @@ dependencies = [
     "anthropic>=0.120",
     "stripe>=11.0",
     "httpx>=0.27",
+    # Error reporting. Not a new decision: `SENTRY_DSN` has been a declared
+    # setting since T0.3 and nothing could read it, so a deployed process
+    # reported failures nowhere but its own stdout. The SDK is OSS and Sentry
+    # has a free tier; it stays inert unless a DSN is set (`core/monitoring.py`).
+    "sentry-sdk[fastapi]>=2.19",
+    # Document text extraction (T2.4). Approved 2026-08-01.
+    #
+    # PDFs and images are NOT parsed here -- they go to the model as native
+    # `document`/`image` blocks, which reads a scanned deck that no text
+    # extractor could. These three cover the Office formats the upload
+    # allowlist accepts but the API cannot ingest directly. All are
+    # pure-Python and permissively licensed; none pulls a system binary.
+    "openpyxl>=3.1",  # xlsx
+    "python-pptx>=1.0",  # pptx
+    "python-docx>=1.1",  # docx
 ]
 
 [project.optional-dependencies]
@@ -47,6 +62,11 @@ dev = [
     "pytest-cov>=6.0",
     "ruff>=0.8",
     "mypy>=1.13",
+    # Real stubs rather than an `ignore_missing_imports` entry: openpyxl reads
+    # founder financials in T2.4, and a silently-`Any` workbook is exactly where
+    # a wrong cell type would slip through. python-pptx and python-docx ship
+    # their own type information and need nothing here.
+    "types-openpyxl>=3.1",
 ]
 
 [tool.setuptools.packages.find]
@@ -128,11 +148,17 @@ warn_required_dynamic_aliases = true
 # ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--strict-markers --strict-config -ra"
+# `-m "not billed"` is a spend gate, not a speed one. Billed tests skip on their
+# own when no key is set, so today they are inert -- but the moment
+# `ANTHROPIC_API_KEY` reaches CI as a secret, an ungated suite would spend real
+# money on every push. Deselecting by default means adding that secret is safe,
+# and running them stays a deliberate act: `pytest -m billed`.
+addopts = "--strict-markers --strict-config -ra -m 'not billed'"
 asyncio_mode = "auto"
 markers = [
     "security: authorization, tenant isolation, report-tier, gating, webhooks",
     "integration: exercises the database, queue, or an external adapter",
+    "billed: spends real money on a third-party API; deselected unless -m billed",
 ]
 
 [tool.coverage.run]

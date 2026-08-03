@@ -7,6 +7,7 @@ for every test.
 
 import asyncio
 import os
+import re
 import sys
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
@@ -109,6 +110,17 @@ def client() -> Iterator[TestClient]:
 # below is rolled back: a database test can never leave a row behind.
 
 
+def _strip_inline_comment(value: str) -> str:
+    """Drop a trailing `# ...` comment from an unquoted value.
+
+    The leading whitespace in the pattern is load-bearing: `#` is a legal
+    character inside a Postgres password, and `DATABASE_URL` is read through
+    this same parser. Only a `#` that follows whitespace starts a comment.
+    """
+    match = re.search(r"\s#", value)
+    return (value[: match.start()] if match else value).strip()
+
+
 def _read_env_file(name: str) -> str | None:
     env_file = REPO_ROOT / ".env"
     if not env_file.exists():
@@ -118,8 +130,14 @@ def _read_env_file(name: str) -> str | None:
         if line.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")
-        if key.strip() == name:
-            return value.strip().strip('"').strip("'") or None
+        if key.strip() != name:
+            continue
+        value = value.strip()
+        # A quoted value is taken verbatim -- a `#` inside quotes is content,
+        # not a comment. Only unquoted values are comment-stripped.
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            return value[1:-1] or None
+        return _strip_inline_comment(value).strip() or None
     return None
 
 

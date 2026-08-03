@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import (
@@ -28,6 +29,7 @@ from app.core.errors import (
     InvalidRequestError,
     NotFoundError,
 )
+from app.core.ownership import owned_or_404
 from app.core.security import CurrentUser, Role
 from app.modules.audit.benchmarks import (
     ANY_SECTOR,
@@ -36,10 +38,14 @@ from app.modules.audit.benchmarks import (
     MatchQuality,
     Stage,
 )
-from app.modules.audit.models import Benchmark
-from app.modules.audit.repository import BenchmarkRepository
+from app.modules.audit.models import AuditRun, Benchmark
+from app.modules.audit.repository import AuditRunRepository, BenchmarkRepository
+from app.modules.audit.rubric import v1
+from app.modules.audit.runs import AuditStatus, input_fingerprint
 from app.modules.identity import service as identity
 from app.modules.identity.models import AuditAction
+from app.modules.intake import service as intake
+from app.workers.queue import enqueue_audit
 
 logger = logging.getLogger(__name__)
 
@@ -325,3 +331,171 @@ async def get_benchmark(
     if benchmark is None:
         raise NotFoundError("No such benchmark.")
     return benchmark
+
+
+# ---------------------------------------------------------------------------
+# Audit runs (T2.8)
+# ---------------------------------------------------------------------------
+
+# One wording for "no such run" and "not your run" alike. They must be
+# indistinguishable or the endpoint becomes an oracle for which ids exist
+# (`AUTH.md` section 6).
+_RUN_DENIED = "No such audit run."
+
+
+async def request_audit(
+    session: AsyncSession, actor: CurrentUser, startup_id: uuid.UUID
+) -> tuple[AuditRun, bool]:
+    """Queue an audit of this startup, or hand back the run that already covers it.
+
+    Returns the run and whether this call created it, so the router can answer
+    `202` for new work and `200` for a run that already exists.
+
+    **Idempotent by fingerprint, not by button press** (D14). An audit is the
+    most expensive call the platform makes, so a repeat submission of unchanged
+    inputs must return the existing verdict rather than buy a second one. The
+    unique constraint is what actually guarantees that: the pre-check below
+    loses a race by design, and the `IntegrityError` is caught rather than
+    prevented, because two workers can reach this line between the same two
+    instructions.
+
+    **The fingerprint is taken from the persisted JSONB**, which is why the
+    profile is loaded here rather than accepted as an argument. A profile that
+    has not been through Postgres hashes differently -- `Decimal("42.5000")`
+    reads back as `42.5` -- and the two hashes would bill one founder twice.
+
+    Refused with `422` when the profile is missing fields marked
+    `required_for_audit`. That is not an invented policy: `intake/fields.py`
+    already declares which fields an audit needs, and scoring a profile without
+    them spends the audit budget to produce `insufficient_data` -- an answer the
+    founder can be given for free, along with the list of what to fill in.
+    """
+    profile = await intake.get_profile(session, actor, startup_id)
+
+    missing = intake.missing_fields(profile)
+    if missing:
+        raise InvalidRequestError(
+            "This profile is missing information the audit needs. Fill in the "
+            "listed fields and submit again.",
+            {
+                "field": "missing_fields",
+                "reason": "incomplete_profile",
+                "missing_fields": missing,
+            },
+        )
+
+    fingerprint = input_fingerprint(
+        profile_fields=profile.fields or {},
+        # Empty until T2.4a wires storage: the pipeline does not read documents
+        # yet, so hashing their keys now would create a second run whose verdict
+        # is identical to the first. It becomes non-empty in the same change
+        # that makes an upload capable of changing the answer.
+        document_keys=(),
+        rubric_version=v1.RUBRIC_VERSION,
+    )
+
+    repository = AuditRunRepository(session)
+    existing = await repository.find_by_fingerprint(
+        startup_id=profile.id,
+        input_hash=fingerprint,
+        rubric_version=v1.RUBRIC_VERSION,
+    )
+    if existing is not None:
+        _redispatch_if_stranded(existing)
+        return existing, False
+
+    try:
+        async with session.begin_nested():
+            run = await repository.create(
+                startup_id=profile.id,
+                owner_id=profile.owner_id,
+                rubric_version=v1.RUBRIC_VERSION,
+                input_hash=fingerprint,
+            )
+    except IntegrityError:
+        # Lost the race -- two instances, or one double-tapped button. The other
+        # request created the identical run, which is the outcome wanted, so it
+        # is read back rather than failed.
+        #
+        # **The re-read is guaranteed to find it under READ COMMITTED**, which is
+        # what Postgres and SQLAlchemy both default to. A conflicting insert
+        # blocks on the unique index until the holder resolves: if it committed
+        # we get this `IntegrityError` and the row is already visible to the next
+        # statement's snapshot; if it rolled back our own insert succeeded and we
+        # are not here at all. There is no ordering in which the winner has
+        # thrown this error at us and its row is still invisible.
+        #
+        # So `None` means the invariant itself is gone -- the constraint was
+        # dropped, or the isolation level was raised to REPEATABLE READ, where
+        # this branch would need a retry instead. Re-raising is right: a 500 the
+        # founder retries beats inventing a run id, and it is loud enough to be
+        # noticed.
+        raced = await repository.find_by_fingerprint(
+            startup_id=profile.id,
+            input_hash=fingerprint,
+            rubric_version=v1.RUBRIC_VERSION,
+        )
+        if raced is None:  # pragma: no cover - unreachable under READ COMMITTED
+            raise
+        _redispatch_if_stranded(raced)
+        return raced, False
+
+    # **Committed before the job is dispatched, deliberately.** The request's
+    # session commits when the handler returns, which is *after* this function
+    # -- so enqueueing first opens a race the worker always loses: it looks up
+    # a row that no other connection can see yet and concludes the run vanished.
+    # `join_transaction_mode="create_savepoint"` keeps this discardable in
+    # tests, and the dependency's own commit afterwards is a no-op.
+    await session.commit()
+
+    enqueue_audit(run.id)
+    logger.info(
+        "audit queued",
+        extra={"context": {"rubric_version": v1.RUBRIC_VERSION}},
+    )
+    return run, True
+
+
+def _redispatch_if_stranded(run: AuditRun) -> None:
+    """Re-queue a run that was committed but never picked up.
+
+    The window is small and real: the row commits, then `enqueue_audit` raises
+    -- Redis down, or `REDIS_URL` unset -- and the run sits in `queued` forever
+    while every resubmission finds it and returns it unchanged. Since `attempts`
+    is only incremented by a worker claiming the run, `queued` with zero
+    attempts means no worker has ever seen it.
+
+    Safe to call on a healthy run too: RQ refuses a second job for a `job_id`
+    already in flight, and a worker that has started has `attempts >= 1`.
+    """
+    if run.status is AuditStatus.QUEUED and run.attempts == 0:
+        enqueue_audit(run.id)
+
+
+async def get_audit_run(
+    session: AsyncSession,
+    actor: CurrentUser,
+    startup_id: uuid.UUID,
+    run_id: uuid.UUID,
+) -> AuditRun:
+    """One run's status, for its owner or an admin.
+
+    A straight IDOR surface: `run_id` arrives from the client and names a row
+    that belongs to exactly one founder. `owned_or_404` settles both "no such
+    run" and "not yours" with the same answer, and the `startup_id` in the path
+    is checked against the row rather than trusted -- otherwise a caller could
+    read their own startup's path with someone else's run id and learn that the
+    id is real.
+    """
+    run = await AuditRunRepository(session).get(run_id)
+    if run is not None and run.startup_id != startup_id:
+        run = None
+    return owned_or_404(run, actor, message=_RUN_DENIED)
+
+
+async def list_audit_runs(
+    session: AsyncSession, actor: CurrentUser, startup_id: uuid.UUID
+) -> list[AuditRun]:
+    """This startup's runs, newest first. Ownership is checked on the profile."""
+    profile = await intake.get_profile(session, actor, startup_id)
+    return await AuditRunRepository(session).list_for_startup(profile.id)

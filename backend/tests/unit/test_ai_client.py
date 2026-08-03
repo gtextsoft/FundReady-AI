@@ -197,6 +197,72 @@ async def test_truncation_raises_and_is_not_retried() -> None:
     assert len(fake.messages.calls) == 1
 
 
+# ---------------------------------------------------------------------------
+# Failures are billed, so failures must report usage
+#
+# The three most expensive calls this client can make are all failures: a
+# truncated audit runs to the full cap, and a mismatch retry bills twice. A
+# budget (T5.5) fed only by successful `AiCallRecord`s would under-count
+# precisely the spend it exists to cap.
+# ---------------------------------------------------------------------------
+
+
+async def test_refusal_reports_what_it_was_billed() -> None:
+    client, _ = _client([_Message(stop_reason="refusal")])
+
+    with pytest.raises(AiRefusalError) as caught:
+        await _run(client)
+
+    usage = caught.value.usage
+    assert usage is not None
+    assert usage.input_tokens == 10
+    assert usage.total_input_tokens == 115
+
+
+async def test_truncation_reports_what_it_was_billed() -> None:
+    """The costliest single failure: output ran to the cap before it stopped."""
+    client, _ = _client([_Message('{"dimension": "trac', stop_reason="max_tokens")])
+
+    with pytest.raises(AiTruncatedError) as caught:
+        await _run(client)
+
+    usage = caught.value.usage
+    assert usage is not None
+    assert usage.output_tokens == 20
+
+
+async def test_invalid_output_reports_both_attempts() -> None:
+    """Two calls were billed, so the error must account for two."""
+    client, fake = _client([_Message("not json"), _Message("still not json")])
+
+    with pytest.raises(AiInvalidOutputError) as caught:
+        await _run(client)
+
+    assert len(fake.messages.calls) == 2
+    usage = caught.value.usage
+    assert usage is not None
+    assert usage.input_tokens == 20
+    assert usage.output_tokens == 40
+
+
+async def test_a_refusal_on_the_retry_reports_the_first_attempt_too() -> None:
+    """The regression this guards: `_call` only knows its own request's cost.
+
+    Attempt 1 is billed and returns unparseable text; attempt 2 is billed and
+    refused. Reporting only attempt 2 would halve the recorded spend.
+    """
+    client, fake = _client([_Message("not json"), _Message(stop_reason="refusal")])
+
+    with pytest.raises(AiRefusalError) as caught:
+        await _run(client)
+
+    assert len(fake.messages.calls) == 2
+    usage = caught.value.usage
+    assert usage is not None
+    assert usage.input_tokens == 20, "attempt 1's spend was dropped"
+    assert usage.total_input_tokens == 230
+
+
 async def test_mismatch_is_retried_once_then_raises() -> None:
     client, fake = _client([_Message('{"wrong": 1}'), _Message('{"wrong": 2}')])
 

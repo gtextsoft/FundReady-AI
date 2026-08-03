@@ -83,12 +83,18 @@ SchemaT = TypeVar("SchemaT", bound=StructuredOutput)
 # deliberately ships them blank so a model choice is not smuggled in as
 # configuration. T2.1 owns the choice; config overrides it per environment.
 #
-# Fallbacks are not wired up. A cyber-category refusal is a real possibility
-# here -- auditing a cybersecurity startup means feeding a security product's
-# own description to a classifier trained to decline that material -- and the
-# server-side `fallbacks` parameter is the fix. It is left for a follow-up
-# because its wire shape cannot be verified without a live call, and this is the
-# single chokepoint every model call in the platform passes through.
+# Fallbacks are still not wired up, but the reason has changed. A cyber-category
+# refusal is a real possibility here -- auditing a cybersecurity startup means
+# feeding a security product's own description to a classifier trained to
+# decline that material -- and the server-side `fallbacks` parameter is the fix.
+#
+# The original excuse (its wire shape could not be verified without a live call)
+# expired when the key arrived: the shape is `fallbacks="default"` with the
+# `server-side-fallback-2026-07-01` beta, and cyber-category refusals route to
+# `claude-opus-4-8`. What still blocks it is scope, not knowledge -- it needs the
+# beta messages namespace (`client.beta.messages.stream`) plus a beta header, on
+# the single chokepoint every model call in the platform passes through. Tracked
+# as its own open follow-up in TASKS.md; do not treat this comment as the ticket.
 
 DEFAULT_AUDIT_MODEL: Final = "claude-opus-5"
 DEFAULT_CHAT_MODEL: Final = "claude-sonnet-5"
@@ -126,11 +132,24 @@ class TierProfile:
 
 
 class AiError(RuntimeError):
-    """Base for every failure raised by this module."""
+    """Base for every failure raised by this module.
+
+    `usage` is what the call cost before it failed, or `None` when the failure
+    happened before any request went out. Attaching it is not bookkeeping
+    politeness: every one of these failures was *billed*, and the three most
+    expensive calls the platform can make are all failures -- a truncated audit
+    runs to the full 16k cap at high effort, and a mismatch retry bills twice.
+    A budget (T5.5) that only counts successes under-counts exactly the spend
+    it exists to cap.
+    """
+
+    def __init__(self, message: str, *, usage: "AiUsage | None" = None) -> None:
+        super().__init__(message)
+        self.usage = usage
 
 
 class AiNotConfiguredError(AiError):
-    """No Anthropic API key is configured."""
+    """No Anthropic API key is configured. Raised before anything is billed."""
 
 
 class AiRefusalError(AiError):
@@ -279,9 +298,19 @@ class AiClient:
         usage = AiUsage(0, 0, 0, 0)
 
         for attempt in range(1, _MAX_ATTEMPTS + 1):
-            text, call_usage = await self._call(
-                profile=profile, schema=schema, system=system, messages=attempt_messages
-            )
+            try:
+                text, call_usage = await self._call(
+                    profile=profile,
+                    schema=schema,
+                    system=system,
+                    messages=attempt_messages,
+                )
+            except AiError as error:
+                # `_call` only knows what its own request cost. Fold in what
+                # earlier attempts already spent, or a refusal on the retry
+                # would report half the bill.
+                error.usage = _accumulate(usage, error.usage or AiUsage(0, 0, 0, 0))
+                raise
             usage = _accumulate(usage, call_usage)
 
             try:
@@ -303,7 +332,8 @@ class AiClient:
                 if attempt == _MAX_ATTEMPTS:
                     raise AiInvalidOutputError(
                         f"{prompt.ref} returned output that does not match "
-                        f"{schema.__name__} after {attempt} attempts: {problems}"
+                        f"{schema.__name__} after {attempt} attempts: {problems}",
+                        usage=usage,
                     ) from None
                 attempt_messages = [*attempt_messages, _repair_turn(problems)]
                 continue
@@ -366,12 +396,14 @@ class AiClient:
         if message.stop_reason == "refusal":
             raise AiRefusalError(
                 f"{profile.model} declined the request "
-                f"(stop_reason=refusal); not retryable with the same input"
+                f"(stop_reason=refusal); not retryable with the same input",
+                usage=usage,
             )
         if message.stop_reason == "max_tokens":
             raise AiTruncatedError(
                 f"{profile.model} hit the {profile.max_output_tokens}-token output "
-                "cap before completing; re-run with more headroom or lower effort"
+                "cap before completing; re-run with more headroom or lower effort",
+                usage=usage,
             )
 
         # A blank text block counts as no text block. Both are "the model
@@ -389,7 +421,8 @@ class AiClient:
         if text is None:
             raise AiInvalidOutputError(
                 f"{profile.model} returned no usable text block "
-                f"(stop_reason={message.stop_reason})"
+                f"(stop_reason={message.stop_reason})",
+                usage=usage,
             )
         return text, usage
 

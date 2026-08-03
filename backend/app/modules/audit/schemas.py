@@ -14,14 +14,17 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.modules.audit.benchmarks import BenchmarkMetric, MatchQuality, Stage
+from app.modules.audit.runs import AuditStatus
 
 __all__ = [
+    "AuditRunResponse",
     "BenchmarkCreate",
     "BenchmarkMetric",
     "BenchmarkResponse",
     "BenchmarkUpdate",
     "MatchQuality",
     "Stage",
+    "report_to_storage",
 ]
 
 BENCHMARK_ID_EXAMPLE = "1f0c9a2b-7d34-4e51-9a6f-2c8b3d4e5f60"
@@ -207,3 +210,127 @@ class BenchmarkResponse(BaseModel):
             updated_at=benchmark.updated_at,
             higher_is_better=higher_is_better(benchmark.metric),
         )
+
+
+# ---------------------------------------------------------------------------
+# Audit runs (T2.8)
+# ---------------------------------------------------------------------------
+
+AUDIT_RUN_ID_EXAMPLE = "9c4d1e77-3b2a-4f80-8d61-5a7e9f0c1b23"
+
+
+class AuditRunResponse(BaseModel):
+    """One audit run's lifecycle -- **status only, never the report**.
+
+    This is the polling shape the mobile client reads while an audit runs, and
+    the boundary matters: `CLAUDE.md` section 4 requires report content to go
+    through a per-tier serializer, and this endpoint is reachable by the founder
+    the moment the run is created. Adding a `report` field here would route the
+    full internal report around the tier rules for every caller at once. The
+    report is served separately once its serializer exists (T4.2 for the
+    investor tier, T2.7's founder view alongside it).
+
+    `error_message` is founder-facing and deliberately thin. Whatever an
+    engineer needs to debug the failure is in the log line for the run, not in a
+    column the API hands back.
+    """
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "id": AUDIT_RUN_ID_EXAMPLE,
+                    "startup_id": "3f2b1a09-8c7d-4e65-b4a3-1d2c3b4a5e6f",
+                    "status": "running",
+                    "rubric_version": "v1",
+                    "attempts": 1,
+                    "error_code": None,
+                    "error_message": None,
+                    "created_at": "2026-08-02T09:00:00Z",
+                    "started_at": "2026-08-02T09:00:04Z",
+                    "completed_at": None,
+                }
+            ]
+        },
+    )
+
+    id: uuid.UUID
+    startup_id: uuid.UUID
+    status: AuditStatus = Field(
+        description=(
+            "`queued` and `running` mean keep polling. `succeeded` and `failed` "
+            "are terminal for this attempt; a failed run may be retried and "
+            "reuses the same id rather than creating a second one."
+        )
+    )
+    rubric_version: str = Field(
+        description=(
+            "The rubric this run was scored against. Recorded so a past verdict "
+            "stays explainable after the rubric moves on."
+        )
+    )
+    attempts: int = Field(description="How many times a worker has picked this run up.")
+    error_code: str | None = Field(
+        default=None,
+        description=(
+            "Stable code when `status` is `failed`. Branch on this, never on "
+            "the message."
+        ),
+    )
+    error_message: str | None = Field(
+        default=None, description="Founder-safe explanation when `status` is `failed`."
+    )
+    created_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+
+def report_to_storage(report: Any) -> dict[str, Any]:
+    """An `AuditReport` as the JSONB column stores it.
+
+    Whole, not filtered. The column holds everything the run concluded because a
+    verdict a founder disputes has to be reconstructable exactly as it was
+    issued; **tier filtering happens at the serializer that reads this back**,
+    never on the way in (`CLAUDE.md` section 4).
+
+    `Decimal` and enums are rendered as strings rather than floats: the integrity
+    score is a `Decimal` for the same reason money is, and letting JSON coerce it
+    to a float would make a stored verdict differ from the one that was computed.
+    """
+    return {
+        "rubric_version": report.rubric_version,
+        "data_integrity_score": str(report.data_integrity_score),
+        "fundability": _verdict_to_storage(report.fundability),
+        "saleability": _verdict_to_storage(report.saleability),
+        "findings": [
+            {
+                "code": finding.code.value,
+                "severity": finding.severity.value,
+                "fields": list(finding.fields),
+                "message": finding.message,
+                "detail": finding.detail,
+            }
+            for finding in report.findings
+        ],
+        "action_plan": [
+            {
+                "dimension": item.dimension.value,
+                "action": item.action,
+                "dimension_score": item.dimension_score,
+            }
+            for item in report.action_plan
+        ],
+    }
+
+
+def _verdict_to_storage(verdict: Any) -> dict[str, Any]:
+    return {
+        "scope": verdict.scope.value,
+        "level": verdict.level.value,
+        "score": verdict.score,
+        "sufficiency": verdict.sufficiency.value,
+        "evidenced_dimensions": [d.value for d in verdict.evidenced_dimensions],
+        "unevidenced_dimensions": [d.value for d in verdict.unevidenced_dimensions],
+        "rationale": verdict.rationale,
+    }

@@ -9,7 +9,200 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Audits are reachable over HTTP, 2026-08-02 (T2.8).** Three endpoints, all
+  founder-owned and ownership-checked. **Additive; nothing existing changed.**
+  - `POST /v1/startups/{startup_id}/audits` — queues a run. Returns **`202`**
+    for new work and **`200`** with the existing run when an audit of these
+    exact inputs already exists. That is the D14 idempotency guarantee surfaced
+    in the status code rather than hidden: an audit is the most expensive
+    operation the platform performs, so an unchanged resubmission returns the
+    first verdict instead of buying a second. `422` when the profile is missing
+    fields the audit needs, with `details.missing_fields` naming them.
+  - `GET /v1/startups/{startup_id}/audits` — this startup's runs, newest first.
+  - `GET /v1/startups/{startup_id}/audits/{run_id}` — poll one run.
+  - **`AuditRun` carries no report field, in any state.** The report is served
+    by its own per-tier serializer (`CLAUDE.md` §4) and a status poll is
+    reachable long before a report exists. A test asserts the field's absence on
+    the schema, so adding one later fails loudly rather than routing the full
+    internal report around the tier rules for every founder at once.
+  - Another founder's `run_id` returns **`404`, never `403`** — a 403 would
+    confirm the id is real. The `startup_id` in the path is checked against the
+    row rather than trusted, so a caller cannot pair their own startup with
+    someone else's run id and read the answer off the status code.
+  - New enum for clients: `AuditStatus` (`queued`, `running`, `succeeded`,
+    `failed`). Polling guidance and the terminal states are in `CLIENTS.md` §5a.
+- **The audit pipeline and its worker (T2.8).** `audit/pipeline.py` wires stages
+  2–5; `app/workers/queue.py` and `tasks.py` run them off RQ. Not an API change.
+  - **Scoring is skipped when `data_integrity_score` is below the floor** —
+    `synthesise` returns `insufficient_data` on both verdicts there regardless
+    of the scores, so the rubric call would buy a verdict already decided.
+  - **A dimension the model does not return is padded as `insufficient_data`.**
+    Synthesis measures coverage against the dimensions it is handed, so an
+    assessment returning one dimension out of eleven read as fully covered and a
+    single high score produced `ready` — a "fundable" off one data point, which
+    §5 forbids as a guarantee.
+- **`render.yaml` and `backend/docs/DEPLOY.md`.** Two Render services (web +
+  worker) and the first-deploy checklist. Neon, Redis, and R2 stay external.
+- **Sentry error reporting.** `SENTRY_DSN` had been a declared setting since
+  T0.3 that nothing read. Inert unless a DSN is set; `send_default_pii` is off,
+  because request bodies here carry bearer tokens and founder financials.
+
+### Fixed
+- **`CLIENTS.md` drift was only guarded in one direction.** The guide's paths
+  were checked for existence, but a **new endpoint that was never documented
+  passed silently** — the failure that actually happens. The reverse guard
+  (`live <= named`) is now in place and immediately found one:
+  `POST /v1/admin/users/{id}/reactivate` was written as a bare `/reactivate`
+  suffix and had never been extractable.
+
+### Added (earlier)
+- **`AuditRun` persistence and migration `0010`, 2026-08-02 (T2.8, partial).**
+  One row per execution of the audit pipeline, carrying `rubric_version` (D12)
+  so a verdict stays explainable after the rubric moves on. **No API change** —
+  no endpoint reads or writes this table yet.
+  - **`uq_audit_runs_idempotency` on `(startup_id, input_hash, rubric_version)`
+    is the point of the table.** D14 requires a repeated run to be safe, and an
+    audit is the most expensive call the platform makes (`claude-opus-5`, high
+    effort, 16k budget), so a duplicate is a real charge for a verdict the
+    founder already has. The constraint closes the race an RQ `job_id` cannot:
+    a job id prevents a duplicate only while the job is in flight and lapses
+    the moment it finishes. Four integration tests against the real database
+    prove the `IntegrityError` and that changed inputs still produce a fresh
+    run. `rubric_version` is in the key but **redundant by design** — the
+    fingerprint already hashes it into `input_hash`, so D12 is enforced there;
+    the column stays as insurance against that payload ever changing.
+  - **`input_fingerprint` must be computed from the persisted JSONB.**
+    `startup_profiles.fields` round-trips through Postgres, so a value written
+    as `Decimal("42.5000")` reads back as `42.5` and hashes differently —
+    which would bill a founder twice for one audit. One code path, documented
+    at the function.
+  - **No embedding column, though the task lists embeddings.** Anthropic has no
+    embeddings endpoint and a vector's dimension is provider-specific (1024,
+    1536, …), so declaring one would silently commit to a provider nobody has
+    chosen. `pgvector` remains a declared and unused dependency. Filed as an
+    open follow-up; adding the column later is one additive migration.
+  - Applied to Neon and verified with `alembic check` (no drift). Still `[~]`:
+    `REDIS_URL` is blank so no job has ever been dispatched, `pipeline.py` is
+    still a docstring, and the status endpoint is not built.
+
+- **`CLIENTS.md` — the client integration guide, 2026-08-01.** One document for
+  the **three roles across two surfaces**: founders and investors on mobile,
+  SACI admins on web. Covers the auth lifecycle (including refresh rotation and
+  reuse detection, the single easiest thing for a client to get wrong), the
+  `401` vs `403` distinction, the error envelope and every stable code, the
+  three-step document upload, every enum a client switches on, and an explicit
+  **"not built yet"** list so nobody codes against Phase 3–5.
+  *No API change — this documents what already exists.*
+  - **`docs/openapi.json` is now committed**, so a client developer can
+    generate a typed client or diff an API change without running the service.
+    Regenerate with `python scripts/export_openapi.py`.
+  - **Two corrections it makes to previously-stated behaviour:** all five
+    `/v1/benchmarks` endpoints are **admin-only including the reads** (a
+    founder who could read the bands would know exactly what to claim), and
+    `first_name`/`last_name` are nullable on `UserResponse` for provisioned
+    admins and pre-column accounts.
+  - `tests/unit/test_client_guide.py` fails if a path or enum value the guide
+    names stops existing, or if the exported spec goes stale. Prose still needs
+    a human; the contract does not.
+- **Scoring and synthesis (T2.7), 2026-08-01 — scores to verdicts, report, and
+  action plan.** **No API change and no new endpoint**; stage 5, reachable once
+  T2.8 wires the pipeline.
+  - **The verdict is computed by rule, not asked of a model.** The inputs came
+    from one, but the verdict itself must be reproducible (T2.9), explainable
+    to the founder who receives it, and incapable of being talked out of
+    `CLAUDE.md` §5's ban on a false "fundable" on thin data.
+  - **Four levels: `ready`, `not_yet`, `provisional`, `insufficient_data`.**
+    *Client impact once T2.8 lands: `insufficient_data` is an **absence, not a
+    failure** — never render it as "not fundable". `provisional` must always be
+    shown labelled as such, never as a plain result. Branch on `level`; the
+    `rationale` is prose and will change.*
+  - Coverage below half the in-scope dimensions yields `insufficient_data`
+    however good the available evidence looks, and a `data_integrity_score`
+    under 50 blocks the verdict outright — scoring figures we already believe
+    are wrong is scoring noise.
+  - The action plan derives from the rubric's `unmet_criteria`, sorted with
+    unassessable dimensions first, then worst-scoring: those are cheaper to fix
+    and they are what blocks the verdict.
+- **Consistency check (T2.5), 2026-08-01 — does the submitted data agree with
+  itself?** **No API change and no new endpoint**; stage 2 of the pipeline,
+  reachable once T2.8 wires it up.
+  - **Scale plausibility is arithmetic, in code — not a model call.** D9 says
+    money is math, and a model judging it would break T2.9's
+    same-input-same-score requirement. Contradiction detection *is* the model's
+    half, and must cite both conflicting claims.
+  - **Thresholds are deliberately loose: 10x, never 2x.** A false positive
+    costs more than a missed subtlety — telling a founder their revenue looks
+    wrong when it is right damages trust in the whole audit. A 3x discrepancy
+    is explicitly not reported; a business that grew or shrank is normal.
+  - **Churn is judged against customer count, not range.** `0.02` meaning 2% is
+    indistinguishable from a genuine `0.02%` on range alone (T2.2a), so the
+    test is whether the rate describes fewer than one customer a month. At
+    50,000 customers 0.02% is ten people — real. At 34 it is 0.0068 — a typo.
+  - **Findings carry a founder-facing `message` and an engineer-facing
+    `detail`, and `log_context()` carries neither.** Logs get the code,
+    severity, and field names only — never figures (`CLAUDE.md` §4). Showing a
+    founder their own numbers is not a leak; writing them to a shared log is.
+    Founder messages are also tested to be non-accusatory: a mistyped unit is
+    far likelier than dishonesty. *Client impact once T2.8 lands: expect a
+    `data_integrity_score` (0–100) and a findings list whose `code` is stable
+    and safe to branch on; `message` is prose and will change.*
+- **Extraction stage (T2.4), 2026-08-01 — documents to Startup Profile fields.**
+  **No API change and no new endpoint**: this is stage 1 of the audit pipeline,
+  invoked by the background job that lands with T2.8. Nothing is reachable over
+  HTTP yet.
+  - **PDFs and images are sent to the model as native `document`/`image`
+    blocks, not text-extracted.** A pitch deck is a design artefact — a text
+    extractor returns the speaker notes and misses the chart carrying the
+    number — and a photographed cap table has no text layer at all. This also
+    means **no PDF dependency was added**.
+  - **Three parsers added for the Office formats the API cannot ingest
+    natively** (approved 2026-08-01): `openpyxl` (xlsx), `python-pptx` (pptx),
+    `python-docx` (docx), plus `types-openpyxl` for strict typing. All pure
+    Python, no system binaries. The **legacy binary formats — `.xls`, `.ppt`,
+    `.doc` — stay on the upload allowlist but cannot be read**; those uploads
+    are reported in `unreadable` so a founder learns which file was wasted
+    rather than wondering why a field stayed empty.
+  - **A founder-stated value is never overwritten by an extracted one.**
+    Extraction fills gaps and corrects nothing; silently replacing what someone
+    typed with what a model read off a slide is the fastest way to lose their
+    trust in the audit. *Client impact once T2.8 wires this up: a profile field
+    may arrive with `source: "document"`, a `confidence`, and a `citation` — a
+    value the founder never typed. Show `confidence` below 0.5 as provisional.*
+  - Extraction **records, never computes**. Ratios, runway, and margins remain
+    `audit/finance.py`'s job, in code (D9). A value here is a reading; a
+    calculated one arriving as a reading would be a false reading.
+  - Every extracted value carries a citation to the document and the quoted
+    span, and anything failing its `FieldSpec` is dropped rather than stored.
+- **`GET /v1/benchmarks` filtering and paging documented, 2026-08-01.** The
+  endpoint has always accepted `sector`, `stage`, `metric`, `region`,
+  `include_retired`, `limit`, and `offset` — all optional — but none of it was
+  written down anywhere. **No API change**; this documents existing behaviour.
+  - **The two list endpoints do not share conventions**, which `CLAUDE.md` §6
+    requires them to. `GET /v1/benchmarks` takes the seven parameters above;
+    `GET /v1/startups/{startup_id}/documents` takes **none** and returns every
+    row. Neither supports sorting, and neither returns a total count, so a
+    client cannot render "page 3 of 12" — only a cursor-style "load more".
+    *Client impact: a generic list helper written against one endpoint will be
+    wrong for the other.* Documented in `CLIENTS.md` §3 and filed as an open
+    follow-up rather than silently normalised, because adding paging to
+    `documents` changes a response shape the mobile client already consumes.
+
 ### Changed
+- **Failed AI calls now report what they cost, 2026-08-01.** `AiError` carries
+  an `AiUsage` on `.usage`, populated on every billed failure — refusal,
+  truncation, and invalid output alike — and `complete` folds earlier attempts
+  in before re-raising, so a refusal on the retry reports both attempts rather
+  than half the bill. **No API change**; this is internal to `ai/client.py`.
+  *Why it mattered:* the three most expensive calls the platform can make are
+  all failures — a truncated audit runs to the full 16k cap at high effort, and
+  a mismatch retry bills twice — so the T5.5 per-user budget was set up to
+  under-count precisely the spend it exists to cap.
+  - **Billed tests are now gated behind a `billed` pytest marker**, deselected
+    by default via `addopts`. `tests/integration/test_ai_live.py` skips without
+    a key, which protects an *unconfigured* machine but not a configured one:
+    adding `ANTHROPIC_API_KEY` to CI would otherwise have started spending real
+    money on every push. Running them is now deliberate — `pytest -m billed`.
 - **⚠️ BREAKING — `POST /v1/auth/register` now requires `first_name` and
   `last_name`, 2026-07-30.** Both are collected for **founders and investors**
   alike. A registration body without them is rejected with **`422`**.
@@ -83,9 +276,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Responses are validated against a schema before anything downstream sees
     them. A refusal and a truncation each fail immediately; only a schema
     mismatch is retried, once. Raw model text never reaches a caller.
-  - Every call returns a usage record with per-user attribution and the full
-    token split, so per-audit cost is visible from day one. **Daily budgets are
-    measured but not yet enforced** — enforcement is T5.5.
+  - Every **successful** call returns a usage record with per-user attribution
+    and the full token split, so per-audit cost is visible from day one.
+    **Daily budgets are measured but not yet enforced** — enforcement is T5.5.
+    (Failed calls were originally silent about cost; corrected 2026-08-01 —
+    see *Changed* above.)
   - Prompt versions are frozen once published and looked up by exact version;
     there is no "latest", so a re-run reproduces the prompt it originally used
     (D12). The version is returned on every call for recording on the AuditRun.
@@ -227,6 +422,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Every request and response model now publishes an example** (`CLAUDE.md` §6).
   Previously none did. `LoginResponse` publishes **both** branches, so a client can
   see the `mfa_required` shape and not only the happy path.
+- **A blank `.env` key no longer takes its trailing comment as its value**
+  (`851a7b2`, `6035538`, `781b361`, `2026-07-30`/`31`). **Deployment change
+  only — no API change.** Inline-comment stripping is conditional:
+  `APP_ENV=development  # ...` parses as `development`, but
+  `AI_MODEL_AUDIT=      # strongest model…` parses as *the comment sentence*.
+  That turned the audit model id into prose and would have made the first real
+  API call a confusing `404`; it hit `CORS_ALLOWED_ORIGINS`, `R2_ENDPOINT_URL`,
+  and `STRIPE_WEBHOOK_SECRET` the same way. **No test could see it** —
+  `conftest` sets `env_file = None` so a developer's `.env` cannot decide a
+  test outcome, which also means the parse never happens during the suite.
+  - **First fixed at the wrong depth, corrected 2026-08-01.** `6035538` added a
+    lint asserting `.env.example` carries no inline comments — which polices one
+    file's formatting in git and leaves the operator's real `.env`, the file
+    that actually decides the model id, unguarded. The rule now lives in the
+    parse layer: `_blank_to_none` treats any value whose stripped form starts
+    with `#` as unset, since no setting can legitimately begin with one.
+  - The suite's own `.env` reader in `conftest` had the same hole and was worse
+    — it never stripped inline comments at all, so `ANTHROPIC_API_KEY=sk-…  #
+    prod key` returned a non-`None` key with the comment attached. That meant
+    `requires_anthropic_key` would **not** skip, and the live tests would fail
+    as a `401` that reads like a revoked key rather than a parse bug.
 
 ### Added
 - **Startup Profile** (T1.4) — the first founder-owned resource.
@@ -253,8 +469,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Repository scaffold: module/layer structure per `ARCHITECTURE.md`, `pyproject.toml`,
   `.env.example`, README (T0.1). No API endpoints yet.
 - Tooling and CI (T0.2): ruff (lint + format), mypy in strict mode, pytest, and a
-  gitleaks secret scan, all wired into a GitHub Actions workflow that runs on every
-  push and pull request. No API change.
+  gitleaks secret scan, all wired into a GitHub Actions workflow. No API change.
+  - **Correction, 2026-07-31: this originally claimed the workflow "runs on
+    every push and pull request". It did not — it had never run at all.** The
+    file sat at `backend/.github/workflows/ci.yml`, but GitHub Actions only
+    discovers workflows under `/.github/workflows` at the **repository** root,
+    which since `37344d3` is the monorepo root rather than `backend/`. Every
+    push between T0.2 and 2026-07-31 was unchecked, and the entry above read as
+    protection the whole time. Fixed in `74cc8d7` by moving the workflow to the
+    root with `defaults.run.working-directory: backend`; first observed green
+    run recorded in `87f60b5`. See `TASKS.md` open follow-ups for what a green
+    badge does and does not cover — db-backed tests still skip on the runner.
 - **`GET /v1/health`** (T0.3) — unauthenticated liveness check returning
   `{status, version, environment}`. The first endpoint on the API.
 - **Error envelope** (T0.3) — every error response now returns
