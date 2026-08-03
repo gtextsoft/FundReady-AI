@@ -95,6 +95,8 @@ Legend: `[ ]` todo · `[x]` done · `[~]` in progress
 
 ### Backlog / open questions (resolve before the dependent task)
 
+- [ ] **Languages other than English** — proposal in `docs/LANGUAGES.md`. The app has **no translation layer at all**: 181 pieces of wording across 38 files, written directly into the screens. That is the cheap half. The expensive half is that the audit verdict, the action plan, the mentor's answers and both emails are **generated in English by the backend**, which has no language field on the user and no language handling in its prompts — so a picker on its own would give someone a translated interface wrapped around an English audit. Arabic (UAE) mirrors the entire layout and should be its own piece of work; Chinese needs a CJK font before Geist silently falls back. Money and dates already need nothing, being stored in minor units against an ISO currency.
+
 - [ ] **Corporate SSO** — `lookupEmailDomain` resolves entirely on the device and always returns `sso: null`; there is no per-domain IdP directory server-side and **no backend task for one**. The sign-in screen's hand-off path is currently unreachable. Either scope it or remove the affordance — affects F1.3.
 - [ ] **Company-registration verification has no backend owner** — affects F1.10.
 - [ ] **Push notifications: in or out?** — affects F5.1 and needs a backend task if in.
