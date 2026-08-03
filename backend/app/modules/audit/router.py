@@ -182,16 +182,25 @@ AUDIT_NOTE = (
         "rather than `202` -- because an audit is the most expensive operation "
         "the platform performs and a founder must not be charged twice for one "
         "verdict. Change the profile and the next submission is a new run.\n\n"
+        "**Resubmitting a `failed` run is how it is retried.** The run keeps its "
+        "id, returns to `queued`, and is re-dispatched -- so a `200` does not "
+        "imply nothing was queued. Branch on the returned `status`, not on the "
+        "status code. Retries are capped: past the cap the run stays `failed` "
+        "with `error_code: audit_retries_exhausted` and submitting again does "
+        "nothing.\n\n"
         "`422` when the profile is missing fields the audit needs; the response "
         "`details` carries `missing_fields`, the same list "
         "`GET /v1/startups/me/profile` returns." + AUDIT_NOTE
     ),
     responses={
         200: {
+            "model": AuditRunResponse,
             "description": (
-                "An audit of these exact inputs already exists; its run is "
-                "returned unchanged and no new work was queued."
-            )
+                "An audit of these exact inputs already exists, so this run was "
+                "not created by this call. It may still have been re-dispatched: "
+                "read `status` -- `queued` means a failed run was just retried, "
+                "`running` or `succeeded` means no new work was queued."
+            ),
         },
         **error_responses(401, 403, 404, 422),
     },

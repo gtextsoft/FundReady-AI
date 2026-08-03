@@ -197,6 +197,25 @@ class AuditRunRepository:
         await self._session.flush()
         return run
 
+    async def mark_queued(self, run: AuditRun) -> AuditRun:
+        """Return a failed run to the queue for another attempt.
+
+        The failure is cleared because the row is once again a run that has not
+        finished, and a stale `error_code` beside `status=queued` would be read
+        by the client as a run that both failed and is pending.
+
+        **`attempts` is deliberately not reset.** It counts every worker that
+        has ever claimed this run, which is what lets the service cap retries on
+        it -- resetting would hand a founder an unbounded number of billed
+        passes -- and what keeps a crash loop visible, per `mark_running`.
+        """
+        run.status = AuditStatus.QUEUED
+        run.error_code = None
+        run.error_message = None
+        run.completed_at = None
+        await self._session.flush()
+        return run
+
     async def mark_succeeded(self, run: AuditRun, report: dict[str, Any]) -> AuditRun:
         run.status = AuditStatus.SUCCEEDED
         run.report = report

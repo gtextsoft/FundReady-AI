@@ -81,74 +81,119 @@ async def run_audit_async(run_id: uuid.UUID) -> None:
     """
     session_factory = get_session_factory()
 
-    async with session_factory() as session:
-        repository = AuditRunRepository(session)
-        run = await repository.get(run_id)
-        if run is None:
-            logger.warning("audit run vanished before the worker reached it")
-            return
-        if run.status is AuditStatus.SUCCEEDED:
-            # Already done. Re-running would re-bill the audit and could return
-            # a different verdict for identical inputs.
-            logger.info(
-                "audit already complete; nothing to do",
-                extra={"context": {"attempts": run.attempts}},
-            )
-            return
-
-        # Read off the row before the session closes: an ORM attribute touched
-        # after commit is a lazy load against a connection that is gone.
-        owner_id = run.owner_id
-
-        snapshot = await _snapshot_for(session, run.startup_id)
-        if snapshot is None:
-            await repository.mark_failed(
-                run,
-                code="profile_missing",
-                message=(
-                    "The startup profile for this audit could not be found. "
-                    "Please check your profile and submit again."
-                ),
-            )
-            await session.commit()
-            return
-
-        await repository.mark_running(run)
-        benchmark_context = await assemble_benchmark_context(
-            session, snapshot, compute(financial_inputs(snapshot))
-        )
-        await session.commit()
-
-    # The model calls happen outside the session. An audit is minutes of
-    # latency; holding a pooled Neon connection open across it would exhaust the
-    # pool long before the work finished.
+    # **Everything that can fail is inside one `try`, including the database
+    # work before the model calls.** It used to wrap `_score` alone, which left
+    # `_snapshot_for`, `financial_inputs`, `compute`, and
+    # `assemble_benchmark_context` outside it -- and a raise from any of them
+    # was worse than an uncaught error. Those run between `mark_running` and its
+    # `commit`, so the session unwound without committing and took the `running`
+    # mark and the `attempts` increment with it: the row returned to `queued`
+    # with zero attempts, the exception went to RQ's failed queue, and the
+    # founder saw `queued` with no error. Resubmitting then matched
+    # `service._requeue_if_retryable`'s stranded-run branch and dispatched the
+    # same failure again, unbounded, with `error_code` never written.
     try:
-        report = await _score(snapshot, benchmark_context, owner_id=owner_id)
-    except Exception:
-        # Broad on purpose: every failure mode below this line -- a refusal, a
-        # timeout, a provider outage, a validation mismatch -- has the same
-        # correct response, which is to record the run as failed and stop. The
-        # detail goes to the log, never to the column.
-        logger.exception("audit failed")
         async with session_factory() as session:
-            failed = await AuditRunRepository(session).get(run_id)
-            if failed is not None:
-                await AuditRunRepository(session).mark_failed(
-                    failed, code="audit_failed", message=_FAILURE_MESSAGE
+            repository = AuditRunRepository(session)
+            run = await repository.get(run_id)
+            if run is None:
+                logger.warning(
+                    "audit run vanished before the worker reached it",
+                    extra={"context": {"run_id": str(run_id)}},
+                )
+                return
+            if run.status is AuditStatus.SUCCEEDED:
+                # Already done. Re-running would re-bill the audit and could
+                # return a different verdict for identical inputs.
+                logger.info(
+                    "audit already complete; nothing to do",
+                    extra={
+                        "context": {"run_id": str(run_id), "attempts": run.attempts}
+                    },
+                )
+                return
+
+            # Read off the row before the session closes: an ORM attribute
+            # touched after commit is a lazy load against a connection that is
+            # gone.
+            owner_id = run.owner_id
+
+            snapshot = await _snapshot_for(session, run.startup_id)
+            if snapshot is None:
+                await repository.mark_failed(
+                    run,
+                    code="profile_missing",
+                    message=(
+                        "The startup profile for this audit could not be found. "
+                        "Please check your profile and submit again."
+                    ),
                 )
                 await session.commit()
+                return
+
+            await repository.mark_running(run)
+            benchmark_context = await assemble_benchmark_context(
+                session, snapshot, compute(financial_inputs(snapshot))
+            )
+            await session.commit()
+
+        # The model calls happen outside the session. An audit is minutes of
+        # latency; holding a pooled Neon connection open across it would exhaust
+        # the pool long before the work finished.
+        report = await _score(snapshot, benchmark_context, owner_id=owner_id)
+    except Exception:
+        # Broad on purpose: every failure mode above -- a refusal, a timeout, a
+        # provider outage, a validation mismatch, a database blip -- has the
+        # same correct response, which is to record the run as failed and stop.
+        # The detail goes to the log, never to the column.
+        logger.exception("audit failed", extra={"context": {"run_id": str(run_id)}})
+        await _record_failure(run_id)
         return
 
     async with session_factory() as session:
         repository = AuditRunRepository(session)
         stored = await repository.get(run_id)
         if stored is None:  # pragma: no cover - deleted mid-flight
-            logger.warning("audit run deleted while it was being scored")
+            logger.warning(
+                "audit run deleted while it was being scored",
+                extra={"context": {"run_id": str(run_id)}},
+            )
             return
         await repository.mark_succeeded(stored, report_to_storage(report))
         await session.commit()
 
-    logger.info("audit complete")
+    logger.info("audit complete", extra={"context": {"run_id": str(run_id)}})
+
+
+async def _record_failure(run_id: uuid.UUID) -> None:
+    """Mark a run failed, and do not raise while doing it.
+
+    This runs inside the `except` above, and the failure it is recording may
+    well *be* the database -- in which case opening a session and re-reading the
+    row fails too. An exception raised from an `except` block propagates out of
+    `run_audit_async` and onto RQ's failed queue for an automatic retry, which
+    is the one thing this handler's docstring promises never happens and every
+    retry of an audit is another billed pass. So the recording is best-effort:
+    if it cannot be written, that is logged and the job still ends cleanly.
+
+    `get_session_factory` is resolved on call rather than passed in, so a test
+    that patches it on this module reaches here too.
+    """
+    try:
+        async with get_session_factory()() as session:
+            repository = AuditRunRepository(session)
+            run = await repository.get(run_id)
+            if run is None:
+                return
+            await repository.mark_failed(
+                run, code="audit_failed", message=_FAILURE_MESSAGE
+            )
+            await session.commit()
+    except Exception:
+        logger.exception(
+            "could not record an audit failure",
+            extra={"context": {"run_id": str(run_id)}},
+        )
 
 
 async def _snapshot_for(

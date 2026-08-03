@@ -49,6 +49,45 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   because request bodies here carry bearer tokens and founder financials.
 
 ### Fixed
+- **A `failed` audit run could never be retried, 2026-08-03.** `CLIENTS.md` §5a,
+  `AuditStatus.FAILED`, and the founder-facing failure message all promised that
+  resubmitting retries a failed run. None of it was true: the re-dispatch check
+  only covered a run that was `queued` with zero attempts, so a `failed` run was
+  found by fingerprint and handed back unchanged with `200` forever, and the only
+  escape was editing the profile to change the fingerprint. Resubmitting now
+  returns the run to `queued` under the same id and re-dispatches it.
+  - **`200` no longer implies nothing was queued** — read the returned `status`.
+    `CLIENTS.md` §5a and the endpoint description are updated; the `200` response
+    now declares the `AuditRun` schema it was always returning.
+  - **Retries are capped** (`AuditRun.attempts`, which only a worker increments).
+    Past the cap the run stays `failed` with the new stable
+    `error_code: audit_retries_exhausted`. An audit is the most expensive call
+    the platform makes, and an uncapped retry button bills a founder a full pass
+    per tap (D14, D16). New sibling code `audit_requeue_failed` covers a retry
+    that could not be dispatched — transient, and resubmitting is correct.
+- **A pre-scoring failure left an audit run with no terminal state, 2026-08-03.**
+  The worker's `try` began after the database work, so a raise from
+  `assemble_benchmark_context` (or the snapshot read, or the finance
+  calculations) escaped the handler entirely. Those run between `mark_running`
+  and its commit, so the session unwound and took the `running` mark and the
+  `attempts` increment with it: the row went back to `queued` with zero attempts,
+  the founder polled `queued` with no error, and resubmitting re-dispatched the
+  same failure unboundedly with `error_code` never written. The whole body is now
+  inside the `try`, and the failure recorder cannot itself raise.
+- **Tracebacks bypassed log redaction, 2026-08-03.** `RedactionFilter` scrubs a
+  record's message and context; the traceback is built from `exc_info` in the
+  formatter and never passed through it, so a psycopg error quoting the Neon DSN
+  with inline credentials, or an Anthropic error echoing `sk-ant-…`, was written
+  to stdout verbatim (`CLAUDE.md` §4).
+- **Sentry was configured but never started in the API, 2026-08-03.** `init_sentry`
+  was only ever called from the worker's `main`, so with `SENTRY_DSN` set in
+  production an unhandled 500 in any endpoint reported to nobody — while the
+  module docstring claimed both entry points called it.
+  - **Sentry was also collecting stack locals.** `send_default_pii=False` does
+    not cover them, and the SDK defaults `include_local_variables` on: the audit
+    worker's failure path has the founder's full financial profile bound in the
+    frame that raises. Now off, with a `before_send` hook applying the same
+    redaction to exception text.
 - **`CLIENTS.md` drift was only guarded in one direction.** The guide's paths
   were checked for existence, but a **new endpoint that was never documented
   passed silently** — the failure that actually happens. The reverse guard

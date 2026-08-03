@@ -317,7 +317,7 @@ run typically finishes in under two.
 | Code | Means |
 |---|---|
 | `202` | Queued. New work was created. |
-| `200` | **An audit of these exact inputs already exists** — the same run is returned and nothing new was queued. |
+| `200` | **An audit of these exact inputs already exists** — the same run is returned. Read its `status`: see below. |
 | `422` | The profile is missing fields the audit needs. `details.missing_fields` lists them. |
 | `404` | No such startup, or not yours. |
 
@@ -327,12 +327,30 @@ unchanged profile twice returns the first verdict rather than buying a second
 one. **Change the profile and the next submission is a new run.** If you want a
 "re-run" button, it belongs behind a profile edit, not next to it.
 
+**A `200` does not tell you whether work was queued — the run's `status` does.**
+Resubmitting a `failed` run is the retry path (see below), so a `200` carrying
+`status: "queued"` means that run was just re-dispatched. A `200` carrying
+`succeeded` or `running` means nothing new was queued. Branch on `status`, never
+on the fact that you got a `200`.
+
 ### Terminal states
 
 `succeeded` and `failed` are terminal; `queued` and `running` mean keep polling.
 A `failed` run carries `error_code` (stable — branch on this) and
-`error_message` (founder-safe prose — show it, do not parse it). Retrying a
-failed run means submitting again.
+`error_message` (founder-safe prose — show it, do not parse it).
+
+**Retrying a failed run means submitting again.** POST to the same endpoint with
+the profile unchanged: the run keeps its id, returns to `queued`, and is
+re-dispatched. You get a `200` (the run already existed), its `error_code` and
+`error_message` clear, and polling resumes as normal.
+
+Retries are capped. After a small number of attempts the run stays `failed` with
+`error_code: "audit_retries_exhausted"` and submitting again does nothing —
+an audit is the platform's most expensive operation, and an uncapped retry
+button would bill a founder a full pass per tap. Surface that code as "contact
+support", not as "try again". `error_code: "audit_requeue_failed"` is the
+transient sibling — the retry could not be dispatched, and submitting again is
+the correct response.
 
 ### This endpoint never returns the report
 

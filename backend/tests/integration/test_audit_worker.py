@@ -253,3 +253,58 @@ async def test_an_unknown_run_id_is_a_no_op(
     _fake_ai(monkeypatch, [])
 
     await tasks.run_audit_async(uuid.uuid4())
+
+
+async def test_a_failure_before_the_model_call_is_recorded_too(
+    worker_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The `try` used to start after the database work, and that was worse.
+
+    `assemble_benchmark_context` runs between `mark_running` and its `commit`,
+    so a raise there unwound the session before either was written: the row went
+    back to `queued` with zero attempts, the exception reached RQ's failed queue,
+    and the founder polled `queued` with no error ever recorded. Resubmitting
+    matched the stranded-run branch and dispatched the same failure again, with
+    no terminal state and no `error_code` at any point.
+
+    **`attempts` is deliberately not asserted, because this fixture cannot see
+    it.** In production the failure unwinds the session before `mark_running`'s
+    commit, so the increment rolls back and a run that never reached the model
+    does not consume one of its retries. `_BorrowedSession` lends the test's
+    session and declines to close it, so nothing is rolled back here and the
+    increment survives -- the opposite of the real behaviour. Anyone adding an
+    `attempts` assertion to this test is asserting the fixture, not the handler.
+    """
+    run = await _queued_run(worker_session)
+    _fake_ai(monkeypatch, [])
+
+    async def explode(*_args: Any, **_kwargs: Any) -> None:
+        raise RuntimeError("Neon dropped the connection")
+
+    monkeypatch.setattr(tasks, "assemble_benchmark_context", explode)
+
+    await tasks.run_audit_async(run.id)
+    await worker_session.refresh(run)
+
+    assert run.status is AuditStatus.FAILED, "a pre-scoring failure is still a failure"
+    assert run.error_code == "audit_failed"
+    assert run.error_message is not None
+
+
+async def test_recording_a_failure_never_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The recorder runs inside `except`, and the thing that failed may be the DB.
+
+    An exception raised from an `except` block propagates out of the handler and
+    onto RQ's failed queue for an automatic retry -- the one outcome this
+    handler's docstring promises never happens, and every retry of an audit is
+    another billed pass.
+    """
+
+    def broken_factory() -> None:
+        raise RuntimeError("the database is gone")
+
+    monkeypatch.setattr(tasks, "get_session_factory", lambda: broken_factory)
+
+    await tasks._record_failure(uuid.uuid4())  # noqa: SLF001 - the guarantee under test

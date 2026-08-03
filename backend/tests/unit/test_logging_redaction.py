@@ -7,6 +7,7 @@ systems.
 
 import json
 import logging
+import sys
 
 import pytest
 
@@ -135,3 +136,37 @@ def test_formatter_omits_request_id_outside_a_request() -> None:
     payload = json.loads(JsonFormatter().format(_record("startup")))
 
     assert "request_id" not in payload
+
+
+def _record_with_exception(error: Exception) -> logging.LogRecord:
+    """A record carrying a real traceback, the way `logger.exception` builds one."""
+    try:
+        raise error
+    except type(error):
+        return logging.LogRecord(
+            name="test",
+            level=logging.ERROR,
+            pathname=__file__,
+            lineno=1,
+            msg="audit failed",
+            args=None,
+            exc_info=sys.exc_info(),
+        )
+
+
+@pytest.mark.parametrize(("text", "secret"), SECRET_STRINGS)
+def test_formatter_redacts_the_traceback(text: str, secret: str) -> None:
+    """The traceback is built here and never passes through `RedactionFilter`.
+
+    That filter scrubs `msg` and `context`; `formatException` reads `exc_info`,
+    which it never touches. The two exceptions this project is most likely to
+    log are exactly the two that carry a credential in their message -- psycopg
+    quoting the Neon DSN, and the Anthropic SDK echoing the API key.
+    """
+    record = _record_with_exception(RuntimeError(text))
+    RedactionFilter().filter(record)
+
+    payload = json.loads(JsonFormatter().format(record))
+
+    assert secret not in payload["exception"]
+    assert REDACTED in payload["exception"]
