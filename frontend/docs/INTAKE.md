@@ -1,181 +1,146 @@
-# Intake design — what the form should ask, and why
+# What the sign-up form should ask, and why
 
-A proposal, written from the client side, for reconciling the onboarding form
-with the Startup Profile field set. It is not a client decision to make alone:
-about half of it is `backend/app/modules/intake/fields.py`, which is flagged
-**provisional** in the backend's own task list pending the missing
-`saci-audit-platform-backend-spec.md`.
+A proposal. **Nothing here is built yet.**
 
-Status: **proposal.** Nothing here is built. See `TASKS.md` F1.8.
+Half of it needs the backend, because that is where answers are stored. See
+`TASKS.md` F1.8.
 
 ---
 
-## 1. The two rules that decide every question
+## The problem in one paragraph
 
-**The model interprets; it never computes** (`DECISIONS.md` D9).
-`audit/finance.py` derives gross margin, net burn, runway, margin-adjusted LTV,
-LTV/CAC and CAC payback from raw figures. Every one of those is a *result*.
-The form must therefore ask for **inputs**, never ratios.
-
-**The rubric grades whether a claim is evidenced** (`audit/rubric/v1`). Two of
-its criteria, verbatim:
-
-> Market size is derived, not quoted as a single unsourced headline number.
-
-> Revenue or usage is corroborated by a source other than the founder's own
-> narrative.
-
-Put together: **a field that asks for a conclusion manufactures the exact
-answer the rubric marks down.** A box labelled "TAM ($B)" produces an unsourced
-headline number, and `market_opportunity` then scores it poorly. Today's form
-does this three times — `tam`, `margin`, `ltv`.
-
-A third rule follows from the first two: **the form is not the only intake.**
-Extraction (T2.4) fills fields from uploaded documents, and thin data yields a
-`provisional` verdict by design rather than a false one. The form should carry
-what documents will not reliably give — intent, structure, and the founder's
-own account of their constraints — and let extraction do the rest.
+The form asks a founder 15 questions. Six of those answers have nowhere to be
+stored, so they are thrown away. The app tells the founder they were not saved,
+which is honest but is not a fix. Looking at it properly, the six missing boxes
+turned out to be the smaller half of the problem.
 
 ---
 
-## 2. What the audit actually scores
+## 1. Some questions ask the founder to do our homework
 
-`rubric/v1` publishes eleven dimensions. Seven are shared; one is fundability
-only; three are saleability only.
+We ask things like *what is your profit margin* and *what is a customer worth
+to you*.
 
-| Dimension | Scope | What it needs to see |
+We do not need to ask. If a founder gives us their revenue and their costs, the
+system works the margin out itself — correctly, and the same way for every
+company. It already does this.
+
+Asking is worse than unnecessary. The audit checks whether a number is **backed
+by something**. A figure a founder typed into a box has nothing behind it, so it
+scores badly. By asking, we hand them a way to lose marks.
+
+The market size question is the clearest case. The scoring rules say, in as many
+words, that a single unsourced headline number counts against you — and a box
+labelled "TAM ($B)" produces exactly that.
+
+**These four questions should go:**
+
+| Question we ask now | Ask this instead | Why |
 | --- | --- | --- |
-| `financial_health` | both | Runway, margin consistent with the business model, burn **trending** |
-| `unit_economics` | both | LTV/CAC and payback, or the specific missing input named; retention evidence |
-| `traction` | both | Revenue corroborated externally; growth over a period long enough to beat one good month |
-| `market_opportunity` | both | A bottom-up derivation reconcilable with any top-down figure; serviceable market |
-| `team` | both | Roles filled **or named as gaps**; specific prior experience; time commitment |
-| `legal_and_ip` | both | Entity identified, cap table coherent, IP assigned, licences held |
-| `data_integrity` | both | Figures reconcile **across documents**; units, currency and dates line up |
-| `scalability` | fundability | The constraint capital would relieve, named; deployment plan mapping to it |
-| `owner_independence` | saleability | Relationships with the company not the individual; documented operations |
-| `transferability` | saleability | Contracts survive change of control; company-held systems and accounts |
-| `revenue_durability` | saleability | Recurring separated from one-off; concentration quantified; renewal behaviour |
-
-**Saleability is half the product and the current form ignores it entirely.**
-An investor asks whether capital accelerates the business; an acquirer asks
-whether it still works after the founder leaves. Three dimensions exist only to
-answer the second question and nothing in the form feeds them.
+| Gross margin % | Cost of revenue | Margin is revenue minus cost of revenue. We can do that sum. |
+| Customer lifetime value | Average revenue per customer, and monthly churn | We calculate this in a specific way. A founder's own figure will not match ours, and then the audit has to publicly disagree with them. |
+| Market size (TAM) | How many customers they are going after, and their price | Two real numbers we can check beat one big number we cannot. |
+| Growth % | The last few months of revenue | See point 3. |
 
 ---
 
-## 3. The field set
+## 2. We are not asking the things that matter most
 
-`source` is where a value should come from: **form** (the founder types it),
-**doc** (extraction reads it), **derived** (`finance.py` computes it — never
-stored, never asked).
+**We never ask what the money is for.** A founder says they want to raise
+£500k and we do not ask what for. It is the first question any investor asks,
+the audit is meant to grade it, and there is nowhere to put the answer.
 
-### Already on the server and correctly shaped
+**We ask almost nothing about selling the business.** The product promises two
+verdicts: *can you raise money*, and *could someone buy this*. Nearly every
+question we ask serves the first. The things a buyer always checks — how much of
+your revenue comes from one customer, how much of it repeats versus one-off
+sales, whether contracts survive a change of owner — we barely ask.
 
-| Field | Kind | Source | Feeds |
-| --- | --- | --- | --- |
-| `name`, `sector`, `stage`, `country`, `currency` | indexed columns | form | benchmark lookup, discovery |
-| `description`, `business_model` | text | form | every dimension as context |
-| `website` | text | form | corroboration |
-| `founded_year` | year | form | stage sanity |
-| `team_size`, `founder_count`, `founders_full_time` | integer | form | `team` |
-| `monthly_revenue_minor`, `monthly_costs_minor`, `cash_on_hand_minor` | money_minor | form + doc | `financial_health` |
-| `cost_of_revenue_minor` | money_minor | form + doc | gross margin |
-| `last_12m_revenue_minor` | money_minor | doc | `traction` |
-| `active_customers`, `monthly_active_users` | integer | form | `traction` |
-| `customer_acquisition_cost_minor` | money_minor | form | `unit_economics` |
-| `average_revenue_per_customer_minor` | money_minor | form | `unit_economics` |
-| `monthly_churn_percent` | percent | form | `unit_economics` |
-| `total_raised_minor`, `current_raise_target_minor` | money_minor | form | `scalability` |
-| `cap_table_summary` | text | doc | `legal_and_ip` |
-| `ip_owned`, `contracts_transferable` | boolean | form | `legal_and_ip`, `transferability` |
-| `key_person_dependency` | text | form | `owner_independence` |
-
-### Proposed additions to `fields.py`
-
-Ordered by how much a dimension currently goes unscored without them.
-
-| Proposed field | Kind | Source | Why |
-| --- | --- | --- | --- |
-| `capital_use` | text | form | **`scalability`'s central criterion** — "the constraint capital would relieve is named specifically". Nothing on the server holds it today, and it is the first question any investor asks. |
-| `revenue_concentration_percent` | percent | form | `revenue_durability` requires concentration **quantified**. Share of revenue from the largest customer. Also the standard acquirer red flag. |
-| `recurring_revenue_percent` | percent | form | `revenue_durability` — "recurring or contracted revenue is separated from one-off sales". Without it, MRR and one-off project income look identical. |
-| `monthly_revenue_history` | text (JSON array) or a repeated `money_minor` | form + doc | `traction` needs a **trend**, and `financial_health` needs burn direction. A single MoM percentage cannot distinguish a trend from one good month — which is precisely what the criterion rules out. |
-| `target_customer_count` | integer | form | Bottom-up market sizing, half of `customers x price`. |
-| `target_price_minor` | money_minor | form | The other half. Together these are a *derivation* the rubric can reconcile — unlike a TAM headline. |
-| `serviceable_geographies` | text | form | `market_opportunity` — "where the business can actually operate today, including regulatory and geographic limits". |
-| `open_roles` | text | form | `team` — "the roles the plan requires are either filled **or named as gaps**". The current `technical: yes/no` is a thin proxy. |
-| `founder_experience` | text | form | `team` — "relevant prior experience is specific and checkable". |
-| `regulatory_licences` | text | form | `legal_and_ip` — licences the model requires, "or their absence is flagged". |
-| `contract_length_months` | integer | form | `revenue_durability` — renewal behaviour. |
-
-### A stage question, not a stage value
-
-`Bootstrapped` is not a stage; it is a funding posture, and it is orthogonal to
-`seed` or `series_a`. Adding it to the `Stage` enum would make two different
-axes share one field and corrupt benchmark lookup, which is keyed on stage.
-
-Either add `is_bootstrapped: boolean`, or drop the option — `total_raised_minor
-= 0` already says it.
+That is three whole sections of the audit scoring "we could not tell", for want
+of about six questions that cost the founder a minute.
 
 ---
 
-## 4. Changes to the form
+## 3. One question is the wrong shape
 
-### Stop asking
+We ask for a growth percentage. One number.
 
-| Field | Replace with | Reason |
+The audit wants to know whether growth is **real or one lucky month**. A single
+number cannot answer that. A few months of revenue figures can.
+
+The same figures also show whether spending is going up or down, which the audit
+also asks about. One change, two problems solved.
+
+---
+
+## 4. What to add
+
+Ordered by how much is currently missing without them.
+
+| Add | What it means | Why it matters |
 | --- | --- | --- |
-| `margin` | `cost_of_revenue_minor` | Gross margin is `(revenue − cost of revenue) / revenue`, computed by `finance.py`. Asking for the result invites a number nobody can check. |
-| `ltv` | `average_revenue_per_customer_minor` + `monthly_churn_percent` | LTV is computed **margin-adjusted**, deliberately: raw ARPU/churn overstates a low-margin business. A founder's own LTV will not match and the audit will have to disagree with them. |
-| `tam` | `target_customer_count` + `target_price_minor` + `serviceable_geographies` | The rubric explicitly rejects an unsourced headline figure. |
-| `growth` | `monthly_revenue_history` | A single percentage cannot show a trend. |
-| `technical` | `open_roles` + `founder_experience` | The rubric wants gaps named, not a boolean. |
-| `revModel` (MRR/ARR toggle) | keep, but as a unit hint only | It changes how `revenue` is interpreted, not what is stored. Store monthly minor units always. |
+| `capital_use` | What the money is for | The single biggest gap. Investors ask first; we never ask. |
+| `revenue_concentration_percent` | Share of revenue from the biggest customer | A buyer's first red flag. Lose that customer, lose the business. |
+| `recurring_revenue_percent` | How much repeats vs one-off | Repeating revenue is worth far more. Right now the two look identical to us. |
+| `monthly_revenue_history` | Revenue for the last few months | Shows a trend rather than a snapshot. Replaces the growth % question. |
+| `target_customer_count` | How many customers they are going after | Half of an honest market size. |
+| `target_price_minor` | What they charge | The other half. |
+| `serviceable_geographies` | Where they can actually operate today | Being allowed to trade somewhere is not the same as wanting to. |
+| `open_roles` | Which jobs are unfilled | We currently ask only "is a founder technical, yes or no". Naming the gaps is more useful and more honest. |
+| `founder_experience` | Relevant background | "Ten years in payments" is checkable. "Experienced" is not. |
+| `regulatory_licences` | Licences the business needs | Missing a required licence is a serious finding. Nothing surfaces it. |
+| `contract_length_months` | Typical contract length | Tells a buyer whether revenue sticks around. |
 
-### Start asking
+## A note on "Bootstrapped"
 
-Everything in the additions table above. The ones that most change what the
-audit can say: `capital_use`, `revenue_concentration_percent`,
-`recurring_revenue_percent`, and the revenue history.
+The form offers it as a stage, alongside Seed and Series A. It is not a stage —
+it means *has not raised money*, which is a different thing entirely. A company
+can be bootstrapped and at any stage.
 
-### Keep
-
-`company`, `sector`, `location`, `year`, `stage`, `revenue`, `cac`, `founders`,
-`deck` — all already map.
-
----
-
-## 5. Sequencing
-
-The form is four steps and already too long for `tam`-style vanity questions to
-be earning their place. A shape that follows the dimensions:
-
-1. **Identity** — name, sector, stage, country, founded year, description,
-   business model, website
-2. **Money** — monthly revenue, costs, cost of revenue, cash on hand, revenue
-   history, total raised, raise target, **what the capital is for**
-3. **Customers** — active customers, ARPU, churn, CAC, concentration, recurring
-   share, contract length
-4. **Team & ownership** — founder count, full-time, open roles, experience, IP
-   assignment, contract transferability, key-person dependency, licences
-
-Saleability questions sit in step 4 and cost the founder very little, which is
-the argument for asking them at all: three whole dimensions currently score
-`insufficient_data` for want of about six inputs.
+Storing it as a stage would also quietly break comparisons, because we compare
+companies against others at the same stage. Either store it as its own yes/no,
+or drop it — "total raised = 0" already says it.
 
 ---
 
-## 6. Open questions for the backend
+## 5. What stays exactly as it is
 
-1. **Does `fields.py` grow, or does the form shrink?** The six unmapped answers
-   are the visible symptom; the eleven proposed additions are the actual gap.
-2. **How is a revenue history modelled?** A repeated field, a JSON array, or
-   left entirely to extraction from financial documents.
-3. **Is `Bootstrapped` a stage, a boolean, or nothing?**
-4. **Which of these are document-only?** `cap_table_summary` and
-   `last_12m_revenue_minor` are already effectively extraction-fed. Marking a
-   field document-only keeps it out of the form and off the founder's plate.
-5. **What is `data_integrity` scored against before any document exists?**
-   Uploads are blocked on T1.5 (built, but no R2 buckets and no keys), so today
-   that dimension has nothing to reconcile.
+Company name, sector, location, founding year, stage, revenue, customer
+acquisition cost, number of founders, and the deck upload. All of these already
+work and already have somewhere to go.
+
+---
+
+## 6. A form that flows better
+
+Four steps, grouped so each one feels like a single topic:
+
+1. **About the company** — name, sector, stage, country, year founded, what you
+   do, how you make money, website
+2. **Money** — revenue, costs, cost of revenue, cash in the bank, the last few
+   months of revenue, raised so far, how much you want, **and what it is for**
+3. **Customers** — how many, what they pay, how many leave, what it costs to win
+   one, biggest customer share, how much repeats, contract length
+4. **Team and ownership** — founders, who is full time, unfilled roles,
+   background, who owns the intellectual property, whether contracts transfer,
+   what only the founder can do, licences held
+
+Step 4 is short and mostly yes/no, which is the argument for asking at all:
+three sections of the audit currently score nothing for want of about a minute
+of the founder's time.
+
+---
+
+## 7. Questions for the backend
+
+1. **Does the storage grow, or does the form shrink?** The six thrown-away
+   answers are the visible symptom. The eleven additions above are the real gap.
+2. **How should a few months of revenue be stored?** A list, or read out of the
+   financial documents instead.
+3. **Is "Bootstrapped" a stage, a yes/no, or nothing?**
+4. **Which answers should come from documents rather than the form?** Anything
+   read out of an upload should not also be typed.
+5. **What is the "do the numbers add up" check scored against before uploads
+   work?** Document upload is built but has never stored a file — no storage
+   account is configured — so that part of the audit currently has nothing to
+   compare.
