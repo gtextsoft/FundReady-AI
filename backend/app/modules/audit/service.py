@@ -41,7 +41,7 @@ from app.modules.audit.benchmarks import (
 from app.modules.audit.models import AuditRun, Benchmark
 from app.modules.audit.repository import AuditRunRepository, BenchmarkRepository
 from app.modules.audit.rubric import v1
-from app.modules.audit.runs import AuditStatus, input_fingerprint
+from app.modules.audit.runs import AuditStatus, input_fingerprint, lease_cutoff
 from app.modules.identity import service as identity
 from app.modules.identity.models import AuditAction
 from app.modules.intake import service as intake
@@ -478,6 +478,29 @@ async def request_audit(
     return run, True
 
 
+def _is_stranded(run: AuditRun) -> bool:
+    """Whether this run is waiting on a worker that is never coming.
+
+    Two shapes, one cause -- a job that no longer exists behind a row that says
+    it is in flight:
+
+    * `RUNNING` with a claim older than the lease. RQ killed the worker at its
+      own timeout, or the container was redeployed, and neither writes to the
+      row.
+    * `QUEUED` with `attempts > 0` and a `started_at` older than the lease. The
+      `failed -> queued` reset committed and the dispatch was then lost.
+
+    `QUEUED` with `attempts == 0` is **not** stranded and is handled separately:
+    no worker has ever claimed it, so there is no lease to have expired and
+    `started_at` is NULL.
+    """
+    if run.started_at is None:
+        return False
+    if run.status not in (AuditStatus.RUNNING, AuditStatus.QUEUED):
+        return False
+    return run.started_at < lease_cutoff()
+
+
 async def _requeue_if_retryable(session: AsyncSession, run: AuditRun) -> None:
     """Re-dispatch a run that no worker will otherwise pick up.
 
@@ -503,10 +526,24 @@ async def _requeue_if_retryable(session: AsyncSession, run: AuditRun) -> None:
     with a code that says so, rather than accepting a submission that silently
     does nothing.
 
-    A run in `running` is deliberately not touched: this function cannot tell a
-    worker that died from one that is mid-call, and re-dispatching the second
-    would bill the audit twice. That leaves a killed worker's run stranded, which
-    is a known open gap and needs a lease timeout rather than a guess here.
+    **`running` or `queued` past its lease** -- the two stranded states, now
+    closed. A `running` run whose worker was killed or redeployed mid-call keeps
+    `completed_at` NULL for ever: RQ releases the `job_id` at its own timeout
+    and writes nothing to the row, so every resubmission returned it with `200`,
+    queued nothing, and `CLIENTS.md` section 5a told the client to keep polling.
+    A `queued` run with `attempts > 0` is the same shape from the other
+    direction -- the reset committed and the dispatch was lost.
+
+    The lease is what makes this safe, and it is deliberately **twice** the RQ
+    job timeout (`runs.LEASE_SECONDS`). This function still cannot tell a worker
+    that died from one that is mid-call; what it can tell is that no honest
+    worker is still holding a claim taken half an hour ago, because RQ would
+    have killed it at fifteen minutes. Re-dispatching sooner than that would
+    bill the platform's most expensive call twice for one verdict.
+
+    Re-dispatch does not re-claim: `repository.claim` is the only thing that
+    moves a run into `running`, and it applies the same lease. So a founder
+    resubmitting against a genuinely live worker changes nothing.
 
     Not idempotent-by-transport: RQ does **not** refuse a second job for a
     `job_id` already in flight -- `enqueue` overwrites the hash and re-pushes the
@@ -516,12 +553,29 @@ async def _requeue_if_retryable(session: AsyncSession, run: AuditRun) -> None:
     **Residual window, not closed here.** The reset commits before the dispatch,
     so an `enqueue_audit` that *raises* is caught below and the run is put back
     to `failed`. A process that dies between the commit and the enqueue, or a
-    Redis that accepts the job and loses it, is not: that leaves the row `queued`
-    with `attempts > 0`, which matches neither branch above and is therefore
-    stranded. Closing it needs a staleness check on `queued` -- the same lease
-    the `running` case needs -- and is tracked with it in `TASKS.md`. Do not read
-    the rollback below as making the state unreachable.
+    Redis that accepts the job and loses it, is not -- that leaves the row
+    `queued` with `attempts > 0`, which is exactly the stranded state the lease
+    branch below now repairs.
     """
+    if _is_stranded(run):
+        # No state change here, deliberately: the row is already in a state a
+        # worker can claim, and `repository.claim` applies the same lease. All
+        # that is missing is a job, so all this does is put one back. Writing
+        # `queued` first would reset nothing useful and would lose the
+        # `running` evidence if the dispatch failed again.
+        logger.info(
+            "re-dispatching a stranded audit run",
+            extra={
+                "context": {
+                    "run_id": str(run.id),
+                    "status": run.status.value,
+                    "attempts": run.attempts,
+                }
+            },
+        )
+        enqueue_audit(run.id)
+        return
+
     if run.status is AuditStatus.FAILED:
         repository = AuditRunRepository(session)
         if run.attempts >= MAX_AUDIT_ATTEMPTS:

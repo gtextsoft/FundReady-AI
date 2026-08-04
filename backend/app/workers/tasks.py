@@ -9,12 +9,15 @@ therefore a thin sync entry point around an async body, and the async body is
 what tests drive -- `asyncio.run` in the middle of a test is a second event loop
 and a source of failures that have nothing to do with the code under test.
 
-**Retry safety here is a state check, not an assumption.** The unique constraint
-stops a *second row*; it does nothing about the same row being handed to a second
-worker after a timeout. So `run_audit` refuses a run that has already succeeded,
-which is the case that costs money: re-running it would re-bill the audit and
-could hand the founder a different verdict for identical inputs -- the exact
-thing T2.9 asserts cannot happen.
+**Retry safety here is an atomic claim, not a state check.** The unique
+constraint stops a *second row*; it does nothing about the same row being handed
+to a second worker after a timeout, and RQ does not dedupe by `job_id`. So
+`run_audit` opens with `repository.claim`, a single conditional UPDATE that
+exactly one of two concurrent deliveries can win. It used to read the row, check
+it was not `succeeded`, and then mark it running -- three statements with two
+gaps, either of which let both workers through to bill a `claude-opus-5`
+high-effort pass for one verdict, the second overwriting the first report. That
+is the "different verdict for identical inputs" T2.9 asserts cannot happen.
 """
 
 import asyncio
@@ -44,7 +47,6 @@ from app.modules.audit.pipeline import (
     run_pipeline,
 )
 from app.modules.audit.repository import AuditRunRepository
-from app.modules.audit.runs import AuditStatus
 from app.modules.audit.schemas import report_to_storage
 from app.modules.audit.synthesis import AuditReport
 from app.modules.intake import service as intake
@@ -110,21 +112,28 @@ async def run_audit_async(run_id: uuid.UUID) -> None:
     try:
         async with session_factory() as session:
             repository = AuditRunRepository(session)
+            # **Claim before reading anything else.** One conditional UPDATE,
+            # so two concurrent deliveries of the same job cannot both proceed:
+            # Postgres serialises them on the row and the loser sees no rows
+            # matched. The previous shape -- load the row, check it is not
+            # `succeeded`, then mark it running -- left a gap between the check
+            # and the write in which both workers passed, both ran the pipeline,
+            # and the platform paid for two `claude-opus-5` high-effort passes
+            # to produce one verdict. RQ does not dedupe by `job_id`, so nothing
+            # upstream closed it either.
+            if not await repository.claim(run_id):
+                logger.info(
+                    "audit not claimable; another worker holds it or it is done",
+                    extra={"context": {"run_id": str(run_id)}},
+                )
+                return
+            await session.commit()
+
             run = await repository.get(run_id)
             if run is None:
                 logger.warning(
                     "audit run vanished before the worker reached it",
                     extra={"context": {"run_id": str(run_id)}},
-                )
-                return
-            if run.status is AuditStatus.SUCCEEDED:
-                # Already done. Re-running would re-bill the audit and could
-                # return a different verdict for identical inputs.
-                logger.info(
-                    "audit already complete; nothing to do",
-                    extra={
-                        "context": {"run_id": str(run_id), "attempts": run.attempts}
-                    },
                 )
                 return
 
@@ -146,7 +155,6 @@ async def run_audit_async(run_id: uuid.UUID) -> None:
                 await session.commit()
                 return
 
-            await repository.mark_running(run)
             # Fetched inside the session and before it closes, for the same
             # reason the snapshot is: the bytes have to outlive the connection.
             payloads, unfetchable = await intake.load_auditable_documents(

@@ -27,6 +27,7 @@ bug it replaces:
 
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,7 +36,8 @@ from app.core.config import get_settings
 from app.core.security import AccountStatus, CurrentUser, Role
 from app.modules.audit import service as audit
 from app.modules.audit.models import AuditRun
-from app.modules.audit.runs import AuditStatus
+from app.modules.audit.repository import AuditRunRepository
+from app.modules.audit.runs import LEASE_SECONDS, AuditStatus
 from app.modules.identity import service as identity
 from app.modules.identity.models import User
 from app.modules.intake import service as intake
@@ -126,6 +128,138 @@ async def _failed_run(
     run.error_message = "The audit could not be completed."
     await session.flush()
     return profile.id, run
+
+
+async def _queued_run(
+    session: AsyncSession, actor: CurrentUser
+) -> tuple[uuid.UUID, AuditRun]:
+    """A profile with one freshly queued run, as `request_audit` leaves it."""
+    profile = await intake.create_profile(
+        session,
+        actor,
+        {
+            "name": "Kanmi Logistics",
+            "sector": "last-mile delivery",
+            "stage": Stage.SEED,
+            "country": "NG",
+            "currency": "NGN",
+            "fields": dict(_AUDITABLE),
+        },
+    )
+    run, created = await audit.request_audit(session, actor, profile.id)
+    assert created
+    return profile.id, run
+
+
+# ---------------------------------------------------------------------------
+# The atomic claim -- the only thing standing between a redelivery and a
+# second `claude-opus-5` bill for one verdict
+# ---------------------------------------------------------------------------
+
+
+async def test_only_one_of_two_deliveries_can_claim_a_run(
+    db_session: AsyncSession, dispatched: list[uuid.UUID]
+) -> None:
+    """The double-bill, asserted against real Postgres rather than reasoned about.
+
+    RQ does not dedupe by `job_id` -- `enqueue` overwrites the hash and re-pushes
+    the id -- so two deliveries of the same job genuinely reach the worker. The
+    old code read the row, checked it was not `succeeded`, then marked it
+    running; both passed and both ran the pipeline. One conditional UPDATE
+    cannot be got through twice.
+    """
+    actor = await _actor(db_session)
+    _, run = await _queued_run(db_session, actor)
+    repository = AuditRunRepository(db_session)
+
+    first = await repository.claim(run.id)
+    second = await repository.claim(run.id)
+
+    assert first is True
+    assert second is False, "the second delivery would have billed a second audit"
+
+
+async def test_a_succeeded_run_cannot_be_claimed_at_all(
+    db_session: AsyncSession, dispatched: list[uuid.UUID]
+) -> None:
+    """Re-scoring a finished audit re-bills it and can change the verdict."""
+    actor = await _actor(db_session)
+    _, run = await _queued_run(db_session, actor)
+    run.status = AuditStatus.SUCCEEDED
+    await db_session.flush()
+
+    assert await AuditRunRepository(db_session).claim(run.id) is False
+
+
+async def test_a_stranded_running_run_can_be_reclaimed_once_its_lease_expires(
+    db_session: AsyncSession, dispatched: list[uuid.UUID]
+) -> None:
+    """The run with no terminal state and no owner, given one.
+
+    Before the lease this row polled for ever: RQ had released the `job_id`
+    without writing anything, so no worker would touch it and every
+    resubmission returned it unchanged.
+    """
+    actor = await _actor(db_session)
+    _, run = await _queued_run(db_session, actor)
+    run.status = AuditStatus.RUNNING
+    run.started_at = datetime.now(UTC) - timedelta(seconds=LEASE_SECONDS + 60)
+    await db_session.flush()
+
+    assert await AuditRunRepository(db_session).claim(run.id) is True
+
+
+async def test_a_worker_still_inside_its_lease_keeps_its_claim(
+    db_session: AsyncSession, dispatched: list[uuid.UUID]
+) -> None:
+    """The failure mode a too-short lease would introduce: robbing a live worker."""
+    actor = await _actor(db_session)
+    _, run = await _queued_run(db_session, actor)
+    run.status = AuditStatus.RUNNING
+    run.started_at = datetime.now(UTC) - timedelta(seconds=LEASE_SECONDS - 60)
+    await db_session.flush()
+
+    assert await AuditRunRepository(db_session).claim(run.id) is False
+
+
+async def test_resubmitting_a_stranded_run_puts_a_job_back_on_the_queue(
+    db_session: AsyncSession, dispatched: list[uuid.UUID]
+) -> None:
+    """End to end: the founder's resubmission is what rescues a stranded run.
+
+    No state change is expected -- the row is already claimable, all that was
+    missing is a job.
+    """
+    actor = await _actor(db_session)
+    startup_id, run = await _queued_run(db_session, actor)
+    run.status = AuditStatus.RUNNING
+    run.attempts = 1
+    run.started_at = datetime.now(UTC) - timedelta(seconds=LEASE_SECONDS + 60)
+    await db_session.flush()
+    dispatched.clear()
+
+    again, created = await audit.request_audit(db_session, actor, startup_id)
+
+    assert again.id == run.id
+    assert not created
+    assert dispatched == [run.id], "a stranded run must reach the worker again"
+
+
+async def test_a_live_running_run_is_not_redispatched(
+    db_session: AsyncSession, dispatched: list[uuid.UUID]
+) -> None:
+    """Resubmitting against a working worker must change nothing."""
+    actor = await _actor(db_session)
+    startup_id, run = await _queued_run(db_session, actor)
+    run.status = AuditStatus.RUNNING
+    run.attempts = 1
+    run.started_at = datetime.now(UTC)
+    await db_session.flush()
+    dispatched.clear()
+
+    await audit.request_audit(db_session, actor, startup_id)
+
+    assert dispatched == [], "re-dispatching here would bill the audit twice"
 
 
 async def test_resubmitting_a_failed_run_requeues_it_under_the_same_id(

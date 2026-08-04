@@ -11,14 +11,14 @@ authorization decision and still lives in the service.
 import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import Select, select
+from sqlalchemy import CursorResult, Select, and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.audit.benchmarks import BenchmarkMetric, Stage
 from app.modules.audit.models import AuditRun, Benchmark
-from app.modules.audit.runs import AuditStatus
+from app.modules.audit.runs import AuditStatus, lease_cutoff
 
 
 class BenchmarkRepository:
@@ -182,12 +182,72 @@ class AuditRunRepository:
         await self._session.flush()
         return run
 
-    async def mark_running(self, run: AuditRun) -> AuditRun:
-        """Claim the run for this worker attempt.
+    async def claim(self, run_id: uuid.UUID) -> bool:
+        """Take exclusive ownership of a run for this worker. True if we got it.
+
+        **One conditional UPDATE, not a read-then-write**, and that is the whole
+        point: `run_audit_async` used to check `status is SUCCEEDED` on a loaded
+        row and then mark it running, so two concurrent deliveries of the same
+        job both passed the check, both marked it, and both ran the pipeline --
+        two `claude-opus-5` high-effort passes for one verdict, with the second
+        `mark_succeeded` overwriting the first report. That is the "different
+        verdict for identical inputs" T2.9 forbids, and nothing upstream
+        prevents it: RQ does not dedupe by `job_id` (`enqueue` overwrites the
+        hash and re-pushes the id).
+
+        Postgres serialises the two UPDATEs on the row, so exactly one matches
+        the WHERE clause and the loser gets `rowcount == 0` and stops.
+
+        Claimable states, and why each one:
+
+        * **`QUEUED`** -- the normal path.
+        * **`FAILED`** -- a deliberate retry the service already re-queued; also
+          covers a redelivery arriving after a failure was recorded.
+        * **`RUNNING` past its lease** -- the worker holding it was killed or
+          redeployed mid-call. Without this the row has no terminal state and no
+          owner. `lease_cutoff` is deliberately twice the RQ job timeout so a
+          worker that is merely slow is never robbed of its claim.
+
+        `SUCCEEDED` is absent, which is the case that costs money: re-running a
+        finished audit re-bills it and could return a different verdict.
 
         `attempts` increments rather than a second row being inserted, which is
         what makes a retry visible at all -- a retried run that looked like a
         first attempt would hide a worker crash loop.
+        """
+        now = datetime.now(UTC)
+        statement = (
+            update(AuditRun)
+            .where(
+                AuditRun.id == run_id,
+                or_(
+                    AuditRun.status.in_((AuditStatus.QUEUED, AuditStatus.FAILED)),
+                    and_(
+                        AuditRun.status == AuditStatus.RUNNING,
+                        AuditRun.started_at < lease_cutoff(now),
+                    ),
+                ),
+            )
+            .values(
+                status=AuditStatus.RUNNING,
+                attempts=AuditRun.attempts + 1,
+                started_at=now,
+                error_code=None,
+                error_message=None,
+            )
+        )
+        # `execute` is typed as returning `Result`, which has no `rowcount`; an
+        # UPDATE really returns a `CursorResult`, and the number of rows it
+        # matched is the entire answer here.
+        result = cast("CursorResult[Any]", await self._session.execute(statement))
+        return bool(result.rowcount)
+
+    async def mark_running(self, run: AuditRun) -> AuditRun:
+        """Claim the run on an object already loaded. Prefer `claim`.
+
+        Kept for the paths that hold the row and do not race -- it cannot close
+        the redelivery window, because a check on a loaded object and the write
+        that follows it are two statements with a gap in between.
         """
         run.status = AuditStatus.RUNNING
         run.attempts += 1
