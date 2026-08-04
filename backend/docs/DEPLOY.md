@@ -23,6 +23,14 @@ returns immediately (D14, `CLAUDE.md` §5). Deploy the API alone and every
 submission sits in `queued` forever while founders poll a run nothing will pick
 up.
 
+Both build with `pip install -e . -c constraints.txt`. `pyproject.toml` declares
+every dependency as a floor (`>=`), which is right for a library and wrong for a
+deployment — Render builds from scratch, so a floor means production installs
+whatever was released this morning rather than what CI proved.
+`backend/constraints.txt` fixes the versions the suite is green against, and the
+CI install step uses the same file. Regenerate it from a green venv
+(`pip freeze --exclude-editable`) after any intentional upgrade.
+
 Three managed services stay **outside** Render:
 
 - **Neon** — Postgres. Already holds the data; recreating it as Render Postgres

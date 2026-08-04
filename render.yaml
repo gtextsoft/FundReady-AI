@@ -30,7 +30,13 @@ services:
     # cross-region Redis is charged and slow.
     region: frankfurt
 
-    buildCommand: pip install --upgrade pip && pip install -e .
+    # `-c backend/constraints.txt` -- resolved from `rootDir`, so `constraints.txt`
+    # -- pins every version to what the suite is green against. Without it a
+    # fresh build installs whatever was released this morning, because
+    # pyproject.toml declares floors (`>=`). The first thing that would break is
+    # `ai/client.py`'s request shape: silently, on the most expensive call the
+    # platform makes, with no CI test able to see it. See the file's header.
+    buildCommand: pip install --upgrade pip && pip install -e . -c constraints.txt
 
     # Migrations run here, once, before the new version takes traffic. On the
     # web service only: running it on both would have two processes applying
@@ -66,7 +72,7 @@ services:
     rootDir: backend
     plan: starter
     region: frankfurt
-    buildCommand: pip install --upgrade pip && pip install -e .
+    buildCommand: pip install --upgrade pip && pip install -e . -c constraints.txt
     # No preDeployCommand: migrations are the web service's job.
     startCommand: python -m app.workers.queue
     envVars:
