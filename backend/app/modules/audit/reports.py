@@ -207,6 +207,16 @@ class ActionItemView(_Strict):
     dimension: str
     action: str
     dimension_score: int | None = None
+    is_priority: bool = False
+    """Whether to show this in the short list before "show everything".
+
+    The first live audit produced 44 items. Every one is still in this array --
+    nothing is truncated server-side -- but a founder shown 44 acts on none of
+    them. Expect at most five true, each from a different dimension.
+
+    Defaults to `False` so a report stored before this field existed still
+    deserialises; those reports simply have no short list.
+    """
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -439,6 +449,9 @@ def _actions(stored: dict[str, Any]) -> list[ActionItemView]:
             dimension=item["dimension"],
             action=item["action"],
             dimension_score=item.get("dimension_score"),
+            # `.get` with a default: reports stored before this field existed
+            # are still served rather than raising on a missing key.
+            is_priority=bool(item.get("is_priority", False)),
         )
         for item in stored.get("action_plan", [])
     ]

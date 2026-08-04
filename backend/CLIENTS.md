@@ -599,7 +599,7 @@ one, which is why it is a `404` instead.
     }
   ],
   "action_plan": [
-    { "dimension": "legal_and_ip", "action": "Obtain a signed IP assignment …", "dimension_score": 40 }
+    { "dimension": "legal_and_ip", "action": "Obtain a signed IP assignment …", "dimension_score": 40, "is_priority": true }
   ]
 }
 ```
@@ -626,6 +626,16 @@ score, and `findings` says which ones.
 
 `action_plan` is already ordered worst-first, with unassessable dimensions
 ahead of low-scoring ones. Render it in the order given.
+
+**`is_priority` is the short list — render those first, behind a "show
+everything" affordance.** A real audit produced **44 items**, all of them
+specific and correct, and a founder shown 44 acts on none of them. At most five
+are marked, one from each of the worst five dimensions, so the short list is
+five different things to do rather than five ways of describing one weakness.
+Nothing is truncated server-side: the array still contains every item, and
+hiding the rest permanently would hide work the founder has to do. A report
+produced before this field existed has no `is_priority: true` at all — treat an
+empty short list as "show the full list".
 
 `severity` is `certain` (arithmetically impossible — cannot be a false positive)
 or `likely` (crossed a threshold — a real business could look like this). Word

@@ -9,6 +9,32 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **`is_priority` on every `action_plan` item** in the founder and admin report
+  responses (`GET /v1/startups/{id}/audits/{run_id}/report` and the admin
+  path). Additive and optional — a client that ignores it renders exactly what
+  it rendered before.
+  - **Why:** the first real audit produced **44 action items**. Every one was
+    specific and correct, and a plan that long is functionally no plan.
+  - **What is marked:** at most five, one from each of the worst five
+    dimensions. Not "the top five items" — a single weak dimension can raise
+    several unmet criteria, and five restatements of one problem is a worse
+    short list than a long one.
+  - **Nothing is truncated.** The array still carries every item, so a client
+    must offer a way to see the rest; the short list is a default view, not a
+    filter applied server-side.
+  - Reports stored before this change have no item marked. Treat an empty short
+    list as "show everything".
+
+### Changed
+- **Dimension scores are now weighted the way the rubric declares** in both
+  verdicts. `DimensionSpec.weight` was defined on all eleven dimensions and read
+  nowhere; synthesis took a plain mean. **No response field changed shape**, but
+  `fundability.score` and `saleability.score` will differ from what the same
+  inputs produced before, and the two verdicts now diverge roughly twice as far
+  — which is what the rubric always intended. A cached or stored score from an
+  earlier run is not comparable with a new one.
+
 ### Infrastructure
 - **Document storage is live, 2026-08-04 (T1.5).** No API change — the upload
   endpoints already existed and were tested against dummy credentials. What

@@ -318,6 +318,7 @@ def report_to_storage(report: Any) -> dict[str, Any]:
                 "dimension": item.dimension.value,
                 "action": item.action,
                 "dimension_score": item.dimension_score,
+                "is_priority": item.is_priority,
             }
             for item in report.action_plan
         ],

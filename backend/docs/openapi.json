@@ -38,6 +38,11 @@
               }
             ],
             "title": "Dimension Score"
+          },
+          "is_priority": {
+            "default": false,
+            "title": "Is Priority",
+            "type": "boolean"
           }
         },
         "required": [
