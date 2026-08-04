@@ -5,6 +5,7 @@ are one short list somebody can review without reading the upload flow -- the
 same reason the profile field registry lives in `fields.py`.
 """
 
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final
 
@@ -82,6 +83,24 @@ ALLOWED_CONTENT_TYPES: Final[dict[str, str]] = {
 }
 
 
+@dataclass(frozen=True, slots=True)
+class DocumentPayload:
+    """One stored document, fetched, as plain data.
+
+    What the audit worker is handed instead of a `Document` row: the ORM object
+    belongs to a session the worker closes before the model calls begin, and
+    touching an attribute afterwards is a lazy load against a connection that is
+    gone. Plain data also keeps `audit` from importing `intake.models`
+    (`ARCHITECTURE.md` section 3) -- the composition root maps this into
+    `audit.extraction.SourceDocument`.
+    """
+
+    document_id: str
+    filename: str
+    content_type: str
+    content: bytes
+
+
 def is_allowed_content_type(content_type: str) -> bool:
     """Whether this MIME type is on the allowlist.
 
@@ -95,6 +114,7 @@ __all__ = [
     "ALLOWED_CONTENT_TYPES",
     "MAX_UPLOAD_BYTES",
     "DocumentKind",
+    "DocumentPayload",
     "DocumentStatus",
     "ScanStatus",
     "is_allowed_content_type",

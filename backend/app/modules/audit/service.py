@@ -407,11 +407,12 @@ async def request_audit(
 
     fingerprint = input_fingerprint(
         profile_fields=profile.fields or {},
-        # Empty until T2.4a wires storage: the pipeline does not read documents
-        # yet, so hashing their keys now would create a second run whose verdict
-        # is identical to the first. It becomes non-empty in the same change
-        # that makes an upload capable of changing the answer.
-        document_keys=(),
+        # Non-empty since T2.4a: the pipeline reads documents now, so an upload
+        # changes the answer and must therefore change the hash. Without this a
+        # founder who uploads the financials the first run said were missing
+        # gets handed the pre-upload verdict back -- a regression that looks
+        # exactly like the idempotency cache working correctly.
+        document_keys=await intake.auditable_storage_keys(session, profile.id),
         rubric_version=v1.RUBRIC_VERSION,
     )
 

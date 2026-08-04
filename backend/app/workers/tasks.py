@@ -21,23 +21,38 @@ import asyncio
 import logging
 import sys
 import uuid
+from collections.abc import Sequence
+from dataclasses import replace
+from typing import TYPE_CHECKING
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.db import get_session_factory
+from app.modules.audit.extraction import (
+    SourceDocument,
+    extract_fields,
+    fenced_documents,
+    merge_into_profile,
+)
 from app.modules.audit.finance import compute
 from app.modules.audit.pipeline import (
     ProfileSnapshot,
     assemble_benchmark_context,
     financial_inputs,
+    render_profile_facts,
     run_pipeline,
 )
 from app.modules.audit.repository import AuditRunRepository
 from app.modules.audit.runs import AuditStatus
 from app.modules.audit.schemas import report_to_storage
 from app.modules.audit.synthesis import AuditReport
+from app.modules.intake import service as intake
+from app.modules.intake.documents import DocumentPayload
 from app.modules.intake.repository import StartupProfileRepository
+
+if TYPE_CHECKING:
+    from app.ai.client import AiClient
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +147,11 @@ async def run_audit_async(run_id: uuid.UUID) -> None:
                 return
 
             await repository.mark_running(run)
+            # Fetched inside the session and before it closes, for the same
+            # reason the snapshot is: the bytes have to outlive the connection.
+            payloads, unfetchable = await intake.load_auditable_documents(
+                session, run.startup_id
+            )
             benchmark_context = await assemble_benchmark_context(
                 session, snapshot, compute(financial_inputs(snapshot))
             )
@@ -140,7 +160,13 @@ async def run_audit_async(run_id: uuid.UUID) -> None:
         # The model calls happen outside the session. An audit is minutes of
         # latency; holding a pooled Neon connection open across it would exhaust
         # the pool long before the work finished.
-        report = await _score(snapshot, benchmark_context, owner_id=owner_id)
+        report = await _score(
+            snapshot,
+            benchmark_context,
+            owner_id=owner_id,
+            payloads=payloads,
+            unfetchable=unfetchable,
+        )
     except Exception:
         # Broad on purpose: every failure mode above -- a refusal, a timeout, a
         # provider outage, a validation mismatch, a database blip -- has the
@@ -227,20 +253,110 @@ async def _snapshot_for(
 
 
 async def _score(
-    snapshot: ProfileSnapshot, benchmark_context: str, *, owner_id: uuid.UUID
+    snapshot: ProfileSnapshot,
+    benchmark_context: str,
+    *,
+    owner_id: uuid.UUID,
+    payloads: Sequence[DocumentPayload] = (),
+    unfetchable: Sequence[str] = (),
 ) -> AuditReport:
-    """Run the pipeline with a freshly built AI client.
+    """Stage 1 (extraction) and then stages 2-5, with a freshly built AI client.
 
-    Built here rather than at module import so a worker with no
+    The client is built here rather than at module import so a worker with no
     `ANTHROPIC_API_KEY` fails on the job it cannot do, with that job marked
     failed, instead of refusing to start at all.
+
+    **This is the composition root for T2.4a.** `audit` never learns what an
+    `intake.Document` is and `intake` never learns what a `SourceDocument` is;
+    the mapping happens here, which is the only place allowed to know both
+    (`ARCHITECTURE.md` section 3) -- the same role `app.main` plays for the user
+    loader.
     """
     from app.ai.client import AiClient
 
     client = AiClient(get_settings())
+
+    sources = [
+        SourceDocument(
+            document_id=payload.document_id,
+            filename=payload.filename,
+            content_type=payload.content_type,
+            content=payload.content,
+        )
+        for payload in payloads
+    ]
+
+    scored_snapshot = snapshot
+    if sources:
+        scored_snapshot = await _with_extracted_fields(
+            client, snapshot, sources, owner_id=owner_id, unfetchable=unfetchable
+        )
+
+    # Only the text-renderable documents reach scoring and contradiction
+    # detection; both inline `UntrustedContent.text` and neither can carry a
+    # native PDF block. A PDF's content still reaches them, through the fields
+    # extraction read out of it -- see `extraction.fenced_documents`.
+    fenced, _ = fenced_documents(sources)
+
     return await run_pipeline(
         client,
-        snapshot=snapshot,
+        snapshot=scored_snapshot,
+        documents=fenced,
         benchmark_context=benchmark_context,
         user_id=str(owner_id),
+    )
+
+
+async def _with_extracted_fields(
+    client: "AiClient",
+    snapshot: ProfileSnapshot,
+    sources: Sequence[SourceDocument],
+    *,
+    owner_id: uuid.UUID,
+    unfetchable: Sequence[str] = (),
+) -> ProfileSnapshot:
+    """Read the documents and fold what they state into the profile -- in memory.
+
+    **Nothing is written back to `StartupProfile.fields`, deliberately.** The
+    idempotency fingerprint is taken from that JSONB, so persisting extracted
+    values would move the hash after every run: the next identical submission
+    would miss the unique key, mint a fresh AuditRun, and bill a second
+    `claude-opus-5` pass for evidence already scored. It is also not
+    self-correcting -- extraction runs again, merges again, and the hash moves
+    again -- and `merge_into_profile` dropping a low-confidence value on one run
+    but keeping it on the next makes it non-convergent. The founder's profile
+    stays exactly what they typed; the audit sees the enriched view.
+
+    Persisting the enrichment is worth doing, and it needs the fingerprint taken
+    before extraction rather than after. Recorded in `TASKS.md` as its own step.
+
+    An extraction failure is **not** fatal. The documents still reach scoring as
+    fenced text and the profile is still scoreable, so a refusal or a timeout
+    here costs evidence rather than the whole audit -- and the alternative is
+    telling a founder their audit failed when most of it could have run.
+    """
+    try:
+        extracted = await extract_fields(
+            client,
+            documents=sources,
+            known_facts=render_profile_facts(snapshot),
+            user_id=str(owner_id),
+        )
+    except Exception:
+        logger.exception(
+            "extraction failed; scoring the profile as submitted",
+            extra={"context": {"documents": len(sources)}},
+        )
+        return snapshot
+
+    unreadable = list(dict.fromkeys([*unfetchable, *extracted.output.unreadable]))
+    if unreadable:
+        logger.info(
+            "documents could not be read",
+            extra={"context": {"document_ids": unreadable}},
+        )
+
+    return replace(
+        snapshot,
+        fields=merge_into_profile(dict(snapshot.fields), extracted.output),
     )

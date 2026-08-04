@@ -29,8 +29,10 @@ from app.core.errors import ConflictError, InvalidRequestError, NotFoundError
 from app.core.ownership import owned_or_404
 from app.core.security import CurrentUser, Role
 from app.core.storage import (
+    ObjectTooLargeError,
     StoredObject,
     delete_object,
+    get_object,
     head_object,
     object_key,
     signed_download_url,
@@ -40,6 +42,7 @@ from app.modules.identity import service as identity
 from app.modules.intake.documents import (
     MAX_UPLOAD_BYTES,
     DocumentKind,
+    DocumentPayload,
     DocumentStatus,
     ScanStatus,
     is_allowed_content_type,
@@ -374,6 +377,91 @@ async def list_documents(
         await StartupProfileRepository(session).get(startup_id), actor, message=_DENIED
     )
     return await DocumentRepository(session).list_for_startup(profile.id)
+
+
+def _is_auditable(document: Document) -> bool:
+    """Whether the audit may read this document.
+
+    `READY` only -- an upload that never completed validation has no trustworthy
+    bytes behind it -- and never one the scanner flagged. `SKIPPED` **is**
+    allowed and that is not an oversight: no scanner is wired yet (T5.5), so
+    `scan_document` settles every upload at `SKIPPED`, and refusing it would
+    mean refusing every document that exists. When the scanner lands, this is
+    the one line that has to change.
+    """
+    return (
+        document.status is DocumentStatus.READY
+        and document.scan_status is not ScanStatus.INFECTED
+    )
+
+
+async def auditable_storage_keys(
+    session: AsyncSession, startup_id: uuid.UUID
+) -> list[str]:
+    """The storage keys the audit would read, for the idempotency fingerprint.
+
+    Keys rather than ids, and separate from `load_auditable_documents`, because
+    the fingerprint is computed in the request that creates the AuditRun -- long
+    before any bytes are fetched, and it must not fetch any. Reading a key list
+    is one indexed query; reading the documents is several megabytes over the
+    network, on the request thread.
+    """
+    documents = await DocumentRepository(session).list_for_startup(startup_id)
+    return [document.storage_key for document in documents if _is_auditable(document)]
+
+
+async def load_auditable_documents(
+    session: AsyncSession, startup_id: uuid.UUID
+) -> tuple[list[DocumentPayload], list[str]]:
+    """Fetch every readable document on a startup. Returns payloads and failures.
+
+    **No ownership check, deliberately**, for the same reason
+    `workers.tasks._snapshot_for` has none: there is no caller to authorise. The
+    AuditRun row already named this startup and was written by a service call
+    that did check. Inventing a `CurrentUser` here is how a background job ends
+    up running as an implicit superuser.
+
+    A document whose object has gone missing, or is too large to hold, is
+    **skipped and named** rather than failing the audit. The founder's other
+    documents are still evidence, and an audit that dies because one upload was
+    deleted is worse than one that says which upload it could not read -- the
+    second list is what `unreadable` reports back to them.
+    """
+    documents = await DocumentRepository(session).list_for_startup(startup_id)
+
+    payloads: list[DocumentPayload] = []
+    unreadable: list[str] = []
+    for document in documents:
+        if not _is_auditable(document):
+            continue
+        try:
+            content = get_object(document.storage_key)
+        except ObjectTooLargeError:
+            logger.warning(
+                "document too large for the audit to read",
+                extra={"context": {"document_id": str(document.id)}},
+            )
+            unreadable.append(str(document.id))
+            continue
+        if content is None:
+            logger.warning(
+                "document row has no object behind it",
+                extra={"context": {"document_id": str(document.id)}},
+            )
+            unreadable.append(str(document.id))
+            continue
+        payloads.append(
+            DocumentPayload(
+                document_id=str(document.id),
+                filename=document.filename,
+                # Never `None`: `complete_upload` writes what R2 reported. A row
+                # without one predates validation and has nothing to dispatch on.
+                content_type=document.content_type or "application/octet-stream",
+                content=content,
+            )
+        )
+
+    return payloads, unreadable
 
 
 async def request_download(

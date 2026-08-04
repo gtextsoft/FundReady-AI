@@ -1,6 +1,6 @@
 """Object storage: Cloudflare R2 over the S3 API (T1.5).
 
-Files never go in Postgres (`fundready-prd.md` §7, `DECISIONS.md` D4) and never
+Files never go in Postgres (`fundready-prd.md` Â§7, `DECISIONS.md` D4) and never
 through this API's own request path. The client uploads **straight to R2** with
 a short-lived signed URL, and downloads the same way. Two reasons that matters:
 a 25 MB deck streaming through a small web dyno is wasted memory and wasted
@@ -28,7 +28,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any, Literal
+from typing import Any, Final, Literal
 
 import boto3
 from botocore.client import Config
@@ -40,6 +40,16 @@ from app.core.errors import ConfigurationError
 logger = logging.getLogger(__name__)
 
 Bucket = Literal["documents", "evidence"]
+
+
+class ObjectTooLargeError(RuntimeError):
+    """An object is bigger than the caller is willing to hold in memory.
+
+    Its own type rather than a `ValueError` so the audit worker can tell it
+    apart from a corrupt file: this one is a document that exists and is fine,
+    which the founder should be told about, not a byte stream that would not
+    parse.
+    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,6 +223,56 @@ def head_object(
     )
 
 
+MAX_FETCH_BYTES: Final = 25 * 1024 * 1024
+"""Ceiling on one object read into memory by `get_object`.
+
+The upload path caps a document's size, but that cap is enforced *after* the
+fact with `head_object` (a presigned PUT carries no policy conditions), so a
+key can legitimately exist that is larger than the limit for a moment. The
+audit worker reads several documents into one process, and a worker killed by
+the OOM killer mid-audit leaves a run stranded in `running` -- the failure with
+no owner. Refusing to read is a failure that says what happened.
+"""
+
+
+def get_object(
+    key: str,
+    *,
+    bucket: Bucket = "documents",
+    max_bytes: int = MAX_FETCH_BYTES,
+    settings: Settings | None = None,
+) -> bytes | None:
+    """The bytes stored at `key`, or `None` if nothing is stored there.
+
+    `None` rather than an exception for a missing key, matching `head_object`:
+    a document row whose object has been deleted is a state the audit worker has
+    to survive, not an error that should fail the whole run.
+
+    Refuses anything over `max_bytes` **before** reading the body -- the size
+    comes from the `Content-Length` the store reports, so an oversized object
+    costs one round trip rather than the memory it would have taken.
+    """
+    settings = settings or get_settings()
+    client = get_client(settings)
+    try:
+        response = client.get_object(Bucket=bucket_name(bucket, settings), Key=key)
+    except ClientError as error:
+        code = error.response.get("Error", {}).get("Code")
+        if code in ("404", "NoSuchKey", "NotFound"):
+            return None
+        raise
+
+    length = int(response.get("ContentLength", 0))
+    if length > max_bytes:
+        response["Body"].close()
+        raise ObjectTooLargeError(
+            f"object at {key!r} is {length} bytes, over the {max_bytes} limit"
+        )
+
+    body: bytes = response["Body"].read()
+    return body
+
+
 def delete_object(
     key: str, *, bucket: Bucket = "documents", settings: Settings | None = None
 ) -> None:
@@ -232,11 +292,14 @@ def reset_client_cache() -> None:
 
 
 __all__ = [
+    "MAX_FETCH_BYTES",
     "Bucket",
+    "ObjectTooLargeError",
     "StoredObject",
     "bucket_name",
     "delete_object",
     "get_client",
+    "get_object",
     "head_object",
     "object_key",
     "reset_client_cache",
