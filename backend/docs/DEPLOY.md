@@ -146,13 +146,23 @@ DATABASE_URL          APP_LINK_BASE_URL     JWT_SECRET_KEY
 MFA_SECRET_ENCRYPTION_KEY                   REDIS_URL
 R2_ACCOUNT_ID         R2_ENDPOINT_URL       R2_ACCESS_KEY_ID
 R2_SECRET_ACCESS_KEY  R2_BUCKET_DOCUMENTS   R2_BUCKET_EVIDENCE
-ANTHROPIC_API_KEY     STRIPE_SECRET_KEY     STRIPE_WEBHOOK_SECRET
+ANTHROPIC_API_KEY     RESEND_API_KEY        EMAIL_FROM_ADDRESS
 ```
 
-Note the last two: **no code reads the Stripe keys until T3.3**, but the check
-does not know that. Production also enforces the OWASP Argon2 floors. Flip
-`APP_ENV` to `production` when the list is genuinely complete — the error names
-settings, not causes, so flipping early is a confusing ten minutes.
+Production also enforces the OWASP Argon2 floors. The error names settings
+rather than causes, so read the list literally: every name it prints is a
+variable that is genuinely blank.
+
+**The Stripe keys used to be on this list and are not any more.** Nothing reads
+them until T3.3, so `APP_ENV=production` could not boot at all and the only ways
+past were to stay on staging or to put a value that looks real into a secret
+manager and is not. They return in the change that makes `commerce` read them.
+
+**The two email settings were added to it**, and that is the more important
+half: without them registration succeeds, the account sits at
+`pending_verification`, the verification email never sends, and the founder can
+never log in — with no error anywhere and a deploy that looks healthy.
+Production now refuses to start rather than boot into that.
 
 ---
 
@@ -206,14 +216,14 @@ debug.
 If you want to trim, trim the web service, not the worker: an API that sleeps is
 an annoyance, a worker that is missing means audits never run at all.
 
-**Nothing requires email to be configured, and without it nobody can log in.**
-`RESEND_API_KEY` and `EMAIL_FROM_ADDRESS` are **absent from
-`missing_production_settings`**, so even `APP_ENV=production` boots happily
-without them. The failure is silent and total: registration succeeds, the
-account sits at `pending_verification`, the verification email never sends, and
-the founder can never authenticate. There is no error to read — the deploy looks
-healthy. Set both before you let anyone near it, and send yourself one real
-verification email as part of §4 step 1.
+**Without email nobody can log in, and in staging nothing tells you.**
+`RESEND_API_KEY` and `EMAIL_FROM_ADDRESS` are required in **production** as of
+2026-08-04, so a production boot now fails loudly instead of silently. On
+`staging` — which is where the first deploy runs — the old behaviour stands:
+registration succeeds, the account sits at `pending_verification`, the
+verification email never sends, and the founder can never authenticate, with no
+error to read and a deploy that looks healthy. Set both before you let anyone
+near it, and send yourself one real verification email as part of §4 step 1.
 
 Same shape for `APP_LINK_BASE_URL`: it *is* required in production, but in
 staging a blank value produces emails whose links point nowhere.
