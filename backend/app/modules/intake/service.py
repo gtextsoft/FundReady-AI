@@ -292,7 +292,7 @@ async def request_upload(
         owner_id=profile.owner_id,
         startup_id=profile.id,
         kind=kind,
-        filename=_safe_filename(filename),
+        filename=safe_filename(filename),
         storage_key=key,
     )
     return document, signed_upload_url(key, content_type=content_type)
@@ -507,8 +507,13 @@ def _rejection_reason(stored: StoredObject) -> str | None:
     return None
 
 
-def _safe_filename(filename: str) -> str:
+def safe_filename(filename: str) -> str:
     """The founder's filename, reduced to something safe to store and echo.
+
+    **Public because evidence upload (T3.5) needs the identical treatment.** A
+    founder attaching a screenshot has the same filename risks as one attaching
+    a deck, and a second copy of this reduction is a second place for one of the
+    three rules below to be forgotten.
 
     It is never a path component -- the storage key is built from UUIDs -- but
     it *is* returned in responses and set as `Content-Disposition` on download,

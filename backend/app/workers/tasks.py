@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.db import get_session_factory
+from app.core.storage import get_object
 from app.modules.audit.extraction import (
     SourceDocument,
     extract_fields,
@@ -52,13 +53,26 @@ from app.modules.audit.synthesis import AuditReport
 from app.modules.intake import service as intake
 from app.modules.intake.documents import DocumentPayload
 from app.modules.intake.repository import StartupProfileRepository
+from app.modules.readiness import service as readiness
+from app.modules.readiness.assessment import assess_evidence as assess_submissions
+from app.modules.readiness.evidence import MAX_ASSESSMENT_ATTEMPTS
+from app.modules.readiness.repository import (
+    EvidenceRepository,
+    ReadinessTaskRepository,
+)
 
 if TYPE_CHECKING:
-    from app.ai.client import AiClient
+    from app.ai.client import AiClient, AiResult
+    from app.modules.readiness.assessment import EvidenceAssessment
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["run_audit", "run_audit_async"]
+__all__ = [
+    "assess_evidence",
+    "assess_evidence_async",
+    "run_audit",
+    "run_audit_async",
+]
 
 if sys.platform == "win32":
     # Same reason as `app.main`: psycopg's async mode cannot run on Windows'
@@ -194,9 +208,85 @@ async def run_audit_async(run_id: uuid.UUID) -> None:
             )
             return
         await repository.mark_succeeded(stored, report_to_storage(report))
+        # Read off the row before the commit closes the session, for the same
+        # reason `owner_id` is read early above.
+        startup_id = stored.startup_id
+        owner_id = stored.owner_id
         await session.commit()
 
+    # **The report is committed before tasks are generated, and generation
+    # cannot fail this job (T3.1).** An earlier draft did both in one
+    # transaction, reasoning that a report whose action plan reached no task is
+    # a founder told "not yet" with nothing to do about it. That was the wrong
+    # trade, for a reason this block's position makes structural: everything
+    # from here down is **outside the `try` above**, so a raise from generation
+    # propagated straight out of `run_audit_async` onto RQ's failed queue for an
+    # automatic retry -- and every retry of an audit is another billed
+    # `claude-opus-5` high-effort pass. Sharing the transaction made it worse
+    # still: the rollback took `mark_succeeded` with it, discarding a report
+    # that had already been paid for and stranding the run in `running` for the
+    # lease to recover half an hour later. That is the exact three-bug cluster
+    # the lease was added to close, reintroduced through a new door.
+    #
+    # So the expensive, irreplaceable artefact is committed on its own, and
+    # generation is best-effort in a transaction of its own.
+    await _generate_readiness_tasks(
+        run_id, startup_id=startup_id, owner_id=owner_id, report=report
+    )
+
     logger.info("audit complete", extra={"context": {"run_id": str(run_id)}})
+
+
+async def _generate_readiness_tasks(
+    run_id: uuid.UUID,
+    *,
+    startup_id: uuid.UUID,
+    owner_id: uuid.UUID,
+    report: AuditReport,
+) -> None:
+    """Turn the action plan into readiness tasks, and never fail the job doing it.
+
+    Modelled on `_record_failure`, and swallowing for the same reason: this runs
+    after the point where the audit has been paid for and stored, so no failure
+    here is worth re-running the model over. `CLAUDE.md` section 5 puts audits on
+    the queue as idempotent jobs precisely so a retry is cheap; a retry of *this*
+    is not, because the retry re-enters at the top.
+
+    **This is the composition root for readiness**, the role `_score` plays for
+    extraction: `audit` never learns what a `ReadinessTask` is, and `readiness`
+    reads the typed report rather than re-parsing the JSONB just written from it.
+
+    What a failure costs, stated plainly: the founder has their report and an
+    empty task list. The next audit that succeeds for this startup regenerates
+    the whole plan, because generation reconciles rather than appends -- but
+    `request_audit` is idempotent on the profile fingerprint, so an *unchanged*
+    profile will not produce a new run. Recovery therefore needs the founder to
+    change something, or an operator to notice. The log line is at exception
+    level so Sentry raises it rather than leaving it to be discovered.
+
+    One failure is expected rather than exceptional: two runs for the same
+    startup finishing concurrently both read no existing tasks and both insert
+    the same fingerprints, and `uq_readiness_tasks_action` rejects the loser.
+    Not reachable on today's single-worker deploy, and cheap when it becomes
+    reachable -- the winner's tasks are already correct and the loser's plan
+    covers the same gaps.
+    """
+    try:
+        async with get_session_factory()() as session:
+            await readiness.generate_for_report(
+                session,
+                startup_id=startup_id,
+                owner_id=owner_id,
+                audit_run_id=run_id,
+                report=report,
+            )
+            await session.commit()
+    except Exception:
+        logger.exception(
+            "readiness tasks could not be generated; the report is stored and "
+            "the founder has no action list",
+            extra={"context": {"run_id": str(run_id), "startup_id": str(startup_id)}},
+        )
 
 
 async def _record_failure(run_id: uuid.UUID) -> None:
@@ -368,3 +458,190 @@ async def _with_extracted_fields(
         snapshot,
         fields=merge_into_profile(dict(snapshot.fields), extracted.output),
     )
+
+
+def assess_evidence(task_id: str) -> None:
+    """RQ entry point. See `assess_evidence_async` for what actually happens."""
+    asyncio.run(assess_evidence_async(uuid.UUID(task_id)))
+
+
+async def assess_evidence_async(task_id: uuid.UUID) -> None:
+    """Grade one task's outstanding evidence and record the verdict (T3.5).
+
+    Same shape as `run_audit_async` and for the same reasons, but the guarantees
+    it needs are not identical, so the differences are worth stating:
+
+    * **Idempotence comes from the query, not from a lease.** `list_gradable`
+      returns only `ready` submissions with no `outcome` yet, so a redelivered
+      job finds nothing and returns without spending anything. An audit needed a
+      conditional UPDATE because its row is claimable in several states; here
+      "already graded" is written on the rows themselves, and a second delivery
+      simply reads an empty list. Nothing to race over.
+    * **A failure is recorded and not re-raised**, exactly as the audit does.
+      Letting it propagate puts the job on RQ's failed queue for an automatic
+      retry, and every retry is another billed `AUDIT`-tier pass over the same
+      files. `record_assessment_failure` returns the task to `open` and charges
+      no attempt, because a provider outage is not the founder's mistake.
+    * **The attempt is charged on the grading, never on the dispatch.** A job
+      that dies before the model answers must leave the counter untouched, or a
+      worker restart would silently spend a founder's three tries.
+
+    The model call happens **outside** any session, as in `run_audit_async`: a
+    grading is seconds to a minute of latency and holding a pooled Neon
+    connection across it exhausts the pool long before the work finishes.
+    """
+    session_factory = get_session_factory()
+    graded: list[uuid.UUID] = []
+
+    try:
+        async with session_factory() as session:
+            task = await ReadinessTaskRepository(session).get(task_id)
+            if task is None:
+                logger.warning(
+                    "task vanished before its evidence could be graded",
+                    extra={"context": {"task_id": str(task_id)}},
+                )
+                return
+
+            # **Backstop on the attempt cap.** The service refuses a completion
+            # past the ceiling, so reaching here means a job was queued before
+            # the counter moved -- a redelivery, or two completions racing. This
+            # is the last point before money is spent, so it is checked again
+            # rather than trusted: a cap enforced only at the HTTP boundary is a
+            # cap that a queue reordering can step around.
+            if task.assessment_attempts >= MAX_ASSESSMENT_ATTEMPTS:
+                logger.warning(
+                    "refusing to grade past the attempt cap",
+                    extra={
+                        "context": {
+                            "task_id": str(task_id),
+                            "attempts": task.assessment_attempts,
+                        }
+                    },
+                )
+                return
+
+            pending = await EvidenceRepository(session).list_gradable(task_id)
+            if not pending:
+                logger.info(
+                    "no evidence outstanding; another delivery already graded it",
+                    extra={"context": {"task_id": str(task_id)}},
+                )
+                return
+
+            # Read everything off the rows before the session closes: an ORM
+            # attribute touched afterwards is a lazy load against a connection
+            # that is gone.
+            criterion = task.action
+            owner_id = task.owner_id
+            graded = [row.id for row in pending]
+            keys = [
+                (row.id, row.storage_key, row.filename, row.content_type)
+                for row in pending
+            ]
+            await session.commit()
+
+        submissions = _evidence_sources(keys)
+        result = await _grade(
+            criterion=criterion, submissions=submissions, owner_id=owner_id
+        )
+    except Exception:
+        # Broad on purpose, and for the same reason as the audit's: every
+        # failure mode here -- a refusal, a timeout, an outage, a validation
+        # mismatch, a storage blip -- has the same correct response, which is to
+        # release the task and stop. The detail goes to the log, never to a
+        # column a founder reads.
+        logger.exception(
+            "evidence assessment failed",
+            extra={"context": {"task_id": str(task_id)}},
+        )
+        await _release_task(task_id, graded)
+        return
+
+    async with session_factory() as session:
+        await readiness.record_assessment(
+            session,
+            task_id=task_id,
+            graded=graded,
+            outcome=result.output.outcome,
+            reasons=result.output.reasons,
+            prompt_ref=result.record.prompt_ref,
+        )
+        await session.commit()
+
+
+def _evidence_sources(
+    keys: Sequence[tuple[uuid.UUID, str, str, str | None]],
+) -> list[SourceDocument]:
+    """Fetch each submission's bytes from the evidence bucket.
+
+    A file that cannot be fetched is **skipped rather than fatal**, mirroring
+    `_with_extracted_fields`: one unreadable attachment should cost that
+    attachment, not the whole grading. If every one fails the list comes back
+    empty and `assess_evidence` returns `needs_more` without spending a call,
+    which is the honest answer -- there was nothing to grade.
+    """
+    sources: list[SourceDocument] = []
+    for evidence_id, key, filename, content_type in keys:
+        try:
+            content = get_object(key, bucket="evidence")
+        except Exception:
+            logger.exception(
+                "an evidence file could not be fetched; grading without it",
+                extra={"context": {"evidence_id": str(evidence_id)}},
+            )
+            continue
+        if content is None:
+            continue
+        sources.append(
+            SourceDocument(
+                document_id=str(evidence_id),
+                filename=filename,
+                content_type=content_type or "application/octet-stream",
+                content=content,
+            )
+        )
+    return sources
+
+
+async def _grade(
+    *,
+    criterion: str,
+    submissions: Sequence[SourceDocument],
+    owner_id: uuid.UUID,
+) -> "AiResult[EvidenceAssessment]":
+    """Build a client and grade. Split out so tests can drive it directly.
+
+    The client is constructed here rather than at module import for the reason
+    `_score` gives: a worker with no `ANTHROPIC_API_KEY` should fail the job it
+    cannot do, with that job recorded, rather than refusing to start at all.
+    """
+    from app.ai.client import AiClient
+
+    return await assess_submissions(
+        AiClient(get_settings()),
+        criterion=criterion,
+        submissions=submissions,
+        user_id=str(owner_id),
+    )
+
+
+async def _release_task(task_id: uuid.UUID, graded: Sequence[uuid.UUID]) -> None:
+    """Return a task to `open` after a failed grading, and do not raise doing it.
+
+    Runs inside the `except` above, so the failure it is recording may well *be*
+    the database. An exception raised from an `except` block propagates out onto
+    RQ's failed queue for the automatic retry this handler exists to avoid --
+    same reasoning, and same best-effort shape, as `_record_failure`.
+    """
+    try:
+        async with get_session_factory()() as session:
+            await readiness.record_assessment_failure(
+                session, task_id=task_id, graded=graded
+            )
+            await session.commit()
+    except Exception:
+        logger.exception(
+            "could not release a task after a failed assessment",
+            extra={"context": {"task_id": str(task_id)}},
+        )

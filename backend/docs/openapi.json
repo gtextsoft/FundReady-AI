@@ -194,6 +194,16 @@
         "title": "AdminReport",
         "type": "object"
       },
+      "AssessmentOutcome": {
+        "description": "What the grader concluded about one submission.\n\nThree values rather than a boolean, and the third is the important one:\n`CLAUDE.md` section 5 forbids a confident verdict on thin evidence, so\n\"plausible but unproven\" needs somewhere to land that is neither a pass nor\nan accusation.\n\n**Lives here rather than in `assessment.py`** so `models.py` can describe the\ncolumn without importing the AI client. A model layer that pulls in\n`anthropic` to declare an enum has the dependency arrow backwards.",
+        "enum": [
+          "pass",
+          "fail",
+          "needs_more"
+        ],
+        "title": "AssessmentOutcome",
+        "type": "string"
+      },
       "AuditRunResponse": {
         "description": "One audit run's lifecycle -- **status only, never the report**.\n\nThis is the polling shape the mobile client reads while an audit runs, and\nthe boundary matters: `CLAUDE.md` section 4 requires report content to go\nthrough a per-tier serializer, and this endpoint is reachable by the founder\nthe moment the run is created. Adding a `report` field here would route the\nfull internal report around the tier rules for every caller at once. The\nreport is served separately once its serializer exists (T4.2 for the\ninvestor tier, T2.7's founder view alongside it).\n\n`error_message` is founder-facing and deliberately thin. Whatever an\nengineer needs to debug the failure is in the log line for the run, not in a\ncolumn the API hands back.",
         "examples": [
@@ -672,6 +682,24 @@
         "title": "ChangeRoleRequest",
         "type": "object"
       },
+      "Dimension": {
+        "description": "The scored dimensions of rubric v1.\n\nStable identifiers: a stored AuditRun cites these, so a value is never\nrenamed in place. A new dimension means a new rubric version (D12).",
+        "enum": [
+          "financial_health",
+          "unit_economics",
+          "traction",
+          "market_opportunity",
+          "team",
+          "legal_and_ip",
+          "data_integrity",
+          "scalability",
+          "owner_independence",
+          "transferability",
+          "revenue_durability"
+        ],
+        "title": "Dimension",
+        "type": "string"
+      },
       "DiscoveryPage": {
         "additionalProperties": false,
         "description": "One page of discovery results.\n\nCarries `total` because `CLAUDE.md` section 6 asks for consistent list\nconventions and no client can render \"page N of M\" without it. Noted in\nTASKS.md as the shape the other list endpoints should be retrofitted to.",
@@ -935,6 +963,291 @@
           "error"
         ],
         "title": "ErrorEnvelope",
+        "type": "object"
+      },
+      "EvidenceDownload": {
+        "additionalProperties": false,
+        "description": "A short-lived link to a stored submission.",
+        "example": {
+          "download_url": "https://r2.example.com/evidence/...?X-Amz-Signature=...",
+          "evidence_id": "9c2f4e10-7a1b-4d3c-8e5f-1a2b3c4d5e6f",
+          "expires_in": 900,
+          "filename": "pricing-page-live.png"
+        },
+        "properties": {
+          "download_url": {
+            "title": "Download Url",
+            "type": "string"
+          },
+          "evidence_id": {
+            "format": "uuid",
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "download_url",
+          "expires_in",
+          "filename"
+        ],
+        "title": "EvidenceDownload",
+        "type": "object"
+      },
+      "EvidencePage": {
+        "additionalProperties": false,
+        "description": "One page of submissions, newest first.",
+        "example": {
+          "items": [],
+          "limit": 50,
+          "offset": 0,
+          "total": 0
+        },
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "description": "Total submissions for this task, ignoring paging.",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "EvidencePage",
+        "type": "object"
+      },
+      "EvidenceResponse": {
+        "additionalProperties": false,
+        "description": "One submission and, once graded, its verdict.",
+        "example": {
+          "assessed_at": "2026-08-05T11:04:19Z",
+          "content_type": "image/png",
+          "created_at": "2026-08-05T11:02:02Z",
+          "filename": "pricing-page-live.png",
+          "id": "9c2f4e10-7a1b-4d3c-8e5f-1a2b3c4d5e6f",
+          "outcome": "needs_more",
+          "reasons": [
+            "The screenshot shows a pricing page but carries no date or URL, so it cannot be tied to your business. Re-submit with the browser address bar visible."
+          ],
+          "size_bytes": 184320,
+          "status": "ready",
+          "task_id": "5f9b1c1e-6f5a-4c3b-9a1f-2d4e6a8c0b12"
+        },
+        "properties": {
+          "assessed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assessed At"
+          },
+          "content_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Type"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set when grading could not be completed at all (`assessment_failed`). Not a verdict \u2014 the task returns to `open` and no attempt is charged.",
+            "title": "Error Code"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssessmentOutcome"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`null` until graded. `pass`, `fail`, or `needs_more` \u2014 never inconclusive, because inconclusive *is* `needs_more`."
+          },
+          "reasons": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Founder-facing, present on every outcome including a pass. Render them as a list; they are written to be read directly.",
+            "title": "Reasons"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "status": {
+            "$ref": "#/components/schemas/EvidenceStatus",
+            "description": "Upload lifecycle only. `pending` means the file has not arrived, `rejected` means it was refused and deleted. Grading is `outcome`."
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "task_id",
+          "filename",
+          "content_type",
+          "size_bytes",
+          "status",
+          "outcome",
+          "reasons",
+          "assessed_at",
+          "error_code",
+          "created_at"
+        ],
+        "title": "EvidenceResponse",
+        "type": "object"
+      },
+      "EvidenceStatus": {
+        "description": "Where an upload sits, independent of how it was graded.\n\nKept separate from `AssessmentOutcome` because they answer different\nquestions and fail independently: a file can arrive perfectly and be graded\n`fail`, or be rejected by storage validation and never reach the grader at\nall. Collapsing them into one column would make \"rejected\" and \"failed\"\nindistinguishable to a founder, and those mean very different things --\none is \"your file did not upload\", the other is \"your work was assessed\".",
+        "enum": [
+          "pending",
+          "ready",
+          "rejected"
+        ],
+        "title": "EvidenceStatus",
+        "type": "string"
+      },
+      "EvidenceUploadRequest": {
+        "additionalProperties": false,
+        "description": "Declare a file before uploading it.\n\nBoth fields are a **declaration**, not a fact: the server checks\n`content_type` against the allowlist and bakes it into the signature, then\nreads back what actually landed at `complete`. A client that declares a PDF\nand uploads a zip is refused by R2, not trusted.",
+        "example": {
+          "content_type": "image/png",
+          "filename": "pricing-page-live.png"
+        },
+        "properties": {
+          "content_type": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Content Type",
+            "type": "string"
+          },
+          "filename": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Filename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "filename",
+          "content_type"
+        ],
+        "title": "EvidenceUploadRequest",
+        "type": "object"
+      },
+      "EvidenceUploadTicket": {
+        "additionalProperties": false,
+        "description": "Where to send the file, and the limits it must respect.",
+        "example": {
+          "evidence_id": "9c2f4e10-7a1b-4d3c-8e5f-1a2b3c4d5e6f",
+          "expires_in": 900,
+          "max_bytes": 26214400,
+          "upload_url": "https://r2.example.com/evidence/...?X-Amz-Signature=..."
+        },
+        "properties": {
+          "evidence_id": {
+            "format": "uuid",
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "expires_in": {
+            "description": "Seconds until `upload_url` stops working.",
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "max_bytes": {
+            "description": "Reject larger files client-side too.",
+            "title": "Max Bytes",
+            "type": "integer"
+          },
+          "upload_url": {
+            "description": "Single-use, single-key, expiring URL. `PUT` the raw bytes with the same `Content-Type` you declared. Never persist this.",
+            "title": "Upload Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "upload_url",
+          "expires_in",
+          "max_bytes"
+        ],
+        "title": "EvidenceUploadTicket",
         "type": "object"
       },
       "FieldSource": {
@@ -1775,6 +2088,206 @@
         "title": "ProvisionAdminRequest",
         "type": "object"
       },
+      "ReadinessSummary": {
+        "additionalProperties": false,
+        "description": "How much work stands between this startup and investor visibility.\n\nA separate, cheap read: a founder's home screen wants \"3 of 11 done\", and\npaging the whole task list to compute it would make every app launch a\nmulti-page fetch.\n\n`required_open` is the number the gate in T3.6 will actually test, so it is\nnamed for what it means rather than for how it is counted.",
+        "example": {
+          "recommended_total": 13,
+          "required_open": 29,
+          "required_passed": 2,
+          "required_total": 31,
+          "total": 44
+        },
+        "properties": {
+          "recommended_total": {
+            "description": "Tasks worth doing that do not block visibility.",
+            "title": "Recommended Total",
+            "type": "integer"
+          },
+          "required_open": {
+            "description": "Required tasks not yet passed. Investor visibility is gated on this reaching zero (T3.6), alongside the audit itself clearing.",
+            "title": "Required Open",
+            "type": "integer"
+          },
+          "required_passed": {
+            "description": "Required tasks whose evidence has been assessed as sufficient.",
+            "title": "Required Passed",
+            "type": "integer"
+          },
+          "required_total": {
+            "description": "Tasks that block investor visibility.",
+            "title": "Required Total",
+            "type": "integer"
+          },
+          "total": {
+            "description": "Every task ever generated for this startup.",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "required_total",
+          "required_open",
+          "required_passed",
+          "recommended_total"
+        ],
+        "title": "ReadinessSummary",
+        "type": "object"
+      },
+      "ReadinessTaskPage": {
+        "additionalProperties": false,
+        "description": "One page of readiness tasks.\n\nSame shape as `investor.DiscoveryPage` -- `items`/`total`/`limit`/`offset` --\nbecause `CLAUDE.md` section 6 requires list conventions to be identical\nacross endpoints and this is the first collection built after that gap was\nwritten down in TASKS.md. New collections adopt it at birth rather than\nbeing retrofitted; `GET /v1/startups/{id}/documents` is the one still owed\nthe change, and it needs a version story because the mobile client already\nconsumes its bare-array shape.",
+        "example": {
+          "items": [],
+          "limit": 50,
+          "offset": 0,
+          "total": 0
+        },
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReadinessTaskResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "description": "Total matching tasks, ignoring pagination.",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "ReadinessTaskPage",
+        "type": "object"
+      },
+      "ReadinessTaskResponse": {
+        "additionalProperties": false,
+        "description": "One readiness task, as the founder sees it.",
+        "example": {
+          "action": "State customer acquisition cost and the period it was measured over, with the spend it was derived from.",
+          "audit_run_id": "b8eabf62-1f2e-4c3d-9a8b-7c6d5e4f3a2b",
+          "created_at": "2026-08-05T09:14:22Z",
+          "dimension": "unit_economics",
+          "dimension_score": 41,
+          "id": "5f9b1c1e-6f5a-4c3b-9a1f-2d4e6a8c0b12",
+          "is_priority": true,
+          "requirement": "required",
+          "startup_id": "0b6f0f2a-1c2d-4e5f-8a9b-0c1d2e3f4a5b",
+          "status": "open",
+          "updated_at": "2026-08-05T09:14:22Z"
+        },
+        "properties": {
+          "action": {
+            "description": "What to do, in the rubric's own wording, as issued.",
+            "title": "Action",
+            "type": "string"
+          },
+          "assessment_attempts": {
+            "description": "How many times evidence for this task has been graded.",
+            "title": "Assessment Attempts",
+            "type": "integer"
+          },
+          "attempts_remaining": {
+            "description": "Graded attempts left before the task locks. At `0` a new upload is refused with `409` and only a SACI admin can reopen it.",
+            "title": "Attempts Remaining",
+            "type": "integer"
+          },
+          "audit_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The audit run that most recently raised this gap, or `null` if that run has since been deleted. Use it to link the task back to the report that is asking for it.",
+            "title": "Audit Run Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "dimension": {
+            "$ref": "#/components/schemas/Dimension",
+            "description": "Which rubric dimension raised this gap."
+          },
+          "dimension_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The 0-100 score that produced this task, or `null` when the dimension could not be assessed at all. Use it to order and to explain; do not render it to the founder as a grade.",
+            "title": "Dimension Score"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_priority": {
+            "description": "Whether this is in the short list to show first. An audit marks at most five, one per weak dimension. If nothing is marked, show everything.",
+            "title": "Is Priority",
+            "type": "boolean"
+          },
+          "requirement": {
+            "$ref": "#/components/schemas/Requirement",
+            "description": "`required` blocks investor visibility; `recommended` does not. Derived from the dimension's score against the readiness threshold, not from a model's opinion."
+          },
+          "startup_id": {
+            "format": "uuid",
+            "title": "Startup Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskStatus",
+            "description": "Where the task sits in the evidence loop. Written by evidence assessment (T3.5), never by a client."
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "startup_id",
+          "audit_run_id",
+          "dimension",
+          "action",
+          "requirement",
+          "status",
+          "dimension_score",
+          "is_priority",
+          "assessment_attempts",
+          "attempts_remaining",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ReadinessTaskResponse",
+        "type": "object"
+      },
       "RefreshRequest": {
         "additionalProperties": false,
         "description": "The refresh token to exchange. It is consumed by this call.",
@@ -1887,6 +2400,15 @@
         },
         "title": "RegistrationAccepted",
         "type": "object"
+      },
+      "Requirement": {
+        "description": "Whether a founder must close this gap to become investor-visible.\n\nThe distinction is the whole point of the readiness loop: the gate in T3.6\nis \"audit cleared **and** all required tasks passed\", so `RECOMMENDED` is\ngenuinely optional and `REQUIRED` genuinely blocks. Marking everything\nrequired would make the gate unreachable; marking nothing required would\nmake it meaningless.",
+        "enum": [
+          "required",
+          "recommended"
+        ],
+        "title": "Requirement",
+        "type": "string"
       },
       "RevealResponse": {
         "additionalProperties": false,
@@ -2279,6 +2801,19 @@
           "canceled"
         ],
         "title": "SubscriptionStatus",
+        "type": "string"
+      },
+      "TaskStatus": {
+        "description": "Where a task sits in the evidence loop (PRD section 4.2).\n\n**The full lifecycle is declared here although only two states are\nreachable in T3.1.** `SUBMITTED`, `PASSED`, `FAILED` and `NEEDS_MORE` are\nwritten by evidence assessment in T3.5. Declaring them now is deliberate on\ntwo grounds: `CLAUDE.md` section 6 requires every enum the mobile client\ndepends on to be documented, and the client builds its task UI once rather\nthan twice; and the column is a non-native enum backed by a check\nconstraint, so adding values later is a migration on live rows. The cost of\ndeclaring early is a docstring; the cost of declaring late is a schema\nchange plus a client release.\n\n`CLIENTS.md` says which states are reachable today, so nobody builds against\na promise that has not landed.",
+        "enum": [
+          "open",
+          "submitted",
+          "passed",
+          "failed",
+          "needs_more",
+          "obsolete"
+        ],
+        "title": "TaskStatus",
         "type": "string"
       },
       "TokenPairResponse": {
@@ -2991,6 +3526,85 @@
         "summary": "Read any audit report in full",
         "tags": [
           "audit"
+        ]
+      }
+    },
+    "/v1/admin/tasks/{task_id}/reopen": {
+      "post": {
+        "description": "**SACI admins only.** Resets a task's assessment attempts to zero and returns it to `open`, so the founder can submit again.\n\nThis is the only way past the attempt cap, and therefore the only lever that undoes the guard on the investor-visibility gate \u2014 every call is written to the immutable audit log with the admin who made it.\n\nA `passed` task can be reopened too. That is the dispute path for a grading somebody believes was wrong, in either direction.",
+        "operationId": "reopen_task_v1_admin_tasks__task_id__reopen_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessTaskResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Reopen a locked task",
+        "tags": [
+          "readiness"
         ]
       }
     },
@@ -4788,6 +5402,164 @@
         ]
       }
     },
+    "/v1/evidence/{evidence_id}/complete": {
+      "post": {
+        "description": "Call this after the `PUT` succeeds. The server reads the object back and judges it on what actually arrived, not on what you declared.\n\nOn success the task moves to `submitted` and grading is queued. **Grading is asynchronous** \u2014 poll the task or this submission until `outcome` is non-null. Expect seconds to a minute.\n\nA file that is missing, empty, larger than `max_bytes`, or of an unaccepted type is **deleted from storage** and marked `rejected`; `422` carries the reason in `details.reason` (`object_missing`, `empty_file`, `file_too_large`, `unsupported_content_type`). A rejected upload costs no assessment attempt.\n\nSafe to retry: calling it again on a confirmed submission returns it unchanged and does not queue a second grading.",
+        "operationId": "complete_evidence_upload_v1_evidence__evidence_id__complete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "evidence_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Evidence Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Confirm an evidence upload",
+        "tags": [
+          "readiness"
+        ]
+      }
+    },
+    "/v1/evidence/{evidence_id}/download": {
+      "get": {
+        "description": "A short-lived signed URL for a file the caller owns, or any file for a SACI admin reviewing a disputed grading.\n\n`404` for a `rejected` submission \u2014 its bytes were deleted at validation \u2014 and for one still `pending`.",
+        "operationId": "download_evidence_v1_evidence__evidence_id__download_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "evidence_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Evidence Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceDownload"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Download a submission",
+        "tags": [
+          "readiness"
+        ]
+      }
+    },
     "/v1/health": {
       "get": {
         "description": "Returns 200 whenever the API process is serving requests. Requires no authentication and performs no dependency checks, so a 200 means *this process is alive*, not *the platform is healthy*.",
@@ -5951,6 +6723,511 @@
         "summary": "Start a document upload",
         "tags": [
           "intake"
+        ]
+      }
+    },
+    "/v1/startups/{startup_id}/tasks": {
+      "get": {
+        "description": "The tasks this startup's latest audit is asking for, ordered the way to show them: priority items first, then everything that blocks investor visibility, then the rest -- worst-scoring dimension first within each group.\n\n**`requirement` is the field that matters.** `required` blocks investor visibility; `recommended` does not. It is computed from the dimension's score against the readiness threshold, so it can change between audits as a founder improves.\n\n**Empty is a normal answer.** A startup with no succeeded audit has no tasks, and so does one whose audit found no unmet criteria. Neither is an error.\n\n`status` is `open` or `obsolete` today; the evidence states arrive with T3.5. `obsolete` means a later audit stopped raising the gap and nobody had worked on it -- filter it out unless you are showing history.\n\n`total` is the count ignoring pagination, so a client can render \"page N of M\".\n\n**Tasks are generated, never created.** They come from an audit's action plan, so there is no endpoint that creates, edits, or completes one -- a founder becomes investor-visible by doing the work and having evidence assessed (T3.5), not by marking a task done. A task belonging to another founder returns `404`, never `403`: a `403` would confirm the id is real.",
+        "operationId": "list_readiness_tasks_v1_startups__startup_id__tasks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "startup_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Startup Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only tasks in this state.",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TaskStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only tasks in this state.",
+              "title": "Status"
+            }
+          },
+          {
+            "description": "Only blocking (`required`) or only optional tasks.",
+            "in": "query",
+            "name": "requirement",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Requirement"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only blocking (`required`) or only optional tasks.",
+              "title": "Requirement"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessTaskPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "List readiness tasks",
+        "tags": [
+          "readiness"
+        ]
+      }
+    },
+    "/v1/startups/{startup_id}/tasks/summary": {
+      "get": {
+        "description": "How much work stands between this startup and investor visibility, without paging the whole task list -- built for a home screen that loads on every app launch.\n\n`required_open` is the number the visibility gate will test (T3.6): when it reaches zero **and** the audit itself clears, the startup becomes discoverable. Until T3.5 lands, nothing can move a task off `open`, so expect `required_open` to equal `required_total`.\n\nRetired (`obsolete`) tasks are excluded from every count -- they are not work the founder owes.\n\n**Tasks are generated, never created.** They come from an audit's action plan, so there is no endpoint that creates, edits, or completes one -- a founder becomes investor-visible by doing the work and having evidence assessed (T3.5), not by marking a task done. A task belonging to another founder returns `404`, never `403`: a `403` would confirm the id is real.",
+        "operationId": "read_readiness_summary_v1_startups__startup_id__tasks_summary_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "startup_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Startup Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Readiness progress at a glance",
+        "tags": [
+          "readiness"
+        ]
+      }
+    },
+    "/v1/startups/{startup_id}/tasks/{task_id}": {
+      "get": {
+        "description": "One task in full. `audit_run_id` links back to the report that is asking for it, so a client can show the founder why.\n\n**Tasks are generated, never created.** They come from an audit's action plan, so there is no endpoint that creates, edits, or completes one -- a founder becomes investor-visible by doing the work and having evidence assessed (T3.5), not by marking a task done. A task belonging to another founder returns `404`, never `403`: a `403` would confirm the id is real.",
+        "operationId": "read_readiness_task_v1_startups__startup_id__tasks__task_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "startup_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Startup Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessTaskResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Read one readiness task",
+        "tags": [
+          "readiness"
+        ]
+      }
+    },
+    "/v1/tasks/{task_id}/evidence": {
+      "get": {
+        "description": "Every submission against this task, newest first, including `pending` and `rejected` ones so a founder can see an upload that never finished.\n\n`outcome` is `null` until graded. `reasons` is what to show the founder \u2014 it is written for them and is present on a pass as well as a failure.",
+        "operationId": "list_evidence_v1_tasks__task_id__evidence_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidencePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "List evidence for a task",
+        "tags": [
+          "readiness"
+        ]
+      },
+      "post": {
+        "description": "Reserves a submission against one readiness task and returns a URL to send the file to.\n\n**Three steps, same as document upload.** 1) `POST` here to reserve a row and get a signed URL. 2) `PUT` the raw bytes to that URL with the same `Content-Type` you declared \u2014 this call does not go through this API. 3) `POST .../complete` so the server reads the object back and queues it for grading. A row that never reaches step 3 stays `pending` and is never graded.\n\n**Attach several files to one task when they belong together.** The grader reads a task's outstanding submissions as one set, so a screenshot plus the invoice that dates it are graded together and count as **one** attempt. Uploading them as separate attempts is strictly worse for the founder.\n\n`409` when the task has already passed (nothing left to prove) or when `attempts_remaining` is `0` \u2014 check that field before offering an upload button. `422` if `content_type` is not on the allowlist.\n\nAnother founder's task returns `404`, never `403`.",
+        "operationId": "start_evidence_upload_v1_tasks__task_id__evidence_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvidenceUploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceUploadTicket"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Start an evidence upload",
+        "tags": [
+          "readiness"
         ]
       }
     },

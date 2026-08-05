@@ -164,31 +164,39 @@ These hold across every endpoint. Assume them rather than checking per-route.
   parse leniently and ignore what you do not recognise. Breaking changes get a
   new version and a `CHANGELOG` entry.
 
-### List conventions — not yet consistent
+### List conventions — one convention, two legacy exceptions
 
-Read this before writing a generic list helper: **the two list endpoints do not
-agree with each other**, so a shared abstraction built today will be wrong for
-one of them.
+Read this before writing a generic list helper: most collections agree, but two
+older endpoints do not, so an abstraction applied blindly across all of them will
+be wrong for those two.
 
-| Endpoint | Query parameters |
-|---|---|
-| `GET /v1/benchmarks` | `sector`, `stage`, `metric`, `region`, `include_retired`, `limit`, `offset` — all optional |
-| `GET /v1/startups/{id}/documents` | **none** — returns every document for that startup |
+| Endpoint | Query parameters | Response shape |
+|---|---|---|
+| `GET /v1/discover` | thesis filters, `limit`, `offset` | `{items, total, limit, offset}` |
+| `GET /v1/startups/{id}/tasks` | `status`, `requirement`, `limit`, `offset` | `{items, total, limit, offset}` |
+| `GET /v1/tasks/{id}/evidence` | `limit`, `offset` | `{items, total, limit, offset}` |
+| `GET /v1/benchmarks` | `sector`, `stage`, `metric`, `region`, `include_retired`, `limit`, `offset` | bare array |
+| `GET /v1/startups/{id}/documents` | **none** — returns every document for that startup | bare array |
 
-`limit`/`offset` paging exists only on benchmarks (admin web). Neither endpoint
-takes a sort parameter, and neither returns a total count, so there is no way to
-render "page 3 of 12" — paginate with a cursor-style "load more" instead.
+**The convention is the paged envelope** — `{items, total, limit, offset}`, with
+`limit` capped at 100 and `total` counted ignoring pagination so you can render
+"page 3 of 12". Every collection built from T3.1 onward adopts it at birth.
 
-`CLAUDE.md` §6 requires list conventions to be consistent across every list
-endpoint. They are not, and this is documented rather than papered over; it is
-tracked as an open follow-up in `TASKS.md`. Expect `documents` to gain paging
-before Phase 3 adds more collections.
+Two endpoints predate it and still return a bare array with no `total`:
+`benchmarks` (admin web only) and `documents`. `documents` is the one that
+matters to mobile, and changing its shape breaks a response the client already
+consumes — so it needs a version story rather than a quiet swap. Until then, do
+not build one generic list helper across all four; build it against the envelope
+and special-case the two legacy endpoints.
+
+No endpoint takes a sort parameter. Ordering is server-decided and documented
+per endpoint (`tasks` is priority-first, `audits` is newest-first).
 
 ---
 
 ## 4. Endpoints by role
 
-29 operations across 25 paths today. Anything not listed here is not built yet
+52 operations across 46 paths today. Anything not listed here is not built yet
 — see §7.
 
 ### Public (no token)
@@ -227,6 +235,13 @@ before Phase 3 adds more collections.
 | `POST /v1/startups/{id}/audits` | Request an audit — see §5a |
 | `GET /v1/startups/{id}/audits` | This startup's runs, newest first |
 | `GET /v1/startups/{id}/audits/{run_id}` | Poll one run's status |
+| `GET /v1/startups/{id}/tasks` | Readiness tasks — see §5e |
+| `GET /v1/startups/{id}/tasks/summary` | Progress counts for a home screen |
+| `GET /v1/startups/{id}/tasks/{task_id}` | One task |
+| `POST /v1/tasks/{id}/evidence` | Start an evidence upload — see §5f |
+| `POST /v1/evidence/{id}/complete` | Confirm it; queues grading |
+| `GET /v1/tasks/{id}/evidence` | Submissions for a task |
+| `GET /v1/evidence/{id}/download` | Expiring signed URL |
 
 If you omit `name` on profile creation it is derived from your company email
 domain — `founder@acme.com` → `Acme`. That is a starting point, not a verified
@@ -775,6 +790,174 @@ has no claim on the new one. Always pass the `run_id` you were given —
 
 ---
 
+## 5e. Readiness tasks (T3.1)
+
+When an audit succeeds it does two things: stores the report (§5b) and turns its
+action plan into **readiness tasks**. The report is what the founder reads once;
+the tasks are what they work through.
+
+| | |
+|---|---|
+| `GET /v1/startups/{id}/tasks` | The list. Paged envelope, filterable |
+| `GET /v1/startups/{id}/tasks/summary` | Counts only — for a home screen |
+| `GET /v1/startups/{id}/tasks/{task_id}` | One task |
+| `POST /v1/tasks/{id}/evidence` | Start an evidence upload — see §5f |
+| `POST /v1/evidence/{id}/complete` | Confirm it; queues grading |
+| `GET /v1/tasks/{id}/evidence` | Submissions for a task |
+| `GET /v1/evidence/{id}/download` | Expiring signed URL |
+
+### `requirement` is the field that matters
+
+| Value | Means |
+|---|---|
+| `required` | Blocks investor visibility. The founder must close this. |
+| `recommended` | Worth doing. Does not block anything. |
+
+It is **computed, not judged**: a dimension that scored below the readiness
+threshold, or that could not be scored at all, produces required tasks; a
+dimension at or above the threshold produces recommended ones. So it can change
+between audits as a founder improves, and a task that was `required` last month
+can come back `recommended`. Re-read it on every fetch; do not cache it.
+
+### There is no endpoint that completes a task
+
+Deliberate, and it is the product rule (`DECISIONS.md` D10): readiness is earned
+by doing the work, uploading evidence, and having the AI assess it — not by
+asserting completion and not by paying. **Do not build a checkbox that PATCHes a
+status.** Nothing accepts one, and nothing will. The evidence upload flow that
+moves a task is T3.5.
+
+### What a re-audit does to the list
+
+Tasks are reconciled against the new report, never rewritten, so a founder's
+progress survives:
+
+- A gap the new audit still raises **keeps its task and its id** — severity and
+  wording refresh, status does not.
+- A gap the new audit drops is set to `obsolete`, but **only if nobody had
+  worked on it**. Anything carrying evidence keeps its state.
+- A gap that comes back after being retired **reopens** to `open`.
+
+Practically: `id` is stable across audits, so local state keyed on it survives.
+Filter `status=open` for the working list; show `obsolete` only in a history view.
+
+### Ordering, and the short list
+
+The list comes back priority-first, then everything `required`, then the rest —
+worst-scoring dimension first within each group. Render it in the order given.
+
+`is_priority` marks at most five tasks, one per weak dimension. A real audit
+produced **44 tasks**, and no founder reads 44 — lead with the priority set and
+put the rest behind "show everything". **If nothing is marked, show everything**;
+that means the report predates the field.
+
+`dimension_score` is the 0–100 score that raised the task, or `null` when the
+dimension could not be assessed. Use it to explain and to order. Do not render it
+to the founder as a grade — it grades the dimension, not them.
+
+### The summary
+
+`GET .../tasks/summary` returns counts only, so a home screen does not page the
+whole list on every launch:
+
+```json
+{ "total": 44, "required_total": 31, "required_open": 29,
+  "required_passed": 2, "recommended_total": 13 }
+```
+
+`required_open` is the number the investor-visibility gate will test (T3.6): the
+startup becomes discoverable when it reaches zero **and** the audit itself
+clears. Until T3.5 lands nothing can move a task off `open`, so expect
+`required_open` to equal `required_total` today — build the progress bar now,
+but do not be surprised that it does not move yet.
+
+### Empty is a normal answer
+
+A startup with no succeeded audit has no tasks. So does one whose audit found no
+unmet criteria. Neither is an error — render "nothing to do yet", not a failure
+state. Another founder's task is `404`, never `403`.
+
+---
+
+## 5f. Evidence — proving a task was done (T3.5)
+
+This is how a task leaves `open`. The founder uploads something that shows the
+work, the AI grades it against the task's own wording, and the task moves.
+
+| | |
+|---|---|
+| `POST /v1/tasks/{task_id}/evidence` | Step 1 — reserve and get a signed URL |
+| `POST /v1/evidence/{evidence_id}/complete` | Step 3 — confirm; queues grading |
+| `GET /v1/tasks/{task_id}/evidence` | Submissions for a task, newest first |
+| `GET /v1/evidence/{evidence_id}/download` | Expiring signed URL |
+| `POST /v1/admin/tasks/{task_id}/reopen` | **SACI admin** — clear the attempt cap |
+
+### The upload flow is identical to §5 documents
+
+Reserve → `PUT` the raw bytes to `upload_url` yourself → `complete`. Same
+allowlist, same 25 MiB cap, same rejection reasons in `details.reason`. A
+submission that never reaches `complete` stays `pending` and is never graded.
+
+### Attach related files to the same task — it is one attempt
+
+The grader reads a task's outstanding submissions **as one set**. A screenshot
+plus the invoice that dates it are graded together and cost **one** attempt.
+Uploading them as separate attempts is strictly worse for your user, so batch
+them: reserve and `PUT` each file, then `complete` each one.
+
+### Grading is asynchronous
+
+`complete` returns immediately and the task moves to `submitted`. Poll the task
+or the submission until `outcome` is non-null — seconds to a minute. Do not
+block the UI on it; show "being reviewed".
+
+### The three outcomes
+
+| `outcome` | Task becomes | What it means |
+|---|---|---|
+| `pass` | `passed` | The submission demonstrates the criterion was met. |
+| `needs_more` | `needs_more` | Plausible but not demonstrated — partial, undated, unattributed. **Expect this to be common.** |
+| `fail` | `failed` | Does not address the criterion, or contradicts it. |
+
+`reasons` is present on **every** outcome, including a pass. It is written for
+the founder and should be rendered directly as a list — do not summarise it.
+
+`needs_more` is the deliberate default whenever the grader is unsure. Frame it
+in the UI as "nearly there, here's what's missing", never as a rejection.
+
+### The attempt cap — build for this
+
+**A founder gets 3 graded attempts per task.** `attempts_remaining` is on every
+task response. At `0`, `POST .../evidence` returns `409` and the task is locked.
+
+- **Check `attempts_remaining` before showing an upload button.** Do not
+  discover the cap by failing.
+- **The cap is re-checked at `complete`, not just at reserve.** A ticket you
+  reserved earlier will be refused with `409` if the task hit the cap or
+  passed in the meantime — do not treat a reserved `evidence_id` as a
+  guaranteed slot.
+- Show it as a budget ("2 tries left") from the first attempt, not a warning
+  that appears at the end.
+- A `needs_more` **consumes an attempt**. Say so before the founder uploads
+  something thin.
+- A **rejected upload costs nothing** — a wrong file type or an oversized file
+  never reached the grader.
+- A **grading that errored costs nothing** — `error_code` is
+  `assessment_failed`, the task returns to `open`, and the founder can retry.
+  This is not a verdict; do not render it as one.
+
+Only a SACI admin can reopen a locked task, and every reopen is written to the
+immutable audit log. There is no founder-facing route for it — surface a
+"contact support" path instead.
+
+### Evidence is founder-tier
+
+Nothing here is ever served to an investor. Another founder's evidence is `404`,
+and the download route returns `404` for a `pending` submission (not arrived) or
+a `rejected` one (bytes deleted at validation).
+
+---
+
 ## 6. Enums
 
 Every value the client may switch on. Treat unknown values as forward
@@ -793,6 +976,25 @@ compatibility, not as an error — parse defensively.
 | `FieldSource` | `founder`, `document`, `inferred` |
 | `BenchmarkMetric` | `gross_margin_percent`, `runway_months`, `ltv_cac_ratio`, `cac_payback_months`, `run_rate_vs_trailing_percent` |
 | `AuditStatus` | `queued`, `running`, `succeeded`, `failed` |
+| `Requirement` | `required`, `recommended` |
+| `TaskStatus` | `open`, `submitted`, `passed`, `failed`, `needs_more`, `obsolete` |
+| `EvidenceStatus` | `pending`, `ready`, `rejected` |
+| `AssessmentOutcome` | `pass`, `fail`, `needs_more` |
+| `Dimension` | `financial_health`, `unit_economics`, `traction`, `market_opportunity`, `team`, `legal_and_ip`, `data_integrity`, `scalability`, `owner_independence`, `transferability`, `revenue_durability` |
+
+`TaskStatus` is the whole evidence loop and **every value is now reachable** —
+`submitted` through `needs_more` are written by evidence assessment (§5f).
+Nothing a client sends ever sets one.
+
+**`EvidenceStatus` and `AssessmentOutcome` are different axes and never
+overlap.** `status` is whether the *file* arrived; `outcome` is how the *work*
+was graded. A `rejected` upload and a `fail` grading mean very different things
+to a founder — one is "your file did not upload", the other is "your work was
+assessed". `outcome` is `null` until graded.
+
+`Dimension` names which rubric area raised a task or a finding. The values are
+stable identifiers — a stored audit cites them, so none is ever renamed in
+place; a new dimension means a new rubric version.
 
 `FieldSource` matters for UI, and will matter more once extraction is wired
 (T2.8). A profile field carries the source of its value:
@@ -815,26 +1017,14 @@ exist for any of them today.
 
 | Area | Task | Affects |
 |---|---|---|
-| **The report itself.** Audits run and finish (§5a), but nothing returns the verdict, scores, or action plan yet — that needs the per-tier serializer | T2.7/T4.2 | Founder mobile |
-| Document-driven audits. Uploads are stored but **not yet read by the audit**: today a run scores the profile fields only | T2.4a | Founder mobile |
-| Golden-set harness — no verdict has been tuned against hand-scored companies, so treat early scores as provisional in the product sense too | T2.9 | Founder mobile |
-
-When the audit does land, two rules will govern how you render it, and both are
-enforced server-side rather than left to the client:
-
-- **`insufficient_data` is an absence, not a failure.** It means the audit could
-  not be run on what was submitted — never show it as "not fundable". The
-  founder has not been assessed, and telling them otherwise is the failure the
-  whole `sufficiency` model exists to prevent.
-- **`provisional` must always be labelled.** A conclusion drawn from partial
-  evidence is offered, but rendering it as a plain result overstates it.
-| Readiness tasks, evidence upload, re-audit gate | T3.1, T3.5, T3.6 | Founder mobile |
+| **The investor-visibility gate.** `publish` is consent only today — it does not yet check that required tasks passed, so §5e's `required_open` is informational until this lands. A startup with every required task still open can publish | T3.6 | Founder mobile |
+| **Re-audit on a pass.** Passing evidence does not yet re-score the affected dimensions, so a task can be `passed` while the report still shows the original gap | T3.6 | Founder mobile |
+| Product & event catalogue, and the `product_id` link on a task | T3.2 | Founder mobile |
 | Stripe checkout and subscriptions | T3.3, T3.4 | Founder mobile |
-| Founder AI chat | T3.7 | Founder mobile |
-| Investor profile + KYC gate | T4.1 | Investor mobile |
-| Investor discovery, summaries, analyst chat | T4.2–T4.4 | Investor mobile |
-| Interest → SACI approval → meeting | T4.5 | All three |
-| Full-report reveal (admin action, audit-logged) | T4.6 | Admin web |
+| Founder AI chat over their own audit and tasks | T3.7 | Founder mobile |
+| Investor profile + KYC gate. **Any investor account can discover today** | T4.1 | Investor mobile |
+| Investor analyst chat (summary-tier retrieval only) | T4.4 | Investor mobile |
+| Golden-set accuracy run — no verdict has been tuned against hand-scored companies, so treat early scores as provisional in the product sense too | T2.9 | Founder mobile |
 
 Two contract rules that will shape those endpoints when they land, worth
 knowing now:

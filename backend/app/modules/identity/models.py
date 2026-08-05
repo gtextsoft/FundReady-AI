@@ -70,6 +70,11 @@ class AuditAction(StrEnum):
     INTEREST_APPROVED = "brokerage.interest_approved"
     INTEREST_DECLINED = "brokerage.interest_declined"
 
+    # Readiness (T3.5). A reopen resets a founder's assessment attempts, which
+    # is the only way past the cap that guards the investor-visibility gate --
+    # so the one action that can undo it is recorded with who did it.
+    TASK_REOPENED = "admin.task_reopened"
+
     # The one that matters most (DECISIONS.md D8)
     REPORT_REVEALED = "report.revealed"
     REPORT_TIER_CHANGED = "report.tier_changed"

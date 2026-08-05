@@ -53,6 +53,7 @@ __all__ = [
     "ExtractedField",
     "ExtractionResult",
     "SourceDocument",
+    "document_blocks",
     "extract_fields",
     "fenced_documents",
     "merge_into_profile",
@@ -278,7 +279,7 @@ def _bare_type(content_type: str) -> str:
     return content_type.split(";")[0].strip().lower()
 
 
-def _document_blocks(
+def document_blocks(
     documents: Sequence[SourceDocument],
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Turn documents into message content blocks.
@@ -286,6 +287,12 @@ def _document_blocks(
     Returns the blocks and the ids of documents nothing could be read from --
     reported rather than dropped, so a founder learns which upload was wasted
     instead of wondering why a field stayed empty.
+
+    **Public because evidence assessment (T3.5) needs the identical decision.**
+    A founder's evidence is the same problem as a founder's deck: a PDF or a
+    photograph must go to the API as a native block rather than through a text
+    extractor, and an Office file must not. Re-deriving that per module is how
+    the two drift and a format silently stops being readable in one of them.
     """
     blocks: list[dict[str, Any]] = []
     unreadable: list[str] = []
@@ -350,7 +357,7 @@ def fenced_documents(
     Returns the fenced spans and the ids of documents that have no text form.
 
     **This is a narrower view than extraction gets, and deliberately so.**
-    `_document_blocks` hands a PDF or a photograph to the API as a native
+    `document_blocks` hands a PDF or a photograph to the API as a native
     `document`/`image` block, which is how a scanned deck gets read at all
     (T2.4). `consistency.find_contradictions` and `rubric.v1.score` both inline
     `UntrustedContent.text` into a message, so neither can receive a native
@@ -417,7 +424,7 @@ async def extract_fields(
     sit in the cached prefix; this startup's facts and its documents come after
     the breakpoint, documents last.
     """
-    blocks, unreadable = _document_blocks(documents)
+    blocks, unreadable = document_blocks(documents)
 
     if not blocks:
         # Nothing readable. Returning empty beats spending an audit-tier call to

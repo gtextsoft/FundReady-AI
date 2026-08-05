@@ -31,9 +31,19 @@ from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["AUDIT_JOB_TIMEOUT", "RUN_AUDIT_JOB", "enqueue_audit", "get_queue", "main"]
+__all__ = [
+    "ASSESS_EVIDENCE_JOB",
+    "ASSESSMENT_JOB_TIMEOUT",
+    "AUDIT_JOB_TIMEOUT",
+    "RUN_AUDIT_JOB",
+    "enqueue_assessment",
+    "enqueue_audit",
+    "get_queue",
+    "main",
+]
 
 RUN_AUDIT_JOB: Final = "app.workers.tasks.run_audit"
+ASSESS_EVIDENCE_JOB: Final = "app.workers.tasks.assess_evidence"
 """Dotted path RQ resolves in the worker. See the module docstring."""
 
 AUDIT_JOB_TIMEOUT: Final = 900
@@ -137,6 +147,46 @@ def enqueue_audit(run_id: uuid.UUID) -> None:
         str(run_id),
         job_id=str(run_id),
         job_timeout=AUDIT_JOB_TIMEOUT,
+    )
+
+
+ASSESSMENT_JOB_TIMEOUT: Final = 300
+"""Seconds one evidence grading may take before RQ reclaims it.
+
+A third of the audit's, because grading is one call over one task's submissions
+rather than a multi-stage pipeline over a whole profile. Long enough that a slow
+provider is not mistaken for a dead worker; short enough that a genuinely stuck
+job does not hold a founder on `submitted` for a quarter of an hour.
+"""
+
+
+def enqueue_assessment(task_id: uuid.UUID) -> None:
+    """Dispatch one task's outstanding evidence for grading.
+
+    **Keyed by task, not by evidence**, because grading is per task: a founder
+    proving one action may attach a screenshot and the invoice that dates it,
+    and the grader reads them together. Enqueuing per file would grade each in
+    isolation, fail both for being incomplete alone, and bill twice for it.
+
+    That also makes the `job_id` do useful work here. A founder uploading three
+    files in quick succession completes three uploads, and RQ refuses the second
+    and third dispatches while the first is still queued -- so one grading covers
+    the set. It is a convenience rather than a guarantee: the id is released the
+    moment the job runs, and `list_gradable` returning nothing is what actually
+    makes a redelivery harmless.
+
+    **The separator is a dash, not a colon.** RQ validates job ids against
+    letters, numbers, underscores and dashes and raises `ValueError` on anything
+    else -- so `assess:{task_id}` was a `500` on the *completion* endpoint, after
+    the founder's file had already reached the bucket. It survived every test in
+    the suite because they all patch this function out; only a real dispatch
+    against a real Redis reaches the validator.
+    """
+    get_queue().enqueue(
+        ASSESS_EVIDENCE_JOB,
+        str(task_id),
+        job_id=f"assess-{task_id}",
+        job_timeout=ASSESSMENT_JOB_TIMEOUT,
     )
 
 

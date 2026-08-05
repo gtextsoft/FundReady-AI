@@ -10,6 +10,69 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Evidence upload and AI assessment — five new endpoints (T3.5).** This is
+  what makes a readiness task completable; before it, every task was
+  permanently `open`.
+  - `POST /v1/tasks/{id}/evidence` · `POST /v1/evidence/{id}/complete` ·
+    `GET /v1/tasks/{id}/evidence` · `GET /v1/evidence/{id}/download` ·
+    `POST /v1/admin/tasks/{id}/reopen` (admin).
+  - **Upload flow is identical to §5 documents** — reserve, `PUT` to a signed
+    URL, `complete`. Same allowlist, same 25 MiB cap, same rejection reasons.
+  - **Grading is asynchronous.** `complete` returns immediately and the task
+    moves to `submitted`; poll until `outcome` is non-null.
+  - **Three outcomes:** `pass`, `fail`, `needs_more`. `needs_more` is the
+    deliberate default whenever the grader is unsure — expect it to be common,
+    and frame it as "nearly there", not a rejection. `reasons` is present on
+    every outcome including a pass, and is written to be shown to the founder
+    directly.
+  - **A founder gets 3 graded attempts per task**, exposed as
+    `attempts_remaining` on every task response. At `0`, starting an upload
+    returns `409`. **Check the field before offering an upload button.** A
+    `needs_more` consumes an attempt; a rejected upload and an errored grading
+    do not. Only a SACI admin can reopen a locked task, and every reopen is
+    audit-logged.
+  - **Attach related files to one task** — the grader reads a task's
+    outstanding submissions as one set, so a screenshot plus its dated invoice
+    is one attempt, not two.
+  - **New enums:** `EvidenceStatus` (`pending`, `ready`, `rejected`) and
+    `AssessmentOutcome` (`pass`, `fail`, `needs_more`). They are different axes
+    and share no values: `status` is whether the file arrived, `outcome` is how
+    the work was graded.
+  - **New fields on the task response:** `assessment_attempts` and
+    `attempts_remaining`. Additive.
+- **Readiness tasks — three new endpoints (T3.1).** All additive; nothing
+  existing changed shape.
+  - `GET /v1/startups/{id}/tasks` — the list, paged and filterable by `status`
+    and `requirement`.
+  - `GET /v1/startups/{id}/tasks/summary` — counts only, for a home screen that
+    loads on every app launch.
+  - `GET /v1/startups/{id}/tasks/{task_id}` — one task.
+  - **Why:** an audit was producing 44 action items, storing them in
+    `AuditRun.report`, and stopping there. The report is what a founder reads
+    once; the tasks are what they work through, and until now there was nothing
+    to work through.
+  - **`requirement` is `required` or `recommended`, and it is computed, not
+    judged.** A dimension that scored below the readiness threshold — or could
+    not be scored at all — produces required tasks; a dimension at or above it
+    produces recommended ones. It therefore **changes between audits** as a
+    founder improves. Re-read it on every fetch; do not cache it.
+  - **There is no endpoint that completes a task, and there will not be.**
+    `DECISIONS.md` D10: readiness is earned by doing the work, uploading
+    evidence, and having the AI assess it — not by asserting completion and not
+    by paying. Do not build a checkbox that PATCHes a status; nothing accepts
+    one. The evidence flow that moves a task is T3.5.
+  - **`id` is stable across re-audits.** Tasks are reconciled against each new
+    report rather than regenerated, so local state keyed on the id survives. A
+    gap that is still raised keeps its task; one that is dropped goes
+    `obsolete` **only if untouched**; one that comes back reopens.
+  - **New enums:** `Requirement` (`required`, `recommended`), `TaskStatus`
+    (`open`, `submitted`, `passed`, `failed`, `needs_more`, `obsolete`), and
+    `Dimension` (the eleven rubric areas). Every `TaskStatus` value is
+    reachable now that T3.5 has landed in the same release.
+  - **The paged envelope is the list convention** — `{items, total, limit,
+    offset}`, matching `GET /v1/discover`. `benchmarks` and `documents` still
+    return bare arrays; `documents` will change and will get a version story
+    when it does, because the client already consumes the current shape.
 - **`is_priority` on every `action_plan` item** in the founder and admin report
   responses (`GET /v1/startups/{id}/audits/{run_id}/report` and the admin
   path). Additive and optional — a client that ignores it renders exactly what
