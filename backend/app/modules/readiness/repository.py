@@ -33,6 +33,7 @@ class ReadinessTaskRepository:
         *,
         status: TaskStatus | None = None,
         requirement: Requirement | None = None,
+        audit_run_id: uuid.UUID | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[ReadinessTask], int]:
@@ -62,6 +63,12 @@ class ReadinessTaskRepository:
             query = query.where(ReadinessTask.status == status)
         if requirement is not None:
             query = query.where(ReadinessTask.requirement == requirement)
+        if audit_run_id is not None:
+            # "Raised by this report", which is what the readiness gate counts.
+            # `audit_run_id` is refreshed to the newest run on every
+            # regeneration, so this selects the current plan rather than every
+            # task the startup has ever been given.
+            query = query.where(ReadinessTask.audit_run_id == audit_run_id)
 
         total = await self._session.scalar(
             select(func.count()).select_from(query.subquery())
@@ -168,6 +175,30 @@ class EvidenceRepository:
                 Evidence.task_id == task_id,
                 Evidence.status == EvidenceStatus.READY,
                 Evidence.outcome.is_(None),
+            )
+            .order_by(Evidence.created_at.asc(), Evidence.id.asc())
+        )
+        return list(rows)
+
+    async def list_passed_for_startup(self, startup_id: uuid.UUID) -> list[Evidence]:
+        """Every stored submission behind a task that is currently passed.
+
+        Joined to the task rather than filtered on `Evidence.outcome`, and the
+        difference matters: a task that was reopened and graded again should not
+        keep feeding the audit evidence from the grading that was overturned.
+        The task's **current** status is the question, so the task is what is
+        asked.
+
+        Ordered by creation so the audit's document list -- and therefore its
+        idempotency fingerprint -- is stable across calls.
+        """
+        rows = await self._session.scalars(
+            select(Evidence)
+            .join(ReadinessTask, ReadinessTask.id == Evidence.task_id)
+            .where(
+                Evidence.startup_id == startup_id,
+                Evidence.status == EvidenceStatus.READY,
+                ReadinessTask.status == TaskStatus.PASSED,
             )
             .order_by(Evidence.created_at.asc(), Evidence.id.asc())
         )

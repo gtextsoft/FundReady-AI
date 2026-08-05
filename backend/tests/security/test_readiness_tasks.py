@@ -25,6 +25,7 @@ from app.core.security import AccountStatus, CurrentUser, Role
 from app.modules.audit import service as audit
 from app.modules.audit.models import AuditRun
 from app.modules.audit.rubric.v1 import Dimension, DimensionScore
+from app.modules.audit.runs import AuditStatus
 from app.modules.audit.synthesis import AuditReport, synthesise
 from app.modules.identity import service as identity
 from app.modules.identity.models import User
@@ -110,6 +111,21 @@ async def _profile_with_run(
     )
     run, created = await audit.request_audit(session, actor, profile.id)
     assert created
+
+    # **Marked succeeded, because a task can only exist after a run succeeds.**
+    # The worker generates tasks in the block after `mark_succeeded`, so every
+    # `audit_run_id` in production points at a run that produced a report. A
+    # fixture that generates tasks against a `queued` run is describing a state
+    # the system cannot reach -- and it hid the fact that `summarise_tasks`
+    # resolves its counts against the latest *succeeded* run (T3.6).
+    run.status = AuditStatus.SUCCEEDED
+    run.report = {
+        "rubric_version": "v1",
+        "data_integrity_score": "100",
+        "findings": [],
+        "action_plan": [],
+    }
+    await session.flush()
     return profile.id, run
 
 

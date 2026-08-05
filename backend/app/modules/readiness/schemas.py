@@ -140,8 +140,11 @@ class ReadinessSummary(BaseModel):
     paging the whole task list to compute it would make every app launch a
     multi-page fetch.
 
-    `required_open` is the number the gate in T3.6 will actually test, so it is
-    named for what it means rather than for how it is counted.
+    **Every count is scoped to the tasks the latest succeeded audit raised**, so
+    `required_open == 0` means exactly what the discovery gate tests (T3.6) --
+    not something adjacent to it. Counting every task ever generated would
+    include gaps the current report no longer raises, and a progress bar that
+    can never reach zero is worse than no progress bar.
     """
 
     model_config = ConfigDict(
@@ -153,16 +156,22 @@ class ReadinessSummary(BaseModel):
                 "required_open": 29,
                 "required_passed": 2,
                 "recommended_total": 13,
+                "has_audit": True,
+                "gate_cleared": False,
+                "investor_visible": False,
             }
         },
     )
 
-    total: int = Field(description="Every task ever generated for this startup.")
+    total: int = Field(
+        description="Tasks the latest succeeded audit raised, excluding retired ones."
+    )
     required_total: int = Field(description="Tasks that block investor visibility.")
     required_open: int = Field(
         description=(
-            "Required tasks not yet passed. Investor visibility is gated on "
-            "this reaching zero (T3.6), alongside the audit itself clearing."
+            "Required tasks not yet passed. **This is the number the gate "
+            "tests.** Investor visibility needs it at zero, alongside a "
+            "succeeded audit."
         )
     )
     required_passed: int = Field(
@@ -170,6 +179,26 @@ class ReadinessSummary(BaseModel):
     )
     recommended_total: int = Field(
         description="Tasks worth doing that do not block visibility."
+    )
+    has_audit: bool = Field(
+        description=(
+            "Whether a succeeded audit with a report exists. Without one there "
+            "are no tasks and nothing to be discovered on."
+        )
+    )
+    gate_cleared: bool = Field(
+        description=(
+            "`has_audit` **and** `required_open == 0`. This is eligibility, not "
+            "visibility -- the founder must also have opted in."
+        )
+    )
+    investor_visible: bool = Field(
+        description=(
+            "Whether this startup actually appears in discovery right now: the "
+            "gate cleared **and** the founder opted in via `publish`. Use this "
+            "to explain the two halves separately -- 'you have work left' and "
+            "'you have not opted in' are different messages."
+        )
     )
 
 

@@ -171,9 +171,21 @@ async def run_audit_async(run_id: uuid.UUID) -> None:
 
             # Fetched inside the session and before it closes, for the same
             # reason the snapshot is: the bytes have to outlive the connection.
+            #
+            # **Documents and passed evidence, together (T3.6).** A founder's
+            # proof that they closed a gap is evidence about the business in
+            # exactly the sense the rubric means, so the re-audit reads it
+            # alongside the deck. `request_audit` already folded these keys into
+            # the fingerprint, so the run that reaches here is one minted
+            # *because* the evidence changed.
             payloads, unfetchable = await intake.load_auditable_documents(
                 session, run.startup_id
             )
+            evidence, evidence_unfetchable = await readiness.load_passed_evidence(
+                session, run.startup_id
+            )
+            payloads = [*payloads, *evidence]
+            unfetchable = [*unfetchable, *evidence_unfetchable]
             benchmark_context = await assemble_benchmark_context(
                 session, snapshot, compute(financial_inputs(snapshot))
             )

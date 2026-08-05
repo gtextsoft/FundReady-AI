@@ -45,6 +45,7 @@ from app.modules.audit.runs import AuditStatus, input_fingerprint, lease_cutoff
 from app.modules.identity import service as identity
 from app.modules.identity.models import AuditAction
 from app.modules.intake import service as intake
+from app.modules.readiness import service as readiness
 from app.workers.queue import enqueue_audit
 
 logger = logging.getLogger(__name__)
@@ -412,7 +413,20 @@ async def request_audit(
         # founder who uploads the financials the first run said were missing
         # gets handed the pre-upload verdict back -- a regression that looks
         # exactly like the idempotency cache working correctly.
-        document_keys=await intake.auditable_storage_keys(session, profile.id),
+        #
+        # **Passed evidence is folded in for the identical reason (T3.6).** It
+        # is what makes a re-audit mean anything: a founder who worked through
+        # their action plan and had the proof graded has changed the evidence
+        # the audit reasons over, so the hash has to move or `find_by_fingerprint`
+        # hands them back the verdict from before they did the work. The keys
+        # are sorted so the order two queries return rows in cannot mint a
+        # second run for identical inputs.
+        document_keys=sorted(
+            [
+                *await intake.auditable_storage_keys(session, profile.id),
+                *await readiness.passed_evidence_keys(session, profile.id),
+            ]
+        ),
         rubric_version=v1.RUBRIC_VERSION,
     )
 

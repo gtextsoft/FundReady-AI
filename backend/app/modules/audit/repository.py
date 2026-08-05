@@ -163,6 +163,35 @@ class AuditRunRepository:
         )
         return list(result)
 
+    async def latest_succeeded(self, startup_id: uuid.UUID) -> AuditRun | None:
+        """The newest run that actually produced a report, or `None`.
+
+        The same row the discovery query resolves to, and the same two
+        conditions: `succeeded` **and** a report present. A run can be marked
+        succeeded and have its report written in the next statement, so status
+        alone would briefly name a run nothing can be read from.
+
+        Used by the readiness gate (T3.6) to answer "outstanding according to
+        which report", so it must not drift from `investor.DiscoveryRepository.
+        _visible`. Both are ordered newest-first on `created_at`.
+        """
+        result: AuditRun | None = await self._session.scalar(
+            select(AuditRun)
+            .where(
+                AuditRun.startup_id == startup_id,
+                AuditRun.status == AuditStatus.SUCCEEDED,
+                AuditRun.report.isnot(None),
+            )
+            # Ordered identically to `investor.DiscoveryRepository._visible`,
+            # including the `id` tiebreaker. Postgres `now()` is the transaction
+            # timestamp, so ties are real; if these two resolved to different
+            # runs the founder's summary would disagree with what an investor
+            # can see.
+            .order_by(AuditRun.created_at.desc(), AuditRun.id.desc())
+            .limit(1)
+        )
+        return result
+
     async def create(
         self,
         *,

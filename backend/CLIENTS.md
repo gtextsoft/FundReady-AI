@@ -674,6 +674,19 @@ browses what founders have published.
 | `POST /v1/startups/{id}/publish` | Opt in to discovery |
 | `POST /v1/startups/{id}/unpublish` | Opt out again, immediately |
 
+**Publishing is consent, not eligibility.** It always succeeds — it never
+refuses because tasks are outstanding, and it is not a promise that anyone can
+see the startup. Whether they *actually* appear is decided when an investor
+reads (T3.6): opted in **and** a succeeded audit **and** no required task
+outstanding. That is why `publish` cannot tell you the answer and
+`GET .../tasks/summary` can — read `investor_visible` there, not the result of
+this call.
+
+A founder may publish before finishing their tasks, and should be able to: they
+become visible the moment the gate clears, with no second action needed. The
+reverse also holds — a re-audit that raises a new required gap makes them
+invisible again without touching their consent.
+
 **Publishing is consent, not eligibility, and the difference matters for your
 UI.** Opting in says the founder is willing to be seen. Whether there is
 anything to *show* is decided separately: a startup appears in discovery only
@@ -862,14 +875,26 @@ whole list on every launch:
 
 ```json
 { "total": 44, "required_total": 31, "required_open": 29,
-  "required_passed": 2, "recommended_total": 13 }
+  "required_passed": 2, "recommended_total": 13,
+  "has_audit": true, "gate_cleared": false, "investor_visible": false }
 ```
 
-`required_open` is the number the investor-visibility gate will test (T3.6): the
-startup becomes discoverable when it reaches zero **and** the audit itself
-clears. Until T3.5 lands nothing can move a task off `open`, so expect
-`required_open` to equal `required_total` today — build the progress bar now,
-but do not be surprised that it does not move yet.
+**`gate_cleared` and `investor_visible` are different questions — show them
+separately.**
+
+| Field | Means | What the founder does about it |
+|---|---|---|
+| `has_audit` | A succeeded audit with a report exists | Submit an audit |
+| `gate_cleared` | `has_audit` **and** `required_open == 0` | Work the required tasks |
+| `investor_visible` | `gate_cleared` **and** they opted in | Press publish |
+
+"You still have 3 required tasks" and "you have not opted in to discovery" are
+different messages with different fixes. A single "not visible" flag would leave
+the founder unable to tell which one applies.
+
+**Every count is scoped to the tasks the latest succeeded audit raised.** Tasks
+from a superseded report are excluded, including ones that were graded `failed`
+and are no longer being asked for — so the progress bar can actually reach zero.
 
 ### Empty is a normal answer
 
@@ -950,6 +975,18 @@ Only a SACI admin can reopen a locked task, and every reopen is written to the
 immutable audit log. There is no founder-facing route for it — surface a
 "contact support" path instead.
 
+### After tasks pass — ask for a re-audit
+
+**Passing evidence does not re-score the report on its own.** Passed submissions
+become part of what the audit reads, which changes its inputs — so
+`POST /v1/startups/{id}/audits` will mint a **genuinely new run** rather than
+returning the previous verdict, which is what it does when nothing has changed.
+
+So the flow after a founder finishes their required tasks is: submit a re-audit,
+poll it, and the new report reflects the work. Prompt them — a founder who
+cleared their tasks and never re-audits is sitting on a stale verdict, and
+nothing enqueues one automatically.
+
 ### Evidence is founder-tier
 
 Nothing here is ever served to an investor. Another founder's evidence is `404`,
@@ -1017,8 +1054,6 @@ exist for any of them today.
 
 | Area | Task | Affects |
 |---|---|---|
-| **The investor-visibility gate.** `publish` is consent only today — it does not yet check that required tasks passed, so §5e's `required_open` is informational until this lands. A startup with every required task still open can publish | T3.6 | Founder mobile |
-| **Re-audit on a pass.** Passing evidence does not yet re-score the affected dimensions, so a task can be `passed` while the report still shows the original gap | T3.6 | Founder mobile |
 | Product & event catalogue, and the `product_id` link on a task | T3.2 | Founder mobile |
 | Stripe checkout and subscriptions | T3.3, T3.4 | Founder mobile |
 | Founder AI chat over their own audit and tasks | T3.7 | Founder mobile |

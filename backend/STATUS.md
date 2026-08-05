@@ -36,12 +36,24 @@ deploy. Three things went from "never run" to "proven" today:
 |---|---|
 | 0, 1 | Complete |
 | 2 | 9 of 10 built. **T2.4a** wired 2026-08-04 (documents now reach the audit) but no document has run through end to end. **T2.9** billed accuracy half still unbuilt |
-| 3 | **T3.1 ✅ · T3.5 ✅ 2026-08-05.** The readiness loop generates tasks and grades evidence against them. T3.6 (the gate + re-audit) is the next link and is **not** built: `publish` is still consent alone. T3.2/T3.3/T3.4 (catalogue, Stripe) and T3.7 (founder chat) not started |
+| 3 | **T3.1 ✅ · T3.5 ✅ · T3.6 ✅ 2026-08-05.** The readiness loop is closed: an audit generates tasks, evidence is graded against them, and the gate decides discovery. T3.2/T3.3/T3.4 (catalogue, Stripe) and T3.7 (founder chat) not started |
 | 4 | T4.2 ✅ · T4.6 ✅ · T4.3 `[~]` · T4.5 `[~]` · T4.1, T4.4 not started |
 | 5 | T5.7 in progress (Render) · rest not started |
 
 ### Landed 2026-08-05
 
+- **T3.6 — the loop now decides something.** The investor-visibility gate is
+  three conditions in the discovery query: opted in, audited, and no required
+  task outstanding *according to the latest report*. Enforced at the read rather
+  than at `publish`, because a check written at publish time goes stale the
+  moment a re-audit raises a new gap. Passed evidence also joins the audit's
+  inputs, so the existing re-audit endpoint mints a real new run instead of
+  returning the pre-work verdict.
+- **A tiebreaker bug found by the new tests.** Postgres `now()` is the
+  *transaction* timestamp, so two audit runs written in one transaction tie on
+  `created_at` — and the discovery query and the founder's summary could then
+  resolve to different runs and disagree about whether the gate had cleared.
+  Both now order by `created_at DESC, id DESC`.
 - **T3.5 — evidence closes the loop's second half.** A founder uploads proof,
   the AI grades it against the task's own wording, and the task moves. Before
   this, `TaskStatus.PASSED` was declared and unreachable. Three graded attempts
@@ -155,15 +167,11 @@ independent of it, so rolling it breaks nothing that is running.
 - **Tests run against the production database** — safe only while fixtures roll
   back. Provision a second Neon branch before real users exist.
 - **No rate limiting** on a public, expensive AI endpoint.
-- **The visibility gate is still not wired (T3.6).** Tasks generate (T3.1) and
-  evidence grades against them (T3.5), but `publish` remains pure founder
-  consent: a startup scoring 20 with 31 open required tasks can still publish
-  and be discovered. `required_open` is computed and shown, and nothing reads
-  it. **This is now the single largest hole in the product's central claim**,
-  and it is one task away.
-- **A pass does not re-audit.** Passing evidence on a task does not re-score the
-  affected dimension, so a task can read `passed` while the report still shows
-  the original gap. Also T3.6.
+- **A re-audit is requested, not automatic.** Passing evidence changes the
+  audit's inputs, but nothing enqueues a run — the founder presses the button.
+  Deliberate (a billed dispatch inside the grading transaction is the failure
+  this codebase has hit twice), but it means a founder who finishes their tasks
+  is not visible until they ask for a re-audit. Worth a nudge in the client.
 - **The grader has never run against a real model.** Every assessment test uses
   a fake transport. The prompt's two guarantees — "a file arriving is not a
   pass" and "resolve ambiguity to `needs_more`" — are asserted against the

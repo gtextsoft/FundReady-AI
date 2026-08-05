@@ -9,6 +9,31 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Investor discovery is now gated on readiness (T3.6).** A startup appears in
+  `GET /v1/discover` only when it has opted in, **and** has a succeeded audit,
+  **and** has no required task outstanding in that audit's plan. Previously
+  opting in plus any succeeded audit was enough, so a startup with every
+  required task open was discoverable.
+  - **`publish` is unchanged and still always succeeds.** It is consent, not
+    eligibility. Do not treat a successful publish as "we are visible" — read
+    `investor_visible` from `GET /v1/startups/{id}/tasks/summary`.
+  - Visibility can now be **lost** without the founder doing anything: a
+    re-audit that raises a new required gap hides them until it is closed. Do
+    not cache visibility.
+- **`GET /v1/startups/{id}/tasks/summary` gained `has_audit`, `gate_cleared`
+  and `investor_visible`**, and its counts are now **scoped to the tasks the
+  latest succeeded audit raised** rather than every task ever generated. Tasks
+  from a superseded report — including ones graded `failed` and no longer being
+  asked for — are excluded, so the progress bar can reach zero. Additive fields;
+  the existing counts may read lower than before for a startup that has been
+  re-audited.
+- **Passing evidence changes what a re-audit sees.** Passed submissions are now
+  part of the audit's inputs, so `POST /v1/startups/{id}/audits` mints a real
+  new run after a founder completes tasks instead of returning the pre-work
+  verdict. **Nothing enqueues this automatically** — prompt the founder to
+  request a re-audit once their required tasks pass.
+
 ### Added
 - **Evidence upload and AI assessment — five new endpoints (T3.5).** This is
   what makes a readiness task completable; before it, every task was

@@ -27,15 +27,18 @@ from app.core.security import CurrentUser, Role
 from app.core.storage import (
     StoredObject,
     delete_object,
+    get_object,
     head_object,
     object_key,
     signed_download_url,
     signed_upload_url,
 )
+from app.modules.audit.repository import AuditRunRepository
 from app.modules.audit.synthesis import AuditReport
 from app.modules.identity import service as identity
 from app.modules.identity.models import AuditAction
 from app.modules.intake import service as intake
+from app.modules.intake.documents import DocumentPayload
 from app.modules.intake.service import safe_filename
 from app.modules.readiness.evidence import (
     MAX_ASSESSMENT_ATTEMPTS,
@@ -64,6 +67,8 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "complete_evidence_upload",
+    "load_passed_evidence",
+    "passed_evidence_keys",
     "evidence_download_url",
     "generate_for_report",
     "get_evidence",
@@ -282,17 +287,35 @@ async def get_task(
 async def summarise_tasks(
     session: AsyncSession, actor: CurrentUser, startup_id: uuid.UUID
 ) -> ReadinessSummary:
-    """Counts for the founder's home screen, without paging the whole list.
+    """Counts and gate state for the founder's home screen (T3.1, T3.6).
 
-    **`obsolete` is excluded from every count.** A retired task is not work the
-    founder owes, and including it would inflate the denominator of a progress
-    bar with gaps the audit has stopped raising.
+    **Scoped to the tasks the latest succeeded audit raised**, because that is
+    what the discovery gate counts. `audit_run_id` is refreshed to the newest
+    run on every regeneration, so it identifies the current plan exactly.
+
+    Counting every task ever generated instead would be a progress bar that can
+    never reach zero: a task graded `failed` keeps that status even after a
+    later audit stops raising the gap -- `UNTOUCHED_STATUSES` retires only
+    untouched rows, deliberately, so a founder's evidence is never erased -- and
+    a gap absent from the current report is one no new evidence can address.
+
+    **`obsolete` is excluded as well.** A retired task is not work the founder
+    owes. It cannot co-occur with the latest run id today (`_refresh` reopens
+    it), so this is defensive rather than load-bearing.
+
+    Returns zeros and `has_audit=False` when no audit has succeeded. That is not
+    an error -- there is genuinely nothing to report yet.
     """
     profile = await intake.get_profile(session, actor, startup_id)
+    latest = await AuditRunRepository(session).latest_succeeded(profile.id)
+
+    if latest is None:
+        return _summarise((), has_audit=False, opted_in=profile.investor_visible)
+
     rows, _ = await ReadinessTaskRepository(session).list_for_startup(
-        profile.id, limit=_ALL_TASKS, offset=0
+        profile.id, audit_run_id=latest.id, limit=_ALL_TASKS, offset=0
     )
-    return _summarise(rows)
+    return _summarise(rows, has_audit=True, opted_in=profile.investor_visible)
 
 
 _ALL_TASKS = 1000
@@ -308,16 +331,30 @@ data rather than snug against it.
 """
 
 
-def _summarise(rows: Sequence[ReadinessTask]) -> ReadinessSummary:
+def _summarise(
+    rows: Sequence[ReadinessTask], *, has_audit: bool, opted_in: bool
+) -> ReadinessSummary:
+    """The same arithmetic the discovery gate does, expressed for one founder.
+
+    `gate_cleared` and `investor_visible` are deliberately separate. Eligibility
+    and consent fail for different reasons and are fixed by different actions,
+    so collapsing them into one flag would leave a founder unable to tell "you
+    have work left" from "you have not opted in".
+    """
     live = [row for row in rows if row.status is not TaskStatus.OBSOLETE]
     required = [row for row in live if row.requirement is Requirement.REQUIRED]
     passed = [row for row in required if row.status is TaskStatus.PASSED]
+    outstanding = len(required) - len(passed)
+    cleared = has_audit and outstanding == 0
     return ReadinessSummary(
         total=len(live),
         required_total=len(required),
-        required_open=len(required) - len(passed),
+        required_open=outstanding,
         required_passed=len(passed),
         recommended_total=len(live) - len(required),
+        has_audit=has_audit,
+        gate_cleared=cleared,
+        investor_visible=cleared and opted_in,
     )
 
 
@@ -698,3 +735,72 @@ async def record_assessment_failure(
         if evidence is not None:
             evidence.error_code = "assessment_failed"
     await session.flush()
+
+
+async def passed_evidence_keys(
+    session: AsyncSession, startup_id: uuid.UUID
+) -> list[str]:
+    """Storage keys of the evidence a re-audit should read (T3.6).
+
+    **This is what makes a re-audit mean something.** `input_fingerprint` hashes
+    the document keys, so evidence passing changes the hash and
+    `audit.request_audit` mints a genuinely new run instead of handing back the
+    verdict from before the work was done -- a regression that would look
+    exactly like the idempotency cache working correctly.
+
+    Keys rather than bytes, and separate from `load_passed_evidence`, for the
+    reason `intake.auditable_storage_keys` gives: the fingerprint is computed on
+    the request thread, long before anything is fetched, and it must not fetch.
+
+    No ownership check -- the caller has already authorised the startup, and
+    this returns opaque keys rather than content.
+    """
+    rows = await EvidenceRepository(session).list_passed_for_startup(startup_id)
+    return [row.storage_key for row in rows]
+
+
+async def load_passed_evidence(
+    session: AsyncSession, startup_id: uuid.UUID
+) -> tuple[list[DocumentPayload], list[str]]:
+    """Fetch the bytes of every passed submission. Payloads and failures.
+
+    **No ownership check, deliberately**, for the reason
+    `intake.load_auditable_documents` gives: there is no caller to authorise.
+    The AuditRun already named this startup and was written by a service call
+    that did check.
+
+    A submission whose object has gone missing is **skipped and named** rather
+    than failing the audit, the same rule documents follow. Losing one piece of
+    proof should cost that proof, not the whole re-audit a founder has been
+    working towards.
+
+    Returned as `DocumentPayload` -- the same plain-data shape documents use --
+    so the worker's composition root maps both into `SourceDocument` without
+    `audit` learning what an `Evidence` row is.
+    """
+    rows = await EvidenceRepository(session).list_passed_for_startup(startup_id)
+
+    payloads: list[DocumentPayload] = []
+    unreadable: list[str] = []
+    for row in rows:
+        try:
+            content = get_object(row.storage_key, bucket="evidence")
+        except Exception:
+            logger.exception(
+                "a passed submission could not be fetched; auditing without it",
+                extra={"context": {"evidence_id": str(row.id)}},
+            )
+            unreadable.append(str(row.id))
+            continue
+        if content is None:
+            unreadable.append(str(row.id))
+            continue
+        payloads.append(
+            DocumentPayload(
+                document_id=str(row.id),
+                filename=row.filename,
+                content_type=row.content_type or "application/octet-stream",
+                content=content,
+            )
+        )
+    return payloads, unreadable

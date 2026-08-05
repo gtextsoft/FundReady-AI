@@ -2090,8 +2090,11 @@
       },
       "ReadinessSummary": {
         "additionalProperties": false,
-        "description": "How much work stands between this startup and investor visibility.\n\nA separate, cheap read: a founder's home screen wants \"3 of 11 done\", and\npaging the whole task list to compute it would make every app launch a\nmulti-page fetch.\n\n`required_open` is the number the gate in T3.6 will actually test, so it is\nnamed for what it means rather than for how it is counted.",
+        "description": "How much work stands between this startup and investor visibility.\n\nA separate, cheap read: a founder's home screen wants \"3 of 11 done\", and\npaging the whole task list to compute it would make every app launch a\nmulti-page fetch.\n\n**Every count is scoped to the tasks the latest succeeded audit raised**, so\n`required_open == 0` means exactly what the discovery gate tests (T3.6) --\nnot something adjacent to it. Counting every task ever generated would\ninclude gaps the current report no longer raises, and a progress bar that\ncan never reach zero is worse than no progress bar.",
         "example": {
+          "gate_cleared": false,
+          "has_audit": true,
+          "investor_visible": false,
           "recommended_total": 13,
           "required_open": 29,
           "required_passed": 2,
@@ -2099,13 +2102,28 @@
           "total": 44
         },
         "properties": {
+          "gate_cleared": {
+            "description": "`has_audit` **and** `required_open == 0`. This is eligibility, not visibility -- the founder must also have opted in.",
+            "title": "Gate Cleared",
+            "type": "boolean"
+          },
+          "has_audit": {
+            "description": "Whether a succeeded audit with a report exists. Without one there are no tasks and nothing to be discovered on.",
+            "title": "Has Audit",
+            "type": "boolean"
+          },
+          "investor_visible": {
+            "description": "Whether this startup actually appears in discovery right now: the gate cleared **and** the founder opted in via `publish`. Use this to explain the two halves separately -- 'you have work left' and 'you have not opted in' are different messages.",
+            "title": "Investor Visible",
+            "type": "boolean"
+          },
           "recommended_total": {
             "description": "Tasks worth doing that do not block visibility.",
             "title": "Recommended Total",
             "type": "integer"
           },
           "required_open": {
-            "description": "Required tasks not yet passed. Investor visibility is gated on this reaching zero (T3.6), alongside the audit itself clearing.",
+            "description": "Required tasks not yet passed. **This is the number the gate tests.** Investor visibility needs it at zero, alongside a succeeded audit.",
             "title": "Required Open",
             "type": "integer"
           },
@@ -2120,7 +2138,7 @@
             "type": "integer"
           },
           "total": {
-            "description": "Every task ever generated for this startup.",
+            "description": "Tasks the latest succeeded audit raised, excluding retired ones.",
             "title": "Total",
             "type": "integer"
           }
@@ -2130,7 +2148,10 @@
           "required_total",
           "required_open",
           "required_passed",
-          "recommended_total"
+          "recommended_total",
+          "has_audit",
+          "gate_cleared",
+          "investor_visible"
         ],
         "title": "ReadinessSummary",
         "type": "object"
