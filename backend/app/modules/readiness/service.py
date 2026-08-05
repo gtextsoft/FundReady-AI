@@ -336,10 +336,15 @@ def _summarise(
 ) -> ReadinessSummary:
     """The same arithmetic the discovery gate does, expressed for one founder.
 
-    `gate_cleared` and `investor_visible` are deliberately separate. Eligibility
-    and consent fail for different reasons and are fixed by different actions,
-    so collapsing them into one flag would leave a founder unable to tell "you
-    have work left" from "you have not opted in".
+    `gate_cleared` and `discoverable` are deliberately separate. Eligibility and
+    consent fail for different reasons and are fixed by different actions, so
+    collapsing them into one flag would leave a founder unable to tell "you have
+    work left" from "you have not opted in".
+
+    **`discoverable`, not `investor_visible`.** `StartupProfile.investor_visible`
+    already exists and means consent *alone*; a second field with that name
+    meaning consent-and-eligibility would be two different answers to the same
+    question in two responses the same client reads.
     """
     live = [row for row in rows if row.status is not TaskStatus.OBSOLETE]
     required = [row for row in live if row.requirement is Requirement.REQUIRED]
@@ -354,7 +359,7 @@ def _summarise(
         recommended_total=len(live) - len(required),
         has_audit=has_audit,
         gate_cleared=cleared,
-        investor_visible=cleared and opted_in,
+        discoverable=cleared and opted_in,
     )
 
 

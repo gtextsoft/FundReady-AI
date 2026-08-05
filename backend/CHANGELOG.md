@@ -17,7 +17,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   required task open was discoverable.
   - **`publish` is unchanged and still always succeeds.** It is consent, not
     eligibility. Do not treat a successful publish as "we are visible" — read
-    `investor_visible` from `GET /v1/startups/{id}/tasks/summary`.
+    **`discoverable`** from `GET /v1/startups/{id}/tasks/summary`. Note it is
+    deliberately *not* called `investor_visible`: that name is already taken on
+    `ProfileResponse` and means consent alone, so two fields with one name would
+    give two different answers to the same question.
   - Visibility can now be **lost** without the founder doing anything: a
     re-audit that raises a new required gap hides them until it is closed. Do
     not cache visibility.

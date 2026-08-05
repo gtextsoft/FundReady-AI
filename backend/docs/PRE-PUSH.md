@@ -4,7 +4,7 @@
 
 Three tasks landed, and together they close Phase 3's readiness loop:
 
-| | |
+| Task | What it does |
 |---|---|
 | **T3.1** | An audit's action plan becomes durable, trackable tasks |
 | **T3.5** | A founder proves a task with evidence, and the AI grades it |
@@ -37,7 +37,7 @@ through, and nothing that changed who investors could see.
 the wall sits inside a query that already exists rather than a new route somebody
 could forget to call.
 
-**Tasks (T3.1)**
+### Tasks (T3.1)
 
 | Endpoint | Purpose |
 |---|---|
@@ -45,7 +45,7 @@ could forget to call.
 | `GET /v1/startups/{id}/tasks/summary` | Counts and gate state, for a home screen |
 | `GET /v1/startups/{id}/tasks/{task_id}` | One task |
 
-**Evidence (T3.5)**
+### Evidence (T3.5)
 
 | Endpoint | Purpose |
 |---|---|
@@ -60,7 +60,7 @@ OpenAPI went **39 paths / 44 operations → 46 / 52**.
 New enums: `Requirement`, `TaskStatus`, `Dimension`, `EvidenceStatus`,
 `AssessmentOutcome`. New task fields: `assessment_attempts`,
 `attempts_remaining`. New summary fields: `has_audit`, `gate_cleared`,
-`investor_visible`.
+`discoverable`.
 
 ### Files
 
@@ -207,13 +207,24 @@ founder who finishes their tasks is not visible until they request a re-audit.**
 Prompt them in the client.
 
 **`ReadinessSummary` reports eligibility and consent separately** (`gate_cleared`
-vs `investor_visible`). They fail for different reasons and are fixed by
-different actions, so collapsing them would leave a founder unable to tell "you
-have work left" from "you have not opted in".
+vs `discoverable`). They fail for different reasons and are fixed by different
+actions, so collapsing them would leave a founder unable to tell "you have work
+left" from "you have not opted in".
+
+**The field is `discoverable`, not `investor_visible`, and that is a deliberate
+correction.** It was first written as `investor_visible` — which is *already* a
+field on `ProfileResponse` meaning **consent alone**. Two fields with one name
+giving two different answers to "can investors see me" is the kind of thing a
+client developer gets wrong once and then debugs for an afternoon:
+
+| Field | Where | Means |
+|---|---|---|
+| `investor_visible` | `ProfileResponse` | Consent only — the founder opted in |
+| `discoverable` | `GET .../tasks/summary` | The real answer — all three conditions met |
 
 ---
 
-## Three bugs caught before shipping — none by a passing test
+## Four bugs caught before shipping — none by a passing test
 
 ### 1. Task generation could re-bill an audit and lose the report
 
@@ -236,7 +247,7 @@ letters, numbers, underscores and dashes** and raises on anything else — so
 completing an evidence upload returned a **`500`**, *after* the founder's file
 had reached the bucket and the task had been marked `submitted`.
 
-655 unit tests, 339 security tests and clean `mypy` all passed with this in
+655 unit tests, every security test and clean `mypy` all passed with this in
 place. Every test that touches a dispatch path patches `enqueue_assessment` out,
 because Redis is not what those tests are about. Only a real dispatch reaches the
 validator. `test_every_job_id_passes_rqs_own_validator` now asserts both shapes
@@ -253,6 +264,22 @@ Now re-checked at `complete` (before the storage call) and again in the worker
 before spending. **The state that matters is the state at the moment work is
 dispatched** — a limit checked where work is *requested* rather than where it is
 *performed* is not a limit.
+
+### 4. A fixture was describing a state the system cannot reach
+
+The full suite surfaced two failures in `test_readiness_tasks.py` that were the
+gate working correctly. Both summary tests generated tasks against a **queued**
+audit run, so `latest_succeeded` found nothing and the counts came back zero.
+
+In production a task can only exist *after* a run succeeds — the worker generates
+them in the block after `mark_succeeded` — so every `audit_run_id` points at a run
+that produced a report. The fixture was describing an unreachable state, and it
+had been hiding the fact that `summarise_tasks` resolves against the latest
+*succeeded* run.
+
+Fixed by making the fixture realistic rather than loosening the code. Worth
+remembering: when a new gate turns old tests red, check whether the old test was
+asserting something the system could actually do.
 
 ### Bonus: the tiebreaker bug the T3.6 tests found
 
@@ -273,12 +300,13 @@ must stay in step.
 | Check | Result |
 |---|---|
 | Unit | **655 passed** |
+| Integration | **74 passed** |
+| Security (DB-backed, live Neon) | **360 passed** in one combined run |
 | `ruff check` · `ruff format --check` · `mypy app` | clean |
 | Migrations `0012` and `0013` | applied to Neon, each proven **down and back up** |
 | Live HTTP — T3.1 | **19/19 checks** |
 | Live HTTP — T3.5, incl. a real R2 round trip | **17/17 checks** |
 | Live HTTP — T3.6 gate | **11/11 checks** |
-| Security + integration | **confirm before pushing** — see the checklist |
 
 **The live-server passes earned their keep three times.** They caught the route
 ordering trap (`/tasks/summary` must be declared before `/tasks/{task_id}`), the
@@ -297,14 +325,19 @@ cannot go red proves nothing:
 
 ---
 
-## Also fixed: `CLIENTS.md` §7 was lying to the mobile developer
+## Also fixed: `CLIENTS.md` was misleading the mobile developer
 
-It listed the report (T2.7/T4.2), document-driven audits (T2.4a), discovery, and
+§7 listed the report (T2.7/T4.2), document-driven audits (T2.4a), discovery, and
 the full-report reveal as **not built**, while §5b–§5d of the same document
 described all of them in working detail. The table was also malformed — half its
 rows sat outside it.
 
-Corrected, along with the stale "29 operations across 25 paths" header and §3's
+§5c ended up carrying **two** "publishing is consent, not eligibility"
+paragraphs — the pre-existing one and mine — and the older one's rule had quietly
+become incomplete, naming only the succeeded-audit condition and not the gate.
+Merged into one statement listing all three conditions.
+
+Also corrected: the stale "29 operations across 25 paths" header, and §3's
 list-conventions section, which now states the paged envelope as *the* convention
 with the two legacy endpoints named as exceptions.
 
@@ -337,17 +370,19 @@ with the two legacy endpoints named as exceptions.
 ## Before you push
 
 - [ ] **`git log` first** — commits land here outside my control.
-- [ ] **Confirm the security + integration run is green.** It is the one gate I
-      could not complete in-session; earlier attempts were killed or superseded
-      by later edits.
+- [x] ~~Confirm one combined `pytest tests/security` run is green.~~ **Done:
+      360 passed, 31m28s.** Run as one process rather than per-file, because
+      that is the only thing that catches cross-file ordering effects — this
+      project has been bitten by one before (a log filter installed by an
+      earlier test).
 - [ ] Migrations `0012` and `0013` are **already applied to Neon** (there is only
       one branch — `TEST_DATABASE_URL` is unset, so app and tests share a
       database). `preDeployCommand` will find it at head.
 - [ ] `docs/openapi.json` is re-exported — the contract tests fail if it drifts,
       so do not skip it in a partial commit.
 - [ ] Tell the mobile developer §5e and §5f exist, and that **`publish`
-      succeeding no longer means visible** — they must read `investor_visible`
-      from the task summary.
+      succeeding no longer means visible** — they must read **`discoverable`**
+      from the task summary, *not* `investor_visible` on the profile.
 
 ## After you deploy
 

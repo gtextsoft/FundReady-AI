@@ -674,28 +674,33 @@ browses what founders have published.
 | `POST /v1/startups/{id}/publish` | Opt in to discovery |
 | `POST /v1/startups/{id}/unpublish` | Opt out again, immediately |
 
-**Publishing is consent, not eligibility.** It always succeeds — it never
-refuses because tasks are outstanding, and it is not a promise that anyone can
-see the startup. Whether they *actually* appear is decided when an investor
-reads (T3.6): opted in **and** a succeeded audit **and** no required task
-outstanding. That is why `publish` cannot tell you the answer and
-`GET .../tasks/summary` can — read `investor_visible` there, not the result of
-this call.
-
-A founder may publish before finishing their tasks, and should be able to: they
-become visible the moment the gate clears, with no second action needed. The
-reverse also holds — a re-audit that raises a new required gap makes them
-invisible again without touching their consent.
-
 **Publishing is consent, not eligibility, and the difference matters for your
-UI.** Opting in says the founder is willing to be seen. Whether there is
-anything to *show* is decided separately: a startup appears in discovery only
-once it also has a **succeeded audit**.
+UI.** It always succeeds — it never refuses because an audit is missing or tasks
+are outstanding, and it is **not** a promise that anyone can see the startup.
 
-So publishing before the first audit finishes is allowed and is **not an
-error**. Say so plainly — *"You'll appear to investors once your audit
-completes."* Poll the audit, not the publish endpoint. `investor_visible` and
-`published_at` are on every `ProfileResponse`.
+Whether a startup *actually* appears is decided when an investor reads, and needs
+all three:
+
+1. the founder opted in (`publish`),
+2. a **succeeded audit** exists,
+3. **no required task is outstanding** in that audit's plan (§5e, §5f).
+
+So publishing before the audit finishes, or before the tasks are done, is allowed
+and is **not an error**. Say so plainly — *"You'll appear to investors once your
+audit completes and your required tasks pass."* The founder becomes visible the
+moment the last condition is met, with no second action needed. The reverse also
+holds: a re-audit that raises a new required gap makes them invisible again
+without touching their consent, so **do not cache visibility**.
+
+⚠️ **Two different fields are called something similar — read the right one.**
+
+| Field | Where | Means |
+|---|---|---|
+| `investor_visible` | `ProfileResponse` | **Consent only.** The founder opted in. |
+| `discoverable` | `GET .../tasks/summary` | **The real answer.** All three conditions met. |
+
+To tell a founder whether investors can see them, read `discoverable`. Reading
+`investor_visible` will tell them yes while discovery hides them.
 
 Unpublishing is unconditional and takes effect at once. It does **not** retract
 a report SACI has already revealed to an investor: that disclosure happened, and
@@ -876,17 +881,17 @@ whole list on every launch:
 ```json
 { "total": 44, "required_total": 31, "required_open": 29,
   "required_passed": 2, "recommended_total": 13,
-  "has_audit": true, "gate_cleared": false, "investor_visible": false }
+  "has_audit": true, "gate_cleared": false, "discoverable": false }
 ```
 
-**`gate_cleared` and `investor_visible` are different questions — show them
+**`gate_cleared` and `discoverable` are different questions — show them
 separately.**
 
 | Field | Means | What the founder does about it |
 |---|---|---|
 | `has_audit` | A succeeded audit with a report exists | Submit an audit |
 | `gate_cleared` | `has_audit` **and** `required_open == 0` | Work the required tasks |
-| `investor_visible` | `gate_cleared` **and** they opted in | Press publish |
+| `discoverable` | `gate_cleared` **and** they opted in | Press publish |
 
 "You still have 3 required tasks" and "you have not opted in to discovery" are
 different messages with different fixes. A single "not visible" flag would leave

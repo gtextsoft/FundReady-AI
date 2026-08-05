@@ -439,7 +439,7 @@ class TestSummaryGateState:
 
         assert summary.required_open == 1
         assert summary.gate_cleared is False
-        assert summary.investor_visible is False
+        assert summary.discoverable is False
         assert not await _discovers(db_session, seeker, startup_id)
 
     async def test_a_cleared_summary_matches_a_discoverable_startup(
@@ -451,7 +451,7 @@ class TestSummaryGateState:
         summary = await readiness.summarise_tasks(db_session, actor, startup_id)
 
         assert summary.gate_cleared is True
-        assert summary.investor_visible is True
+        assert summary.discoverable is True
         assert await _discovers(db_session, seeker, startup_id)
 
     async def test_consent_and_eligibility_are_reported_separately(
@@ -468,7 +468,7 @@ class TestSummaryGateState:
         summary = await readiness.summarise_tasks(db_session, actor, startup_id)
 
         assert summary.gate_cleared is True, "eligible"
-        assert summary.investor_visible is False, "but has not opted in"
+        assert summary.discoverable is False, "but has not opted in"
 
     async def test_no_audit_reports_no_gate_rather_than_a_cleared_one(
         self, db_session: AsyncSession
@@ -497,7 +497,7 @@ class TestSummaryGateState:
         assert summary.has_audit is False
         assert summary.required_open == 0
         assert summary.gate_cleared is False
-        assert summary.investor_visible is False
+        assert summary.discoverable is False
 
     async def test_counts_are_scoped_to_the_latest_run(
         self, db_session: AsyncSession

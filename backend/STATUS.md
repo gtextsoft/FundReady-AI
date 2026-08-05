@@ -22,9 +22,9 @@ deploy. Three things went from "never run" to "proven" today:
 
 ## Test and gate state
 
-- Unit: **652 passed**
-- Security (DB-backed): report tiers 16, report access 12, discovery 12,
-  reveal gate 11, **readiness tasks 20**, **evidence 19**
+- Unit: **655 passed** · Integration: **74 passed**
+- Security (DB-backed): **360 passed** in one combined run — including
+  **readiness tasks 20**, **evidence 22**, **readiness gate 18**
 - `ruff check` · `ruff format --check` · `mypy app` — **all clean**
 - OpenAPI: **46 paths, 52 operations**, exported to `docs/openapi.json`
 - Migrations: head is `0013_evidence`, applied to Neon and **proven down and

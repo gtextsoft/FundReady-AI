@@ -158,7 +158,7 @@ class ReadinessSummary(BaseModel):
                 "recommended_total": 13,
                 "has_audit": True,
                 "gate_cleared": False,
-                "investor_visible": False,
+                "discoverable": False,
             }
         },
     )
@@ -192,12 +192,13 @@ class ReadinessSummary(BaseModel):
             "visibility -- the founder must also have opted in."
         )
     )
-    investor_visible: bool = Field(
+    discoverable: bool = Field(
         description=(
             "Whether this startup actually appears in discovery right now: the "
-            "gate cleared **and** the founder opted in via `publish`. Use this "
-            "to explain the two halves separately -- 'you have work left' and "
-            "'you have not opted in' are different messages."
+            "gate cleared **and** the founder opted in via `publish`.\n\n"
+            "**Not the same field as `StartupProfile.investor_visible`**, which "
+            "is consent alone. This one is the answer to 'can an investor see "
+            "me', which is what a founder is actually asking."
         )
     )
 
