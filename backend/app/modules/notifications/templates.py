@@ -7,9 +7,10 @@ Every message goes out as both HTML and plain text. Plain text is not a
 courtesy: some clients render it by preference, and a security email that
 arrives as a blank body is a support incident.
 
-**Templates never take the recipient's address or name.** They render a link
-and nothing else, so a template cannot accidentally place personal data
-somewhere it will be logged. The caller supplies the recipient separately.
+**Templates never take the recipient's address or name.** They render one
+secret -- a verification code or a reset link -- and nothing else, so a
+template cannot accidentally place personal data somewhere it will be logged.
+The caller supplies the recipient separately.
 """
 
 from dataclasses import dataclass
@@ -43,24 +44,39 @@ def _wrap(heading: str, body_html: str) -> str:
     )
 
 
-def verification_email(verification_url: str) -> EmailContent:
-    """Confirm ownership of an email address before any sensitive action."""
+def verification_email(code: str, ttl_minutes: int) -> EmailContent:
+    """Confirm ownership of an email address before any sensitive action.
+
+    A code rather than a link, so the person finishes signing up in the app
+    they started in -- and so nothing in this message is clickable, which is
+    the shape a phishing email cannot imitate. The digits are spaced out
+    visually but sent as one unbroken string, because a client that reflows the
+    HTML must not change what gets copied.
+    """
     return EmailContent(
+        # **The code stays out of the subject**, tempting as the lock-screen
+        # preview is. `notifications.service` logs the subject of every message
+        # it sends, and a subject also travels through more relay logs than a
+        # body -- either would put a live credential somewhere it is kept.
         subject=f"Confirm your {PRODUCT_NAME} email address",
         html=_wrap(
             "Confirm your email address",
-            f"<p>Confirm this address to finish setting up your {PRODUCT_NAME} "
-            "account.</p>"
-            f'<p><a href="{verification_url}">Confirm email address</a></p>'
-            "<p>The link expires in 24 hours. If you did not create an account, "
-            "you can ignore this message.</p>",
+            f"<p>Enter this code in the {PRODUCT_NAME} app to finish setting "
+            "up your account.</p>"
+            '<p style="font-size:32px;font-weight:600;letter-spacing:6px;'
+            "margin:24px 0;font-family:ui-monospace,SFMono-Regular,Menlo,"
+            f'monospace">{code}</p>'
+            f"<p>The code expires in {ttl_minutes} minutes and can be used "
+            "once. If you did not create an account, you can ignore this "
+            "message -- nobody can use the code without it.</p>",
         ),
         text=(
-            f"Confirm this address to finish setting up your {PRODUCT_NAME} "
-            "account:\n\n"
-            f"{verification_url}\n\n"
-            "The link expires in 24 hours. If you did not create an account, "
-            "you can ignore this message."
+            f"Enter this code in the {PRODUCT_NAME} app to finish setting up "
+            "your account:\n\n"
+            f"{code}\n\n"
+            f"The code expires in {ttl_minutes} minutes and can be used once. "
+            "If you did not create an account, you can ignore this message -- "
+            "nobody can use the code without it."
         ),
     )
 

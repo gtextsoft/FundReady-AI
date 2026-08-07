@@ -126,10 +126,12 @@ async def send_email(
 
 
 async def send_verification_email(
-    to: str, verification_url: str, *, settings: Settings | None = None
+    to: str, code: str, *, ttl_minutes: int, settings: Settings | None = None
 ) -> bool:
-    """Ask a new user to confirm their address (T1.2b calls this)."""
-    return await send_email(to, verification_email(verification_url), settings=settings)
+    """Email a new user the code that confirms their address (T1.2b calls this)."""
+    return await send_email(
+        to, verification_email(code, ttl_minutes), settings=settings
+    )
 
 
 async def send_password_reset_email(

@@ -1,14 +1,14 @@
-"""Mint a verification or password-reset link for local development.
+"""Mint a verification code or a password-reset link for local development.
 
     python scripts/issue_dev_token.py founder@example.test
     python scripts/issue_dev_token.py founder@example.test --purpose password_reset
 
-Why this exists: auth tokens are stored hashed, so once one is emailed it cannot
-be recovered from the database, and the application deliberately does not log
-it -- `core.logging.RedactionFilter` scrubs `token=` from every log line because
-a verification token is a credential. Rather than carve an exception into that
-rule, local flows mint a fresh token here, outside the request path, where the
-value is printed once to a terminal and never enters a log.
+Why this exists: auth secrets are stored hashed, so once one is emailed it
+cannot be recovered from the database, and the application deliberately does not
+log it -- `core.logging.RedactionFilter` scrubs `token=` from every log line
+because a verification secret is a credential. Rather than carve an exception
+into that rule, local flows mint a fresh one here, outside the request path,
+where the value is printed once to a terminal and never enters a log.
 
 Refuses to run against production.
 """
@@ -26,15 +26,6 @@ from app.modules.identity import service  # noqa: E402
 from app.modules.identity.models import TokenPurpose  # noqa: E402
 from app.modules.identity.repository import UserRepository  # noqa: E402
 
-TTLS = {
-    TokenPurpose.EMAIL_VERIFICATION: service.VERIFICATION_TTL,
-    TokenPurpose.PASSWORD_RESET: service.PASSWORD_RESET_TTL,
-}
-PATHS = {
-    TokenPurpose.EMAIL_VERIFICATION: "verify-email",
-    TokenPurpose.PASSWORD_RESET: "reset-password",
-}
-
 
 async def issue(email: str, purpose: TokenPurpose) -> int:
     settings = get_settings()
@@ -50,12 +41,27 @@ async def issue(email: str, purpose: TokenPurpose) -> int:
             print(f"no account for {email}", file=sys.stderr)
             return 1
 
-        raw = await service.issue_auth_token(session, user, purpose, TTLS[purpose])
+        if purpose is TokenPurpose.EMAIL_VERIFICATION:
+            code = await service.issue_verification_code(session, user)
+            await session.commit()
+            print(code)
+            print(
+                f"\nPOST {{'email': '{user.email}', 'code': '{code}'}} to "
+                f"/v1/auth/verify-email (expires in {service.VERIFICATION_TTL})"
+            )
+            return 0
+
+        raw = await service.issue_auth_token(
+            session, user, purpose, service.PASSWORD_RESET_TTL
+        )
         await session.commit()
 
     base = settings.app_link_base_url.rstrip("/") or "https://app.example"
-    print(f"{base}/{PATHS[purpose]}?token={raw}")
-    print(f"\nPOST the token to /v1/auth/{PATHS[purpose]} (expires in {TTLS[purpose]})")
+    print(f"{base}/reset-password?token={raw}")
+    print(
+        "\nPOST the token to /v1/auth/password-reset/confirm "
+        f"(expires in {service.PASSWORD_RESET_TTL})"
+    )
     return 0
 
 

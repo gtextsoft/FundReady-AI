@@ -39,8 +39,9 @@ Authorization: Bearer <access_token>
 
 ```
 POST /v1/auth/register        → 202  { status: "pending_verification" }
-   (user receives an email)
-POST /v1/auth/verify-email    → 200  account becomes active
+   (user receives an email with a 6-digit code)
+POST /v1/auth/verify-email    → 204  account becomes active
+POST /v1/auth/verify-email/resend → 202  another code, previous one dies
 POST /v1/auth/login           → 200  LoginResponse   ← branch on `status`
 POST /v1/auth/mfa/verify      → 200  TokenPairResponse   (only if mfa_required)
 POST /v1/auth/refresh         → 200  TokenPairResponse   (rotates both tokens)
@@ -207,7 +208,8 @@ per endpoint (`tasks` is priority-first, `audits` is newest-first).
 | `POST /v1/auth/login` | Returns `LoginResponse` — branch on `status` |
 | `POST /v1/auth/refresh` | Rotates the pair |
 | `POST /v1/auth/logout` | Revokes the family |
-| `POST /v1/auth/verify-email` | Token from the emailed link |
+| `POST /v1/auth/verify-email` | `email` + the 6-digit code from the email |
+| `POST /v1/auth/verify-email/resend` | Always 202. New code, previous one dies |
 | `POST /v1/auth/password-reset/request` | Always 202, even for unknown addresses |
 | `POST /v1/auth/password-reset/confirm` | Completing this **logs out every session** |
 | `POST /v1/auth/mfa/verify` | Completes an `mfa_required` login |
@@ -252,8 +254,8 @@ company name; send `name` explicitly to control it.
 Every row below refuses an admin who has not enrolled two-factor
 authentication with `403` and the message
 `"Admin accounts must enrol in two-factor authentication first."` —
-same response as `POST /v1/admin/users/*`. Enrol before calling any of them;
-an access token alone is not enough.
+same response the admin user-management endpoints already returned.
+Enrol before calling any of them; an access token alone is not enough.
 
 | | |
 |---|---|
@@ -294,7 +296,7 @@ to produce a verdict rather than `insufficient_data`.
 
 ```
 1. POST /v1/auth/register          → account (founder, company email only)
-2. POST /v1/auth/verify-email      → email proven, account usable
+2. POST /v1/auth/verify-email      → 6-digit code from the email, account usable
 3. POST /v1/startups               → profile created (5 required columns)
 4. PATCH /v1/startups/{id}         → fill in the question catalogue below
 5. POST /v1/startups/{id}/documents → deck + financials (§5)
@@ -322,7 +324,7 @@ with `details.reason`, so branch on that:
 
 The second one is stricter on purpose. Most throwaway inboxes are **publicly
 readable** — a mailinator address has no password — so an account on one hands
-its verification link, and every future password-reset link, to anyone who knows
+its verification code, and every future password-reset link, to anyone who knows
 the address. That is account takeover, not a weak identity signal, which is why
 it applies to investors too.
 
@@ -343,13 +345,29 @@ Password: at least 12 characters, and must not contain the email address.
 
 ### Step 2 — Verify email
 
-The account exists but is not usable until the address is proven. The link in
-the email points at `APP_LINK_BASE_URL` — your deep link, not the API — and your
-handler calls `POST /v1/auth/verify-email` with the token from the URL.
+The account exists but is not usable until the address is proven. The email
+carries a **six-digit code**, not a link: show a code entry screen straight
+after registration and `POST /v1/auth/verify-email` with `email` and `code`.
+Success is `204`.
 
-Tokens are **single-use and expire in 24 hours**. Do not prefetch or preview the
-link anywhere: mail scanners that follow URLs will burn the token before the
-founder taps it.
+What the screen has to handle:
+
+- **Send the address as well as the code.** A six-digit code is only checked
+  against the account it was issued to, so the API cannot find it from the
+  digits alone. Keep the address from the registration step.
+- **Spaces and hyphens are stripped**, so a pasted `418 305` works. Anything
+  that is not six digits after stripping is a `422` before it reaches the
+  account.
+- **The code expires in 15 minutes and allows 5 attempts.** After either limit
+  it is dead and only a new email helps.
+- **Every failure is the same `422`** — wrong code, expired, spent, exhausted,
+  and *no such account* are one message. Do not infer from it that the address
+  is registered, and do not show a different error for each guess.
+- **Offer resend, with a countdown.** `POST /v1/auth/verify-email/resend` takes
+  the address and always returns `202`. A code requested within 60 seconds of
+  the last one is silently not sent, so a button with no cooldown will look
+  broken. Requesting a new code **invalidates the previous one** — always
+  verify against the newest email.
 
 ### Step 3 — Create the profile
 
@@ -1096,9 +1114,10 @@ Honesty over polish — these are real and currently unresolved:
 - **`first_name` / `last_name` can be `null`** on `UserResponse` for accounts
   created before the columns existed, and for admins (who are provisioned, not
   registered). Handle null.
-- **Email delivery is unverified.** Verification and reset emails are built and
-  tested but have never been sent through a live provider (T1.2a), so the
-  end-to-end verify/reset journey is unproven.
+- **The verification *code* email has not been delivered live.** A verification
+  email was delivered end to end on 2026-08-04, but that was the older
+  link-based message; the six-digit code template that replaced it is unit
+  tested only. Reset emails remain unproven through a live provider.
 - **Document storage is unverified.** Signing is proven offline, but no byte has
   been written to a real bucket (T1.5). Treat the upload flow as
   interface-stable, behaviour-untested.

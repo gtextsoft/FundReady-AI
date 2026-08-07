@@ -245,9 +245,38 @@ class AuthTokenRepository:
         )
         return result
 
+    async def latest_live(
+        self, *, user_id: uuid.UUID, purpose: TokenPurpose, now: datetime
+    ) -> AuthToken | None:
+        """The newest unused, unexpired row for this user and purpose.
+
+        A verification code cannot be found by its hash the way a link token
+        can: the hash is keyed with the user id, so the caller has to be
+        resolved first, and a wrong guess would match nothing at all -- leaving
+        no row on which to count the attempt.
+        """
+        result: AuthToken | None = await self._session.scalar(
+            select(AuthToken)
+            .where(
+                AuthToken.user_id == user_id,
+                AuthToken.purpose == purpose,
+                AuthToken.used_at.is_(None),
+                AuthToken.expires_at > now,
+            )
+            .order_by(AuthToken.created_at.desc())
+            .limit(1)
+        )
+        return result
+
     async def mark_used(self, token: AuthToken, *, at: datetime) -> None:
         token.used_at = at
         await self._session.flush()
+
+    async def record_failed_attempt(self, token: AuthToken) -> int:
+        """Count one wrong guess. Returns the new total."""
+        token.attempt_count += 1
+        await self._session.flush()
+        return token.attempt_count
 
     async def consume_outstanding(
         self, *, user_id: uuid.UUID, purpose: TokenPurpose, at: datetime

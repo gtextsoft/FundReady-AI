@@ -31,6 +31,7 @@ from app.modules.identity.schemas import (
     RefreshRequest,
     RegisterRequest,
     RegistrationAccepted,
+    ResendVerificationRequest,
     TokenPairResponse,
     UserResponse,
     VerifyEmailRequest,
@@ -179,18 +180,53 @@ async def read_me(user: AuthenticatedUserDep, session: SessionDep) -> UserRespon
     summary="Confirm an email address",
     description=(
         "Confirms the address and activates the account.\n\n"
-        "The token arrives as a query parameter on the link in the "
-        "verification email, which points at **your** app rather than this "
-        "API: mail security scanners prefetch URLs, and a GET endpoint here "
-        "would have the single-use token consumed before the user clicked. "
-        "Extract the token and POST it.\n\n"
-        "`422` covers unknown, expired, and already-used tokens with one "
-        "message -- do not try to distinguish them."
+        "**Collect the six-digit code from the verification email**, together "
+        "with the address it was sent to -- both are required, because a "
+        "six-digit code is only checked against the one account it belongs "
+        "to. Spaces and hyphens in the code are ignored.\n\n"
+        "`422` covers a wrong code, an expired one, one already used, one "
+        "whose attempts are exhausted, and an address with no account at all "
+        "-- one message for every case, so do not try to distinguish them, and "
+        "do not treat the error as evidence that an account exists.\n\n"
+        f"**The code expires in {int(service.VERIFICATION_TTL.total_seconds() // 60)} "
+        f"minutes and allows {service.MAX_VERIFICATION_ATTEMPTS} attempts.** "
+        "After that it is dead and the user needs a new one from "
+        "`POST /v1/auth/verify-email/resend`. Requesting a new code "
+        "invalidates the previous one, so always verify against the newest "
+        "email."
     ),
     responses=error_responses(422),
 )
 async def verify_email(payload: VerifyEmailRequest, session: SessionDep) -> None:
-    await service.verify_email(session, payload.token)
+    await service.verify_email(session, email=payload.email, code=payload.code)
+
+
+@router.post(
+    "/auth/verify-email/resend",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=RegistrationAccepted,
+    summary="Send another verification code",
+    description=(
+        "Issues a fresh code and emails it, **invalidating the previous "
+        "one**.\n\n"
+        "**Always returns `202` with the same body** -- whether the address "
+        "has no account, is already verified, or simply asked again too soon. "
+        "Nothing here can be used to discover who has an account or who has "
+        "finished verifying.\n\n"
+        "A code requested within "
+        f"{int(service.VERIFICATION_RESEND_COOLDOWN.total_seconds())} seconds "
+        "of the last one is not sent, so do not offer the button as an instant "
+        "retry -- put a short countdown on it."
+    ),
+    responses=error_responses(422),
+)
+async def resend_verification_email(
+    payload: ResendVerificationRequest, session: SessionDep
+) -> RegistrationAccepted:
+    await service.resend_verification_email(session, payload.email)
+    return RegistrationAccepted(
+        message="If that address needs verifying, a new code is on its way.",
+    )
 
 
 @router.post(

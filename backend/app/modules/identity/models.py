@@ -292,11 +292,16 @@ class TokenPurpose(StrEnum):
 
 
 class AuthToken(Base):
-    """A single-use, expiring token sent by email (AUTH.md sections 12, 15).
+    """A single-use, expiring secret sent by email (AUTH.md sections 12, 15).
 
-    Only the SHA-256 hash is stored; the raw value exists once, in the message
-    that carried it. Consumed by setting `used_at` -- rows are kept rather than
-    deleted so a replay can be told apart from a token that never existed.
+    Two shapes share this table. A **password reset** carries a 256-bit random
+    token in a link, stored as a bare SHA-256. **Email verification** carries a
+    six-digit code the recipient types back, stored as an HMAC keyed with the
+    server secret -- six digits behind an unkeyed hash would fall to a database
+    leak immediately (`core.security.hash_verification_code`).
+
+    Consumed by setting `used_at` -- rows are kept rather than deleted so a
+    replay can be told apart from a secret that never existed.
     """
 
     __tablename__ = "auth_tokens"
@@ -318,6 +323,11 @@ class AuthToken(Base):
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Wrong guesses against this row. A six-digit code is a million guesses,
+    # which is nothing to a script, so the code is burned once this reaches
+    # `service.MAX_VERIFICATION_ATTEMPTS`. Meaningless for a link token, which
+    # is guessed by nobody, and left at zero there.
+    attempt_count: Mapped[int] = mapped_column(default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

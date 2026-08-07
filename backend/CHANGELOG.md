@@ -13,13 +13,30 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Admin endpoints now refuse an unenrolled admin with `403`.** Report reveal,
   the admin-tier audit report, benchmark CRUD, interest approve/decline, and
   readiness-task reopen previously checked role only and skipped the MFA gate
-  that `POST /v1/admin/users/*` already enforced. They now use the same
+  that admin user-management already enforced. They now use the same
   `CurrentAdmin` dependency and a shared `assert_admin` check, so a token from
   an admin who has not enrolled two-factor authentication buys nothing on those
   paths either. Message matches the existing MFA refusal:
   `"Admin accounts must enrol in two-factor authentication first."`
 
 ### Changed
+- **BREAKING: `POST /v1/auth/verify-email` now takes `{ email, code }`, not
+  `{ token }`.** Email verification is a **six-digit code typed into the app**
+  rather than a link that opens it. A client still sending `token` gets a `422`.
+  - **Send the address with the code.** Six digits are only checked against the
+    account they were issued to, so the API cannot find the code from the digits
+    alone — keep the address from the registration screen.
+  - Spaces and hyphens are stripped, so a pasted `418 305` works. Anything that
+    is not six digits after stripping is rejected before it reaches an account.
+  - **The code expires in 15 minutes and allows 5 attempts**, then it is dead
+    and only a new email helps. The old link lasted 24 hours; do not carry that
+    expectation over into the UI copy.
+  - **Every failure is the same `422`** — wrong code, expired, spent, exhausted,
+    and *no account for that address* share one message. Do not branch on it,
+    and do not read it as evidence that an account exists.
+  - Success is still `204`, and `APP_LINK_BASE_URL` is untouched: it no longer
+    carries verification, but the password-reset link is unchanged and still
+    goes through it.
 - **Investor discovery is now gated on readiness (T3.6).** A startup appears in
   `GET /v1/discover` only when it has opted in, **and** has a succeeded audit,
   **and** has no required task outstanding in that audit's plan. Previously
@@ -48,6 +65,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   request a re-audit once their required tasks pass.
 
 ### Added
+- **`POST /v1/auth/verify-email/resend`** — issues a fresh verification code and
+  emails it, **invalidating the previous one**. Takes `{ email }` and always
+  returns `202` with the same body, whether the address has no account, is
+  already verified, or asked again too soon. A code requested within 60 seconds
+  of the last one is silently not sent, so put a countdown on the button rather
+  than offering an instant retry.
 - **Evidence upload and AI assessment — five new endpoints (T3.5).** This is
   what makes a readiness task completable; before it, every task was
   permanently `open`.

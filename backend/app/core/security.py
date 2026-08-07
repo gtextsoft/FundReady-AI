@@ -25,6 +25,7 @@ The rules that matter, and why they are here rather than at each call site:
 
 import base64
 import hashlib
+import hmac
 import logging
 import secrets
 import uuid
@@ -385,6 +386,73 @@ def generate_refresh_token() -> str:
 def hash_refresh_token(token: str) -> str:
     """Hash a refresh token for storage."""
     return hash_opaque_token(token)
+
+
+# ---------------------------------------------------------------------------
+# Email verification codes (AUTH.md section 3.2)
+# ---------------------------------------------------------------------------
+
+VERIFICATION_CODE_DIGITS: Final = 6
+_CODE_HASH_DOMAIN: Final = b"fundready.email-code.v1"
+
+
+def generate_verification_code() -> str:
+    """A six-digit code for a person to read off an email and type in.
+
+    `secrets`, not `random`: a predictable code is a free account takeover.
+    Leading zeros are kept, so every code is exactly six characters and the
+    client can validate the length without special cases.
+    """
+    upper = 10**VERIFICATION_CODE_DIGITS
+    return f"{secrets.randbelow(upper):0{VERIFICATION_CODE_DIGITS}d}"
+
+
+def normalise_verification_code(code: str) -> str:
+    """Strip what a person or their mail client adds around the digits.
+
+    Spaces and hyphens survive a copy-paste from a rendered email, and the
+    keypad on a phone puts them there too. Rejecting `123 456` for that would
+    look like a wrong code to the one person who read it correctly.
+    """
+    return "".join(character for character in code if character.isdigit())
+
+
+def hash_verification_code(
+    code: str,
+    *,
+    user_id: uuid.UUID,
+    purpose: str,
+    settings: Settings | None = None,
+) -> str:
+    """Hash a verification code for storage, keyed with the server secret.
+
+    **Not `hash_opaque_token`.** That is a bare SHA-256, which is right for 256
+    bits of randomness and disastrous for six digits: a database leak would
+    yield every outstanding code in under a second of brute force, because
+    there are only a million of them and the hash is unkeyed. HMAC with a
+    secret the database does not hold makes the leaked column useless on its
+    own.
+
+    The user id and purpose are inside the MAC rather than merely checked
+    afterwards, which binds a code to one account and one flow -- two rows can
+    never collide on the same digits, and a code cannot be replayed against
+    another user even if the digits happen to match.
+    """
+    key = _signing_key(settings or get_settings()).encode("utf-8")
+    message = b"|".join(
+        (
+            _CODE_HASH_DOMAIN,
+            str(user_id).encode("utf-8"),
+            purpose.encode("utf-8"),
+            normalise_verification_code(code).encode("utf-8"),
+        )
+    )
+    return hmac.new(key, message, hashlib.sha256).hexdigest()
+
+
+def verification_codes_match(candidate_hash: str, stored_hash: str) -> bool:
+    """Compare two code hashes without leaking how far they matched."""
+    return hmac.compare_digest(candidate_hash, stored_hash)
 
 
 # ---------------------------------------------------------------------------

@@ -2431,6 +2431,30 @@
         "title": "Requirement",
         "type": "string"
       },
+      "ResendVerificationRequest": {
+        "additionalProperties": false,
+        "description": "Ask for another verification code.\n\nThe response is the same whether or not the address has an account, and\nwhether or not it is already verified.",
+        "examples": [
+          {
+            "email": "founder@example.com"
+          }
+        ],
+        "properties": {
+          "email": {
+            "examples": [
+              "founder@example.com"
+            ],
+            "maxLength": 320,
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "ResendVerificationRequest",
+        "type": "object"
+      },
       "RevealResponse": {
         "additionalProperties": false,
         "description": "Confirmation that one full report was opened to one investor.",
@@ -3158,21 +3182,35 @@
       },
       "VerifyEmailRequest": {
         "additionalProperties": false,
-        "description": "The token from the verification link.",
+        "description": "The address being confirmed, and the code that was emailed to it.\n\nBoth, always. The code is six digits, so it is checked against one account\nrather than looked up across all of them -- otherwise a guessed code would\nmatch whichever account happened to hold it (AUTH.md section 3.2).",
         "examples": [
           {
-            "token": "aXNzdWVkLWJ5LWVtYWlsLW5vdC1hLXJlYWwtdG9rZW4"
+            "code": "418305",
+            "email": "founder@example.com"
           }
         ],
         "properties": {
-          "token": {
-            "maxLength": 512,
-            "title": "Token",
+          "code": {
+            "description": "The six-digit code from the verification email. Spaces and hyphens are ignored, so a pasted `123 456` is accepted.",
+            "examples": [
+              "418305"
+            ],
+            "maxLength": 16,
+            "title": "Code",
+            "type": "string"
+          },
+          "email": {
+            "examples": [
+              "founder@example.com"
+            ],
+            "maxLength": 320,
+            "title": "Email",
             "type": "string"
           }
         },
         "required": [
-          "token"
+          "email",
+          "code"
         ],
         "title": "VerifyEmailRequest",
         "type": "object"
@@ -4449,7 +4487,7 @@
     },
     "/v1/auth/verify-email": {
       "post": {
-        "description": "Confirms the address and activates the account.\n\nThe token arrives as a query parameter on the link in the verification email, which points at **your** app rather than this API: mail security scanners prefetch URLs, and a GET endpoint here would have the single-use token consumed before the user clicked. Extract the token and POST it.\n\n`422` covers unknown, expired, and already-used tokens with one message -- do not try to distinguish them.",
+        "description": "Confirms the address and activates the account.\n\n**Collect the six-digit code from the verification email**, together with the address it was sent to -- both are required, because a six-digit code is only checked against the one account it belongs to. Spaces and hyphens in the code are ignored.\n\n`422` covers a wrong code, an expired one, one already used, one whose attempts are exhausted, and an address with no account at all -- one message for every case, so do not try to distinguish them, and do not treat the error as evidence that an account exists.\n\n**The code expires in 15 minutes and allows 5 attempts.** After that it is dead and the user needs a new one from `POST /v1/auth/verify-email/resend`. Requesting a new code invalidates the previous one, so always verify against the newest email.",
         "operationId": "verify_email_v1_auth_verify_email_post",
         "requestBody": {
           "content": {
@@ -4477,6 +4515,48 @@
           }
         },
         "summary": "Confirm an email address",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/v1/auth/verify-email/resend": {
+      "post": {
+        "description": "Issues a fresh code and emails it, **invalidating the previous one**.\n\n**Always returns `202` with the same body** -- whether the address has no account, is already verified, or simply asked again too soon. Nothing here can be used to discover who has an account or who has finished verifying.\n\nA code requested within 60 seconds of the last one is not sent, so do not offer the button as an instant retry -- put a short countdown on it.",
+        "operationId": "resend_verification_email_v1_auth_verify_email_resend_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResendVerificationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "summary": "Send another verification code",
         "tags": [
           "identity"
         ]

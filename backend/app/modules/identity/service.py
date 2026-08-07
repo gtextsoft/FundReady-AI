@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings, get_settings
 from app.core.email_domains import is_consumer_domain, is_disposable_domain
 from app.core.errors import (
+    ConfigurationError,
     ConflictError,
     ForbiddenError,
     InvalidRequestError,
@@ -42,10 +43,13 @@ from app.core.security import (
     generate_mfa_secret,
     generate_opaque_token,
     generate_refresh_token,
+    generate_verification_code,
     hash_opaque_token,
     hash_password,
     hash_refresh_token,
+    hash_verification_code,
     mfa_provisioning_uri,
+    verification_codes_match,
     verify_dummy_password,
     verify_password,
     verify_totp,
@@ -178,7 +182,7 @@ async def register_user(
     # identity and D20 exempts investors from it; this one is about account
     # takeover and exempts nobody. Most throwaway inboxes are publicly readable
     # -- a mailinator address has no password -- so an account on one hands its
-    # verification link, and every future password-reset link, to anyone who
+    # verification code, and every future password-reset link, to anyone who
     # knows the address. An investor reading summary-tier startup data through a
     # public mailbox is the same breach as a founder doing it.
     if is_disposable_domain(normalised):
@@ -471,8 +475,28 @@ async def get_user_email(session: AsyncSession, user_id: uuid.UUID) -> str | Non
 # Email verification and password reset (AUTH.md sections 3.2, 12)
 # ---------------------------------------------------------------------------
 
-VERIFICATION_TTL: Final = timedelta(hours=24)
+# Short, deliberately. A 24-hour window suited a 256-bit link that nobody was
+# going to guess; a six-digit code is a million combinations, so the window in
+# which those guesses are worth making is kept to the few minutes it takes
+# someone to read an email (AUTH.md section 3.2).
+VERIFICATION_TTL: Final = timedelta(minutes=15)
 PASSWORD_RESET_TTL: Final = timedelta(hours=1)
+
+# Five wrong guesses burn the code. With the code also expiring in 15 minutes
+# and being bound to one account, that caps an attacker at five of a million
+# combinations per code -- and each fresh code costs them an email they cannot
+# read. Generous enough that a person mistyping twice is not locked out.
+MAX_VERIFICATION_ATTEMPTS: Final = 5
+
+# How long a live code suppresses another send. Without it, "resend" is a
+# button that mails somebody else's inbox as fast as it can be pressed. Real
+# per-IP and per-account rate limiting is T5.5; this is the floor beneath it.
+VERIFICATION_RESEND_COOLDOWN: Final = timedelta(seconds=60)
+
+# A code hash is keyed with the user id, so two rows colliding needs the same
+# user to draw the same six digits twice. Regenerating is cheaper than letting
+# that raise a unique-constraint violation on the one path a new account walks.
+_CODE_COLLISION_RETRIES: Final = 5
 
 
 def _link(path: str, token: str, settings: Settings) -> str:
@@ -542,29 +566,160 @@ async def _consume(
     return stored, user
 
 
+def _invalid_code() -> InvalidRequestError:
+    """One message for wrong, expired, spent, exhausted, and no-such-account.
+
+    Same reasoning as `_invalid_link`, with one addition that matters more
+    here: the code is checked against an address the caller supplied, so a
+    distinct "no account for that email" would turn this endpoint into the
+    account-existence oracle registration is written to avoid
+    (AUTH.md section 3.2).
+    """
+    return InvalidRequestError("That code is invalid or has expired.")
+
+
+async def issue_verification_code(
+    session: AsyncSession, user: User, *, settings: Settings | None = None
+) -> str:
+    """Create a verification code and return it, for the email to carry.
+
+    Any code already outstanding is burned first, so there is exactly one live
+    code per account. Two live codes would double an attacker's guesses per
+    email and leave a person typing the older one wondering why it failed.
+
+    Only the keyed hash is persisted, so this return value is the one moment
+    the code exists in readable form.
+    """
+    settings = settings or get_settings()
+    tokens = AuthTokenRepository(session)
+    now = datetime.now(UTC)
+
+    await tokens.consume_outstanding(
+        user_id=user.id, purpose=TokenPurpose.EMAIL_VERIFICATION, at=now
+    )
+
+    for _ in range(_CODE_COLLISION_RETRIES):
+        code = generate_verification_code()
+        code_hash = hash_verification_code(
+            code,
+            user_id=user.id,
+            purpose=TokenPurpose.EMAIL_VERIFICATION.value,
+            settings=settings,
+        )
+        already_used = await tokens.get(
+            token_hash=code_hash, purpose=TokenPurpose.EMAIL_VERIFICATION
+        )
+        if already_used is not None:
+            continue
+        await tokens.create(
+            user_id=user.id,
+            purpose=TokenPurpose.EMAIL_VERIFICATION,
+            token_hash=code_hash,
+            expires_at=now + VERIFICATION_TTL,
+        )
+        return code
+
+    # Five collisions in a row is not something that happens; treating it as a
+    # server error is better than looping until one of them stops.
+    raise ConfigurationError
+
+
 async def send_verification_email(
     session: AsyncSession, user: User, *, settings: Settings | None = None
 ) -> None:
-    """Issue a verification token and email the link.
+    """Issue a verification code and email it.
 
     Failure to send is logged, not raised: registration must behave identically
     whether or not the email provider is reachable.
     """
     settings = settings or get_settings()
-    raw = await issue_auth_token(
-        session, user, TokenPurpose.EMAIL_VERIFICATION, VERIFICATION_TTL
-    )
+    code = await issue_verification_code(session, user, settings=settings)
     await notifications.send_verification_email(
-        user.email, _link("verify-email", raw, settings), settings=settings
+        user.email,
+        code,
+        ttl_minutes=int(VERIFICATION_TTL.total_seconds() // 60),
+        settings=settings,
     )
 
 
-async def verify_email(session: AsyncSession, raw_token: str) -> User:
-    """Confirm an address and activate the account."""
-    stored, user = await _consume(session, raw_token, TokenPurpose.EMAIL_VERIFICATION)
+async def resend_verification_email(
+    session: AsyncSession, email: str, *, settings: Settings | None = None
+) -> None:
+    """Send another code. Returns nothing, whatever the address turns out to be.
+
+    Silent for an unknown address, for an already-verified one, and while a
+    recent code is still live -- the caller cannot tell those apart from a
+    successful send, so this cannot be used to discover who has an account or
+    who has finished verifying.
+    """
+    settings = settings or get_settings()
+    user = await UserRepository(session).get_by_email(normalise_email(email))
+    if user is None or user.email_verified:
+        return
+
+    now = datetime.now(UTC)
+    live = await AuthTokenRepository(session).latest_live(
+        user_id=user.id, purpose=TokenPurpose.EMAIL_VERIFICATION, now=now
+    )
+    if live is not None and live.expires_at - VERIFICATION_TTL > (
+        now - VERIFICATION_RESEND_COOLDOWN
+    ):
+        logger.info("verification resend suppressed by cooldown")
+        return
+
+    await send_verification_email(session, user, settings=settings)
+
+
+async def verify_email(
+    session: AsyncSession, *, email: str, code: str, settings: Settings | None = None
+) -> User:
+    """Confirm an address with the code that was emailed, and activate it.
+
+    The address is part of the request because the code is only six digits: it
+    is checked against one account rather than looked up globally, so the
+    million combinations have to be spent against a single target instead of
+    matching whichever account happens to hold them.
+    """
+    settings = settings or get_settings()
     now = datetime.now(UTC)
 
-    await AuthTokenRepository(session).mark_used(stored, at=now)
+    user = await UserRepository(session).get_by_email(normalise_email(email))
+    if user is None:
+        logger.info("verification rejected", extra={"context": {"reason": "no_user"}})
+        raise _invalid_code()
+
+    tokens = AuthTokenRepository(session)
+    stored = await tokens.latest_live(
+        user_id=user.id, purpose=TokenPurpose.EMAIL_VERIFICATION, now=now
+    )
+    if stored is None:
+        logger.info("verification rejected", extra={"context": {"reason": "no_code"}})
+        raise _invalid_code()
+
+    candidate = hash_verification_code(
+        code,
+        user_id=user.id,
+        purpose=TokenPurpose.EMAIL_VERIFICATION.value,
+        settings=settings,
+    )
+    if not verification_codes_match(candidate, stored.token_hash):
+        attempts = await tokens.record_failed_attempt(stored)
+        exhausted = attempts >= MAX_VERIFICATION_ATTEMPTS
+        if exhausted:
+            # Burned, not merely counted: the next request must start from a
+            # freshly emailed code, which is the thing an attacker cannot read.
+            await tokens.mark_used(stored, at=now)
+        # Committed here rather than left to the request, for the same reason
+        # as a failed login: the caller raises next, and the rollback would
+        # discard the count. The cap would look present and stop nothing.
+        await session.commit()
+        logger.info(
+            "verification rejected",
+            extra={"context": {"reason": "wrong_code", "exhausted": exhausted}},
+        )
+        raise _invalid_code()
+
+    await tokens.mark_used(stored, at=now)
     user.email_verified_at = now
     # Only lift a *pending* account. Verifying an address must never quietly
     # un-suspend someone an admin has suspended.

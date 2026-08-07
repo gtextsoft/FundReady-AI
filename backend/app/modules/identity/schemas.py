@@ -24,7 +24,13 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.core.security import AccountStatus, KycStatus, Role, SubscriptionStatus
+from app.core.security import (
+    VERIFICATION_CODE_DIGITS,
+    AccountStatus,
+    KycStatus,
+    Role,
+    SubscriptionStatus,
+)
 
 __all__ = [
     "AccountStatus",
@@ -43,6 +49,7 @@ __all__ = [
     "RefreshRequest",
     "RegisterRequest",
     "RegistrationAccepted",
+    "ResendVerificationRequest",
     "Role",
     "SubscriptionStatus",
     "TokenPairResponse",
@@ -79,6 +86,7 @@ PASSWORD_EXAMPLE = "correct-horse-battery-staple"  # noqa: S105
 ACCESS_EXAMPLE = "eyJhbGciOiJIUzI1NiIsImtpZCI6ImsxIn0.eyJzdWIiOiI3Yzll.EXAMPLE"
 REFRESH_EXAMPLE = "N2Q4ZjFhYzQtM2I5ZS00ZjJhLTk4YzEtMGU3YjRkNmE5ZjEy"
 EMAIL_TOKEN_EXAMPLE = "aXNzdWVkLWJ5LWVtYWlsLW5vdC1hLXJlYWwtdG9rZW4"  # noqa: S105
+VERIFICATION_CODE_EXAMPLE = "418305"
 MFA_TOKEN_EXAMPLE = "eyJhbGciOiJIUzI1NiJ9.eyJ0eXAiOiJtZmFfY2hhbGxlbmdlIn0.EXAMPLE"  # noqa: S105
 REGISTRATION_MESSAGE = (
     "If that address can be registered, a verification email is on its way."
@@ -307,12 +315,44 @@ class UserResponse(BaseModel):
     created_at: datetime
 
 
-class VerifyEmailRequest(_Request):
-    """The token from the verification link."""
+class VerifyEmailRequest(_EmailMixin):
+    """The address being confirmed, and the code that was emailed to it.
 
-    model_config = examples({"token": EMAIL_TOKEN_EXAMPLE})
+    Both, always. The code is six digits, so it is checked against one account
+    rather than looked up across all of them -- otherwise a guessed code would
+    match whichever account happened to hold it (AUTH.md section 3.2).
+    """
 
-    token: str = Field(max_length=512)
+    model_config = examples({"email": EMAIL, "code": VERIFICATION_CODE_EXAMPLE})
+
+    code: str = Field(
+        max_length=16,
+        description=(
+            "The six-digit code from the verification email. Spaces and "
+            "hyphens are ignored, so a pasted `123 456` is accepted."
+        ),
+        examples=[VERIFICATION_CODE_EXAMPLE],
+    )
+
+    @field_validator("code")
+    @classmethod
+    def _check_code(cls, value: str) -> str:
+        digits = "".join(character for character in value if character.isdigit())
+        if len(digits) != VERIFICATION_CODE_DIGITS:
+            raise ValueError(
+                f"the verification code is {VERIFICATION_CODE_DIGITS} digits"
+            )
+        return digits
+
+
+class ResendVerificationRequest(_EmailMixin):
+    """Ask for another verification code.
+
+    The response is the same whether or not the address has an account, and
+    whether or not it is already verified.
+    """
+
+    model_config = examples({"email": EMAIL})
 
 
 class PasswordResetRequest(_EmailMixin):
