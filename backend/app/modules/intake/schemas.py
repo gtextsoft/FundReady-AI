@@ -33,6 +33,8 @@ __all__ = [
     "FieldSource",
     "ProfileFieldValue",
     "ProfileResponse",
+    "RegistriesResponse",
+    "RegistryEntry",
     "ScanStatus",
     "Stage",
     "StartupProfileCreate",
@@ -309,6 +311,48 @@ class ProfileConflict(BaseModel):
     )
 
     detail: Literal["You already have a profile."] = "You already have a profile."
+
+
+# ---------------------------------------------------------------------------
+# Company registries (T1.6)
+# ---------------------------------------------------------------------------
+
+
+class RegistryEntry(BaseModel):
+    """One jurisdiction's company register, for the registration form."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    country: str = Field(description="ISO 3166-1 alpha-2, e.g. `NG`.")
+    country_name: str
+    registrar: str = Field(description="Full name of the registering body.")
+    short_name: str = Field(description="Abbreviation the founder will recognise.")
+    document_name: str = Field(
+        description="What the certificate of incorporation is called locally."
+    )
+    number_label: str = Field(
+        description="What the registration-number field should be labelled."
+    )
+    number_example: str = Field(
+        description=(
+            "Placeholder hint only. **Never validate a founder's number "
+            "against this** — rejecting a real certificate over a format "
+            "mismatch is worse than accepting an unusual one."
+        )
+    )
+
+
+class RegistriesResponse(BaseModel):
+    """Every jurisdiction we know how to label a registration form for.
+
+    Countries not in this map are still accepted: the founder fills legal name
+    and registration number as free text, and uploads a
+    `registration_certificate`. Missing a map entry is not a refusal.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    registries: list[RegistryEntry]
 
 
 # ---------------------------------------------------------------------------

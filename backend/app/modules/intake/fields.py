@@ -92,6 +92,38 @@ PROFILE_FIELDS: Final[tuple[FieldSpec, ...]] = (
     ),
     FieldSpec("website", FieldKind.TEXT, "Public website, if any."),
     FieldSpec("founded_year", FieldKind.YEAR, "Year the business started trading."),
+    # -- Legal entity (T1.6) ------------------------------------------------
+    # Separate from the `name` column, which D20 says is a domain-derived
+    # prefill and nothing downstream may treat as a legal name. Optional:
+    # an audit that refuses to start is worse than one that says which
+    # answers would sharpen Legal and IP. Self-reported; a certificate of
+    # incorporation with `kind=registration_certificate` is how these
+    # become corroborated rather than asserted (DECISIONS.md D7).
+    FieldSpec(
+        "legal_name",
+        FieldKind.TEXT,
+        "Registered legal name, exactly as on the certificate of incorporation.",
+    ),
+    FieldSpec(
+        "registration_number",
+        FieldKind.TEXT,
+        "Company registration number as issued by the registering body.",
+    ),
+    FieldSpec(
+        "registrar",
+        FieldKind.TEXT,
+        "The body the company is registered with (e.g. CAC, Companies House).",
+    ),
+    FieldSpec(
+        "incorporation_year",
+        FieldKind.YEAR,
+        "Year the company was incorporated, as stated on the certificate.",
+    ),
+    FieldSpec(
+        "regulatory_licences",
+        FieldKind.TEXT,
+        "Licences or permissions the business model requires, and whether held.",
+    ),
     # -- Market and growth --------------------------------------------------
     # Added 2026-08-03. Until these existed, `market_opportunity` and
     # `scalability` were scored against criteria **nothing on the form asked
@@ -121,6 +153,11 @@ PROFILE_FIELDS: Final[tuple[FieldSpec, ...]] = (
         FieldKind.TEXT,
         "What new capital would buy, mapped to the constraint above.",
     ),
+    FieldSpec(
+        "delivery_cost_trend",
+        FieldKind.TEXT,
+        "Whether cost to serve one more customer has gone up, down, or stayed flat.",
+    ),
     # -- Team --------------------------------------------------------------
     FieldSpec(
         "team_size",
@@ -133,6 +170,11 @@ PROFILE_FIELDS: Final[tuple[FieldSpec, ...]] = (
         "founders_full_time",
         FieldKind.INTEGER,
         "How many founders work on this full time.",
+    ),
+    FieldSpec(
+        "founder_experience",
+        FieldKind.TEXT,
+        "Relevant prior experience of the founders, specific and checkable.",
     ),
     # -- Financial inputs. Raw only: every ratio is computed in finance.py --
     FieldSpec(
@@ -163,6 +205,21 @@ PROFILE_FIELDS: Final[tuple[FieldSpec, ...]] = (
         FieldKind.MONEY_MINOR,
         "Revenue over the trailing twelve months.",
     ),
+    FieldSpec(
+        "monthly_revenue_3m_ago_minor",
+        FieldKind.MONEY_MINOR,
+        "Revenue three months ago. With the latest month, this shows a direction.",
+    ),
+    FieldSpec(
+        "monthly_costs_3m_ago_minor",
+        FieldKind.MONEY_MINOR,
+        "Total operating costs three months ago.",
+    ),
+    FieldSpec(
+        "monthly_marketing_spend_minor",
+        FieldKind.MONEY_MINOR,
+        "Monthly spend on winning customers, sales and marketing included.",
+    ),
     # -- Traction ----------------------------------------------------------
     FieldSpec("active_customers", FieldKind.INTEGER, "Paying customers today."),
     FieldSpec("monthly_active_users", FieldKind.INTEGER, "Monthly active users."),
@@ -180,6 +237,16 @@ PROFILE_FIELDS: Final[tuple[FieldSpec, ...]] = (
         "monthly_churn_percent",
         FieldKind.PERCENT,
         "Share of customers lost per month.",
+    ),
+    FieldSpec(
+        "pilot_or_lou_count",
+        FieldKind.INTEGER,
+        "Pilots or letters of intent that are not paying yet.",
+    ),
+    FieldSpec(
+        "largest_customer_revenue_share_percent",
+        FieldKind.PERCENT,
+        "Share of revenue that comes from the biggest customer.",
     ),
     # -- Funding -----------------------------------------------------------
     FieldSpec("total_raised_minor", FieldKind.MONEY_MINOR, "Capital raised to date."),

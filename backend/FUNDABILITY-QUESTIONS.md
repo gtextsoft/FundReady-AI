@@ -24,16 +24,20 @@ answer serves. Nothing is here because it seemed useful.
 
 ## Bottom line
 
-- A founder answers **32 questions**: 5 identifying details plus 27 profile
+- A founder answers **44 questions**: 5 identifying details plus 39 profile
   questions. **11 are required** before an audit can run.
-- The AI never produces a financial number. Margins, burn, runway, LTV, LTV:CAC
-  and CAC payback are computed in `finance.py` and handed to the model as given.
-  The model interprets them.
+- The AI never produces a financial number. Margins, burn, runway, LTV, LTV:CAC,
+  CAC payback and the three-month revenue/cost trends are computed in
+  `finance.py` and handed to the model as given. The model interprets them.
 - Fundability is scored across **8 dimensions** (7 shared with saleability, plus
   Scalability). Saleability adds 3 more.
 - An answer left blank is treated as **absent, not bad**. Absence caps the
   verdict rather than lowering the score — which is why skipping optional
   questions buys a weaker verdict, not a faster one.
+- **Registration documents are read, not verified** (`DECISIONS.md` D7). A CAC
+  certificate of incorporation, uploaded as `registration_certificate`, becomes
+  corroboration for legal name and registration number — never a "verified"
+  badge.
 
 ---
 
@@ -49,11 +53,15 @@ answer serves. Nothing is here because it seemed useful.
 | 6 | Request the audit | `POST /v1/startups/{startup_id}/audits` | `202` queued, `200` if an identical audit already exists, `422` if a required answer is missing. The `422` is a **pre-spend gate**: scoring an incomplete profile would burn the audit budget to produce "insufficient data", an answer the founder can have for free. |
 | 7 | Poll for the result | `GET /v1/startups/{startup_id}/audits/{run_id}` | Statuses `queued`, `running`, `succeeded`, `failed`. |
 
-Documents (pitch deck, financials, cap table) can be uploaded at
-`POST /v1/startups/{startup_id}/documents`. The AI reads figures out of them to
-fill gaps and to **corroborate** what the founder claimed. This is the only way
-to satisfy the criteria that require a source other than the founder's own
-narrative. *File storage is not yet provisioned, so this is not live.*
+Documents (pitch deck, financials, cap table, **registration certificate**) can
+be uploaded at `POST /v1/startups/{startup_id}/documents`. The AI reads figures
+out of them to fill gaps and to **corroborate** what the founder claimed. This
+is the only way to satisfy the criteria that require a source other than the
+founder's own narrative. Use `kind: registration_certificate` for a CAC (or
+equivalent) certificate of incorporation.
+
+`GET /v1/registries` returns the country → registrar map the registration form
+should use. **Key on ISO alpha-2** (`NG`), not display names (`"Nigeria"`).
 
 ### Registration gates, and what they do not prove
 
@@ -198,9 +206,62 @@ dimension reads it and the audit does not fetch it.
 #### `founded_year` — "What year did you start trading?"
 Year, 1800–2100.
 
-**How it helps the AI:** **nothing, today.** No dimension reads it. Kept because
-it is cheap context for a human and would be the denominator if a
-time-normalised metric is ever added.
+**How it helps the AI:** cross-checked against `incorporation_year`. If the
+company was incorporated *after* trading started, consistency raises
+`incorporated_after_trading` at `likely` severity — sole traders who later
+incorporate are common, so the wording leaves room for the founder to be right.
+Without `incorporation_year`, this field still feeds nothing scored.
+
+---
+
+### Legal entity (T1.6)
+
+Self-reported. A uploaded `registration_certificate` is how these become
+corroborated rather than asserted. Separate from the `name` column, which D20
+says is a domain-derived prefill and nothing downstream may treat as a legal
+name.
+
+#### `legal_name` — "Registered legal name, exactly as on your certificate"
+Text.
+
+**How it helps the AI:** carries the **Legal and IP** criterion *the operating
+entity is identified and the cap table is coherent*. When the same name appears
+on an uploaded certificate, rule 4 of the scoring prompt (corroboration beats
+assertion) kicks in and the score rests on stronger evidence.
+
+**Skipped:** Legal and IP has only `cap_table_summary` / `ip_owned` / contracts
+to go on for entity identity.
+
+#### `registration_number` — "Registration number"
+Text. Label and placeholder come from `GET /v1/registries` for the profile's
+country (`RC number` / `RC 1234567` for Nigeria). **Never validated against a
+format** — rejecting a real number over a regex mismatch is worse than accepting
+an unusual one.
+
+**How it helps the AI:** specific enough to be checked against a certificate
+citation. Feeds Legal and IP alongside `legal_name`.
+
+#### `registrar` — "Registered with"
+Text. Prefill from `GET /v1/registries` (`CAC` for `NG`, `Companies House` for
+`GB`, …). Editable.
+
+**How it helps the AI:** context for Legal and IP; names which body's document
+would corroborate the number.
+
+#### `incorporation_year` — "What year was the company incorporated?"
+Year, 1800–2100. Extraction pulls a four-digit year out of a stated date on a
+certificate (`"12 March 2019"` → `2019`).
+
+**How it helps the AI:** cross-checked against `founded_year` (see above). Also
+bounds how long the entity has existed for Team / Legal judgements.
+
+#### `regulatory_licences` — "What licences or permissions does this business need, and do you hold them?"
+Text.
+
+**How it helps the AI:** the **Legal and IP** criterion *licences or regulatory
+permissions the business model requires are held, or their absence is flagged*,
+and Transferability's *licences and permissions are transferable or
+reobtainable*.
 
 ---
 
@@ -265,6 +326,14 @@ bottleneck and saying what money would buy are different claims, and the rubric
 checks whether the second answers the first. Asking them as one question
 destroys the check.
 
+#### `delivery_cost_trend` — "As you have grown, has the cost to serve one more customer gone up, down, or stayed flat?"
+Text.
+
+**How it helps the AI:** the **Scalability** criterion *delivery cost per
+additional customer is falling, flat, or rising — and which it is, is
+evidenced*. Without it Scalability has the constraint and the use of funds but
+not the delivery-cost direction.
+
 ---
 
 ### Team
@@ -301,6 +370,14 @@ feeds **Owner independence** on the saleability side.
 
 **Cross-check:** more full-time founders than founders raises
 `more_full_time_than_founders` — again `certain`, again 25 points.
+
+#### `founder_experience` — "What have the founders done before that is relevant to this?"
+Text.
+
+**How it helps the AI:** the **Team** criterion *relevant prior experience is
+specific and checkable, not self-described seniority*. "Serial entrepreneur"
+scores nothing; "built and sold a Lagos last-mile firm with 40 vans" can be
+checked.
 
 ---
 
@@ -386,11 +463,32 @@ frozen month. It produces `run_rate_vs_trailing_percent` — the latest month
 annualised, compared against the last year's actual.
 
 **Read the name literally: this is not a growth rate.** A growth rate needs a
-monthly time series, which the profile does not carry. What this compares is
-where the business is *now* against where it has *been*: positive is suggestive
-of growth without measuring it. It goes some way towards the Traction criterion
-*growth is shown over a period long enough to distinguish a trend from a single
-good month*, but does not fully satisfy it — see Part 7.
+monthly time series. What this compares is where the business is *now* against
+where it has *been*: positive is suggestive of growth without measuring it. The
+three-month fields below are what fully closes the Traction growth criterion.
+
+#### `monthly_revenue_3m_ago_minor` — "Revenue three months ago"
+Money, minor units.
+
+**How it helps the AI:** with the latest month, produces
+`revenue_change_3m_percent` — a real growth rate over a named period, computed
+in code. Closes Traction's *growth is shown over a period long enough to
+distinguish a trend from a single good month*. Without it the audit sees one
+frozen month and cannot tell a business growing 20% a month from one shrinking
+at the same rate.
+
+#### `monthly_costs_3m_ago_minor` — "Total costs three months ago"
+Money, minor units.
+
+**How it helps the AI:** produces `costs_change_3m_percent`. Closes Financial
+health's *burn is trending in a direction the founder can account for*.
+
+#### `monthly_marketing_spend_minor` — "What do you spend a month winning customers?"
+Money, minor units.
+
+**How it helps the AI:** Unit economics criteria *acquisition cost includes the
+sales and marketing effort actually used, not only paid media* and *a strong
+ratio is checked against simply under-investing in growth*.
 
 ---
 
@@ -460,6 +558,20 @@ should stop it before either fires. Label the input with a `%` suffix.
 **Note:** zero churn yields *no LTV*, reason `no_churn`. At zero the formula
 diverges, which in practice means the input is wrong or the history is too
 short — not that customers are worth infinitely much.
+
+#### `pilot_or_lou_count` — "How many pilots or letters of intent that are not paying yet?"
+Integer.
+
+**How it helps the AI:** Traction criterion *pilots, letters of intent, and
+paying customers are distinguished from one another rather than counted
+together*. Without it, `active_customers` alone cannot tell the difference.
+
+#### `largest_customer_revenue_share_percent` — "What share of revenue comes from your biggest customer?"
+Percent, 0–100.
+
+**How it helps the AI:** Revenue durability criterion *customer concentration is
+quantified* — a first-order funding risk, not only a sale risk. 40% from one
+customer is a finding investors ask about.
 
 ---
 
@@ -625,7 +737,8 @@ Starts at 100, floor 0:
 
 Findings the code raises: `revenue_vs_annual`, `revenue_vs_customers`,
 `churn_implausibly_low`, `cost_exceeds_revenue_implausibly`,
-`more_founders_than_team`, `more_full_time_than_founders`, `contradiction`.
+`more_founders_than_team`, `more_full_time_than_founders`,
+`incorporated_after_trading`, `contradiction`.
 
 Two `certain` findings and one contradiction put a profile below the floor and
 end the audit with no verdict. Both `certain` findings are team-arithmetic
@@ -666,32 +779,11 @@ reopen it, and that is audit-logged.
 
 ## Part 7 — What the questions still cannot tell the AI
 
-The four market-and-growth questions closed the worst gap. Mapping what remains
-against the rubric's written criteria leaves **17 criteria with no question
-behind them**. None of the following is built; this is the list to choose from,
-and each row names the exact criterion it would close.
+T1.6 closed the Tier 1 fundability gaps and Legal and IP's licences criterion.
+What remains is almost entirely **saleability**, plus one Traction criterion no
+question can close.
 
-### Tier 1 — fundability. Ask these next.
-
-| Field | Type | Suggested label | Criterion it closes |
-|---|---|---|---|
-| `monthly_revenue_3m_ago_minor` | money | "Revenue three months ago" | Traction: *growth shown over a period long enough to distinguish a trend from one good month* |
-| `monthly_costs_3m_ago_minor` | money | "Total costs three months ago" | Financial health: *burn is trending in a direction the founder can account for* |
-| `monthly_marketing_spend_minor` | money | "What do you spend a month winning customers?" | Unit economics: *acquisition cost includes the sales and marketing effort actually used*; and *a strong ratio is checked against simply under-investing in growth* |
-| `largest_customer_revenue_share_percent` | percent | "What share of revenue comes from your biggest customer?" | Revenue durability: *customer concentration is quantified* — a first-order funding risk, not only a sale risk |
-| `pilot_or_lou_count` | integer | "How many pilots or letters of intent that are not paying yet?" | Traction: *pilots, letters of intent and paying customers are distinguished rather than counted together* |
-| `delivery_cost_trend` | text | "As you have grown, has the cost to serve one more customer gone up, down, or stayed flat?" | Scalability: *delivery cost per additional customer is falling, flat, or rising — and which it is, is evidenced* |
-| `founder_experience` | text | "What have the founders done before that is relevant to this?" | Team: *relevant prior experience is specific and checkable, not self-described seniority* |
-| `regulatory_licences` | text | "What licences or permissions does this business need, and do you hold them?" | Legal and IP: *licences the business model requires are held, or their absence is flagged* |
-
-**The two `_3m_ago` figures are the highest-value pair in the table.** They are
-the only way the audit could see a *direction*. Today it sees a single frozen
-month and cannot tell a business growing 20% a month from one shrinking at the
-same rate — `run_rate_vs_trailing_percent` gestures at this but is explicitly
-not a growth rate. They are also pure arithmetic, so the trend would be computed
-in code rather than judged by the model.
-
-### Tier 2 — saleability. Ask when the readiness loop is built.
+### Tier 2 — saleability. Ask when the readiness loop is the product surface.
 
 | Field | Type | Suggested label | Criterion it closes |
 |---|---|---|---|
@@ -710,20 +802,21 @@ in code rather than judged by the model.
 Traction requires that *revenue or usage is corroborated by a source other than
 the founder's own narrative*, and that *named customers or contracts are
 evidenced, not just listed*. Asking a founder to assert it harder corroborates
-nothing. This is what **document upload** is for, and it stays open until file
-storage is provisioned.
+nothing. This is what **document upload** is for — financials, invoices, signed
+contracts. A registration certificate corroborates the entity; it does not
+corroborate revenue.
 
-This is also the honest limit on the current audit: with no documents, every
-score rests on self-reported figures, and rule 4 requires the model to say so.
+Rule 4 still requires the model to say when a score rests on self-reported
+figures alone.
 
 ### How to stage the additions without wrecking the form
 
-27 profile questions is already long; 40 would be abandoned. Recommended shape:
+44 questions is not a form anybody finishes. Recommended shape:
 
 1. **Required core (11).** Blocks the audit. Keep exactly as it is.
-2. **"Improve your score"** — the 4 market-and-growth questions plus Tier 1,
-   presented *after* the first audit returns and targeted at the dimensions that
-   actually came back thin. The verdict already reports
+2. **"Improve your score"** — market-and-growth, legal entity, and the Tier 1
+   fundability fields, presented *after* the first audit returns and targeted
+   at the dimensions that actually came back thin. The verdict already reports
    `unevidenced_dimensions`, so the app can ask only the questions that would
    change *this* founder's result.
 3. **Tier 2** alongside the readiness-task flow, where a founder is already

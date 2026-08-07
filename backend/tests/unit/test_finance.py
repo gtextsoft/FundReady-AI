@@ -221,6 +221,43 @@ class TestRunRate:
         assert result.reason is Unavailable.NO_TRAILING_REVENUE
 
 
+class TestThreeMonthTrend:
+    def test_growing_revenue_is_positive(self) -> None:
+        inputs = FinancialInputs(
+            monthly_revenue_minor=5_000_000,
+            monthly_revenue_3m_ago_minor=4_000_000,
+        )
+
+        assert compute(inputs).revenue_change_3m_percent.value == Decimal("25.00")
+
+    def test_shrinking_revenue_is_negative(self) -> None:
+        inputs = FinancialInputs(
+            monthly_revenue_minor=4_000_000,
+            monthly_revenue_3m_ago_minor=5_000_000,
+        )
+
+        assert compute(inputs).revenue_change_3m_percent.value == Decimal("-20.00")
+
+    def test_rising_costs_are_positive(self) -> None:
+        inputs = FinancialInputs(
+            monthly_costs_minor=1_200_000,
+            monthly_costs_3m_ago_minor=1_000_000,
+        )
+
+        assert compute(inputs).costs_change_3m_percent.value == Decimal("20.00")
+
+    def test_zero_prior_is_unknown_not_infinity(self) -> None:
+        inputs = FinancialInputs(
+            monthly_revenue_minor=1_000_000,
+            monthly_revenue_3m_ago_minor=0,
+        )
+
+        result = compute(inputs).revenue_change_3m_percent
+
+        assert result.value is None
+        assert result.reason is Unavailable.NO_PRIOR_PERIOD
+
+
 class TestProfitability:
     def test_covering_costs_is_profitable(self) -> None:
         inputs = FinancialInputs(
@@ -253,6 +290,8 @@ class TestAnEmptyProfile:
             result.cac_payback_months,
             result.annual_run_rate_minor,
             result.run_rate_vs_trailing_percent,
+            result.revenue_change_3m_percent,
+            result.costs_change_3m_percent,
         ):
             assert metric.value is None
             assert metric.reason is Unavailable.MISSING_INPUT

@@ -52,7 +52,9 @@ __all__ = [
     "Finding",
     "FindingCode",
     "Severity",
+    "check_entity",
     "check_scale",
+    "check_team",
     "data_integrity_score",
     "find_contradictions",
 ]
@@ -94,6 +96,7 @@ class FindingCode(StrEnum):
     COST_EXCEEDS_REVENUE_IMPLAUSIBLY = "cost_exceeds_revenue_implausibly"
     MORE_FOUNDERS_THAN_TEAM = "more_founders_than_team"
     MORE_FULL_TIME_THAN_FOUNDERS = "more_full_time_than_founders"
+    INCORPORATED_AFTER_TRADING = "incorporated_after_trading"
     CONTRADICTION = "contradiction"
 
 
@@ -336,6 +339,42 @@ def check_team(
         )
 
     return findings
+
+
+def check_entity(
+    *,
+    founded_year: int | None = None,
+    incorporation_year: int | None = None,
+) -> list[Finding]:
+    """Entity dates that disagree with each other.
+
+    Incorporating *after* starting to trade is legal and common — a sole trader
+    who later forms a company — so this is `LIKELY`, not `CERTAIN`, and the
+    wording must leave room for the founder to be right. What it catches is the
+    mistyped year: 2025 trading / 2019 incorporation is normal; 2019 trading /
+    2025 incorporation needs an explanation.
+    """
+    if (
+        founded_year is None
+        or incorporation_year is None
+        or incorporation_year <= founded_year
+    ):
+        return []
+
+    return [
+        Finding(
+            code=FindingCode.INCORPORATED_AFTER_TRADING,
+            severity=Severity.LIKELY,
+            fields=("founded_year", "incorporation_year"),
+            message=(
+                "The incorporation year is later than the year you started "
+                "trading. That can be right if you traded as a sole trader "
+                "before incorporating — if so, no change needed. Otherwise "
+                "please check both years."
+            ),
+            detail="incorporation_year > founded_year",
+        )
+    ]
 
 
 # ---------------------------------------------------------------------------

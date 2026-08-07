@@ -153,7 +153,7 @@ class Document(Base):
         SAEnum(
             DocumentKind,
             native_enum=False,
-            length=16,
+            length=32,
             name="document_kind",
             values_callable=lambda enum: [member.value for member in enum],
         ),

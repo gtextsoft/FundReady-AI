@@ -19,15 +19,21 @@ MAX_UPLOAD_BYTES: Final[int] = 25 * 1024 * 1024
 class DocumentKind(StrEnum):
     """What the founder says this file is.
 
-    The three named in `fundready-prd.md` §4.1, plus an escape hatch. It steers
-    extraction (T2.4) -- a cap table and a financial model are read for
-    different things -- so it is the founder's declaration, not a fact, and
-    extraction must cope with being told the wrong one.
+    The three named in `fundready-prd.md` §4.1, a country-specific certificate
+    of incorporation (T1.6), plus an escape hatch. It steers extraction
+    (T2.4) -- a cap table and a financial model are read for different
+    things -- so it is the founder's declaration, not a fact, and extraction
+    must cope with being told the wrong one.
+
+    A registration certificate is still self-reported evidence
+    (`DECISIONS.md` D7): extraction reads legal name and registration number
+    off it with a citation; nothing is labelled verified.
     """
 
     DECK = "deck"
     FINANCIALS = "financials"
     CAP_TABLE = "cap_table"
+    REGISTRATION_CERTIFICATE = "registration_certificate"
     OTHER = "other"
 
 

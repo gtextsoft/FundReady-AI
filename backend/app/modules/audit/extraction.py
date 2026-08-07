@@ -28,6 +28,7 @@ a model must not produce them. A value here is a reading, not a derivation.
 import base64
 import csv
 import io
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -548,6 +549,17 @@ def _coerce(spec: FieldSpec, raw: str) -> Any:
             return True
         if lowered in {"false", "no", "n"}:
             return False
+        return None
+
+    if spec.kind is FieldKind.YEAR:
+        # Certificates state dates ("12 March 2019", "2019-03-12"), not bare
+        # years. Pull the first four-digit year in the 1800-2100 window that
+        # `value_error` also accepts; anything else is unreadable rather than
+        # a coerced invent.
+        for match in re.finditer(r"(?<!\d)(\d{4})(?!\d)", text):
+            year = int(match.group(1))
+            if 1800 <= year <= 2100:
+                return year
         return None
 
     cleaned = text.replace(",", "").replace("%", "").strip()

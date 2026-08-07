@@ -18,10 +18,13 @@ from app.core.security import CurrentUser, Role
 from app.modules.intake import service
 from app.modules.intake.documents import MAX_UPLOAD_BYTES
 from app.modules.intake.models import StartupProfile
+from app.modules.intake.registries import REGISTRIES
 from app.modules.intake.schemas import (
     DocumentResponse,
     DownloadTicket,
     ProfileResponse,
+    RegistriesResponse,
+    RegistryEntry,
     StartupProfileCreate,
     StartupProfileUpdate,
     UploadRequest,
@@ -209,6 +212,45 @@ async def unpublish_profile(
         session, actor, profile_id, visible=False
     )
     return _serialise(profile)
+
+
+# ---------------------------------------------------------------------------
+# Company registries (T1.6)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/registries",
+    response_model=RegistriesResponse,
+    summary="List company registries by country",
+    description=(
+        "Static reference data for the registration form: given an ISO "
+        "3166-1 alpha-2 country code, which body registers companies there, "
+        "what the certificate is called, and how to label the registration "
+        "number field.\n\n"
+        "**Key on ISO codes, not display names.** `NG` maps to CAC; "
+        "`\"Nigeria\"` is not a key. Countries not in this list are still "
+        "accepted — the founder fills legal name and number as free text "
+        "and uploads a `registration_certificate`.\n\n"
+        "Nothing here verifies a company exists (`DECISIONS.md` D7)."
+    ),
+    responses=error_responses(401, 403),
+)
+async def list_registries(_actor: CurrentUserDep) -> RegistriesResponse:
+    return RegistriesResponse(
+        registries=[
+            RegistryEntry(
+                country=entry.country,
+                country_name=entry.country_name,
+                registrar=entry.registrar,
+                short_name=entry.short_name,
+                document_name=entry.document_name,
+                number_label=entry.number_label,
+                number_example=entry.number_example,
+            )
+            for entry in REGISTRIES.values()
+        ]
+    )
 
 
 # ---------------------------------------------------------------------------

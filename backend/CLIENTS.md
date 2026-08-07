@@ -419,15 +419,26 @@ verdict. Worth prompting for, not worth blocking on:
 |---|---|---|
 | `website` | "Do you have a website?" | text |
 | `founded_year` | "What year did the business start trading?" | year |
+| `legal_name` | "Registered legal name, exactly as on your certificate" | text |
+| `registration_number` | From `GET /v1/registries` `number_label` (e.g. "RC number") | text |
+| `registrar` | "Registered with" — prefill from `GET /v1/registries` | text |
+| `incorporation_year` | "What year was the company incorporated?" | year |
+| `regulatory_licences` | "What licences or permissions does this business need, and do you hold them?" | text |
 | `founder_count` | "How many founders are there?" | integer |
 | `founders_full_time` | "How many founders work on this full time?" | integer |
+| `founder_experience` | "What have the founders done before that is relevant to this?" | text |
 | `cost_of_revenue_minor` | "What does it cost you directly to deliver that revenue?" | money |
 | `last_12m_revenue_minor` | "Revenue over the last twelve months" | money |
+| `monthly_revenue_3m_ago_minor` | "Revenue three months ago" | money |
+| `monthly_costs_3m_ago_minor` | "Total costs three months ago" | money |
+| `monthly_marketing_spend_minor` | "What do you spend a month winning customers?" | money |
 | `active_customers` | "How many paying customers do you have today?" | integer |
 | `monthly_active_users` | "How many monthly active users?" | integer |
 | `customer_acquisition_cost_minor` | "On average, what does it cost to win one customer?" | money |
 | `average_revenue_per_customer_minor` | "On average, how much does one customer pay you per month?" | money |
 | `monthly_churn_percent` | "What share of customers do you lose each month?" | percent |
+| `pilot_or_lou_count` | "How many pilots or letters of intent that are not paying yet?" | integer |
+| `largest_customer_revenue_share_percent` | "What share of revenue comes from your biggest customer?" | percent |
 | `total_raised_minor` | "How much have you raised to date?" | money |
 | `current_raise_target_minor` | "How much are you raising now, if anything?" | money |
 | `cap_table_summary` | "Who owns what, in summary?" | text |
@@ -439,13 +450,15 @@ The last three exist because the PRD audits **saleability** as well as
 fundability. Do not merge them into the funding screen — a founder answers them
 differently when they understand they are being asked what happens if they sell.
 
-**New on 2026-08-03 — four market and growth questions.** Additive and optional;
-nothing existing changed. They exist because two of the eleven dimensions the
-audit grades — market opportunity and scalability — had **no question behind
-them**, so both came back unevidenced on almost every profile. A verdict needs
-every in-scope dimension evidenced to read `ready` or `not_yet`, so the practical
-effect was that a founder could answer everything else perfectly and still be
-capped at `provisional`. **Until these four screens ship, that cap stays.**
+**Legal entity fields (T1.6)** are self-reported. Upload a
+`registration_certificate` to corroborate. Use `GET /v1/registries` keyed on
+ISO alpha-2 (`NG`), not display names (`"Nigeria"`). Nothing is labelled
+verified (`DECISIONS.md` D7).
+
+**Market and growth questions** (and the three-month trend pair) close criteria
+that used to leave Market opportunity, Scalability, Traction and Financial
+health unevidenced. They are optional — an audit that refuses to start is worse
+than one that says which answers would sharpen it:
 
 | Field | Ask the founder | Type |
 |---|---|---|
@@ -453,8 +466,9 @@ capped at `provisional`. **Until these four screens ship, that cap stays.**
 | `competition_note` | "Who else solves this problem for your customers today?" | text |
 | `growth_constraint` | "What is limiting your growth right now, and what have you already proven you can do about it?" | text |
 | `use_of_funds` | "If you raised money, what would it buy?" | text |
+| `delivery_cost_trend` | "As you have grown, has the cost to serve one more customer gone up, down, or stayed flat?" | text |
 
-Three notes for the UI, because these four are graded on substance rather than
+Three notes for the UI, because these are graded on substance rather than
 on being non-empty:
 
 - **Show a worked example as placeholder text on `market_size_note`.** It has to
@@ -469,11 +483,11 @@ on being non-empty:
   amount on its own is not evidence of anything; it becomes meaningful only
   next to what the money is for.
 
-A good place for all four is a second screen after the required core, or as a
-post-audit follow-up — see the staging note at the end of
-`FOUNDER-ONBOARDING.md`, which explains how to use the audit's own
-`unevidenced_dimensions` to ask only the questions that would change *this*
-founder's result.
+A good place for optional questions is a second screen after the required core,
+or as a post-audit follow-up — see the staging note in
+`FOUNDER-ONBOARDING.md` / `FUNDABILITY-QUESTIONS.md`, which explains how to use
+the audit's own `unevidenced_dimensions` to ask only the questions that would
+change *this* founder's result.
 
 ### Validation the UI should enforce
 
@@ -506,6 +520,23 @@ with the same list in `details.missing_fields`.
 ## 5. Document upload (three steps)
 
 Files never pass through this API — they go straight to object storage.
+
+**Kinds:** `deck`, `financials`, `cap_table`, `registration_certificate`,
+`other`. Use `registration_certificate` for a CAC (or equivalent) certificate
+of incorporation. It is self-reported evidence the AI can cite — not a
+verified badge (`DECISIONS.md` D7).
+
+### Country → registrar labels
+
+```
+GET /v1/registries   → 200 { registries: [ { country, country_name, registrar,
+                         short_name, document_name, number_label, number_example }, ... ] }
+```
+
+Authenticated. **Key on ISO alpha-2** (`NG`), not display names (`"Nigeria"`).
+Countries not in the map are still accepted — the founder fills legal name and
+number as free text. `number_example` is a placeholder hint only; never
+validate a founder's number against it.
 
 ```
 1. POST /v1/startups/{id}/documents   → 201 UploadTicket { upload_url, document_id, ... }
@@ -1039,7 +1070,7 @@ compatibility, not as an error — parse defensively.
 | `KycStatus` | `none`, `pending`, `verified`, `failed` |
 | `SubscriptionStatus` | `none`, `active`, `past_due`, `canceled` |
 | `Stage` | `idea`, `pre_seed`, `seed`, `series_a`, `series_b_plus`, `growth` |
-| `DocumentKind` | `deck`, `financials`, `cap_table`, `other` |
+| `DocumentKind` | `deck`, `financials`, `cap_table`, `registration_certificate`, `other` |
 | `DocumentStatus` | `pending`, `ready`, `rejected` |
 | `ScanStatus` | `pending`, `clean`, `infected`, `skipped` |
 | `FieldSource` | `founder`, `document`, `inferred` |

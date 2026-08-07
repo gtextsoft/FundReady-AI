@@ -11,7 +11,7 @@ to explain what the audit actually asks a founder for.
 
 ## Bottom line
 
-A founder answers **32 questions in total** — 5 identifying details plus 27
+A founder answers **44 questions in total** — 5 identifying details plus 39
 profile questions, of which **11 are required** before an audit can run.
 Everything else is optional, but almost every optional question feeds a specific
 part of the score, so skipping them buys a weaker verdict rather than a faster
@@ -91,11 +91,15 @@ means no peer comparison at all.
 
 ---
 
-## Step 5 — the 23 profile questions
+## Step 5 — the profile questions
 
 `REQ` means an audit cannot run without it. Everything else is optional and
 improves the score's confidence. The last column is what the answer actually
 feeds — this is the honest answer to "why are you asking me this?"
+
+Country-specific registrar labels come from `GET /v1/registries` (keyed on ISO
+alpha-2, e.g. `NG` → CAC). Prefer that over a client-side map keyed on display
+names.
 
 ### Business
 
@@ -104,7 +108,21 @@ feeds — this is the honest answer to "why are you asking me this?"
 | **REQ** | `description` | text | "What does your business do?" | Market opportunity *(narrative only)* |
 | **REQ** | `business_model` | text | "How do you make money?" | Scalability *(narrative only)* |
 | | `website` | text | "Website, if you have one" | **nothing** |
-| | `founded_year` | year | "What year did you start trading?" | **nothing** |
+| | `founded_year` | year | "What year did you start trading?" | Data integrity *(vs incorporation_year)* |
+
+### Legal entity — **new, T1.6**
+
+Self-reported. Upload a `registration_certificate` to corroborate. Separate
+from the `name` column (D20: domain prefill is not a legal name). Nothing here
+is labelled verified (`DECISIONS.md` D7).
+
+| | Field | Type | Suggested label | Feeds |
+|---|---|---|---|---|
+| | `legal_name` | text | "Registered legal name, exactly as on your certificate" | Legal and IP |
+| | `registration_number` | text | From registries `number_label` (e.g. "RC number") | Legal and IP |
+| | `registrar` | text | "Registered with" — prefill from `GET /v1/registries` | Legal and IP |
+| | `incorporation_year` | year | "What year was the company incorporated?" | Legal and IP, Data integrity |
+| | `regulatory_licences` | text | "What licences or permissions does this business need, and do you hold them?" | Legal and IP, Transferability |
 
 ### Market and growth — **new, added 2026-08-03**
 
@@ -123,6 +141,7 @@ starts and says which answers would sharpen it.
 | | `competition_note` | text | "Who else solves this problem for your customers today?" | Market opportunity |
 | | `growth_constraint` | text | "What is limiting your growth right now, and what have you already proven you can do about it?" | Scalability |
 | | `use_of_funds` | text | "If you raised money, what would it buy?" | Scalability |
+| | `delivery_cost_trend` | text | "As you have grown, has the cost to serve one more customer gone up, down, or stayed flat?" | Scalability |
 
 > **The labels are load-bearing.** `market_size_note` is one question that must
 > elicit three things — a number, how it was derived, and what bounds it today
@@ -142,6 +161,7 @@ starts and says which answers would sharpen it.
 | **REQ** | `team_size` | integer | "How many people work on this, including founders?" | Team, Owner independence |
 | | `founder_count` | integer | "How many founders?" | Team |
 | | `founders_full_time` | integer | "How many founders work on this full time?" | Team, Owner independence |
+| | `founder_experience` | text | "What have the founders done before that is relevant to this?" | Team |
 
 Two impossibilities are rejected outright and cost the founder integrity points:
 more founders than total team members, and more full-time founders than
@@ -159,6 +179,9 @@ single most common source of wrong answers.
 | **REQ** | `cash_on_hand_minor` | money | "Cash available right now" | Financial health, Data integrity |
 | | `cost_of_revenue_minor` | money | "Direct cost of delivering that revenue" | Financial health |
 | | `last_12m_revenue_minor` | money | "Revenue over the last 12 months" | Traction |
+| | `monthly_revenue_3m_ago_minor` | money | "Revenue three months ago" | Traction, Financial health |
+| | `monthly_costs_3m_ago_minor` | money | "Total costs three months ago" | Financial health |
+| | `monthly_marketing_spend_minor` | money | "What do you spend a month winning customers?" | Unit economics |
 
 Revenue and costs together give burn; with cash they give runway. Cost of
 revenue gives gross margin. Trailing 12-month revenue is what lets the audit
@@ -173,6 +196,8 @@ distinguish a trend from one good month.
 | | `customer_acquisition_cost_minor` | money | "What does it cost to win one customer?" | Unit economics |
 | | `average_revenue_per_customer_minor` | money | "Average revenue per customer per month" | Unit economics, Revenue durability |
 | | `monthly_churn_percent` | percent | "What share of customers do you lose each month?" | Unit economics, Revenue durability |
+| | `pilot_or_lou_count` | integer | "How many pilots or letters of intent that are not paying yet?" | Traction |
+| | `largest_customer_revenue_share_percent` | percent | "What share of revenue comes from your biggest customer?" | Revenue durability |
 
 These five together produce LTV, LTV:CAC and CAC payback. Skipping them means
 the unit-economics dimension has nothing to score.
@@ -284,76 +309,30 @@ Two guarantees worth stating in any founder-facing copy:
 
 ## What is still missing, and what to ask next
 
-The four market-and-growth questions above closed the worst gap. Mapping the
-remaining questions against the rubric's written criteria shows **17 criteria
-still have no question behind them.** Each row below names the exact criterion
-it would close — nothing here is speculative, and nothing is proposed that
-feeds no dimension.
+T1.6 closed Tier 1 fundability and the Legal and IP licences gap. What remains
+is almost entirely **saleability**. See `FUNDABILITY-QUESTIONS.md` Part 7 for
+the Tier 2 list and the staging recommendation: keep the required 11 as the
+audit gate, ask the rest after the first audit against `unevidenced_dimensions`.
 
-None of these is built. This is the list to choose from.
-
-### Tier 1 — fundability. Ask these next.
-
-Eight questions, covering every remaining fundability gap. This is the set that
-moves "can we reliably tell if a business is fundable" from *no* to *yes*.
+None of the Tier 2 saleability questions below is built yet.
 
 | Field | Type | Suggested label | Closes |
 |---|---|---|---|
-| `monthly_revenue_3m_ago_minor` | money | "Revenue three months ago" | Traction: *growth shown over a period long enough to distinguish a trend from one good month* |
-| `monthly_costs_3m_ago_minor` | money | "Total costs three months ago" | Financial health: *burn is trending in a direction the founder can account for* |
-| `monthly_marketing_spend_minor` | money | "What do you spend a month winning customers?" | Unit economics: *acquisition cost includes the sales and marketing effort actually used, not only paid media*; and *a strong ratio is checked against simply under-investing in growth* |
-| `largest_customer_revenue_share_percent` | percent | "What share of revenue comes from your biggest customer?" | Revenue durability: *customer concentration is quantified* — and it is a first-order funding risk, not only a sale risk |
-| `pilot_or_lou_count` | integer | "How many pilots or letters of intent that are not paying yet?" | Traction: *pilots, letters of intent and paying customers are distinguished rather than counted together* |
-| `delivery_cost_trend` | text | "As you have grown, has the cost to serve one more customer gone up, down, or stayed flat?" | Scalability: *delivery cost per additional customer is falling, flat, or rising — and which it is, is evidenced* |
-| `founder_experience` | text | "What have the founders done before that is relevant to this?" | Team: *relevant prior experience is specific and checkable, not self-described seniority* |
-| `regulatory_licences` | text | "What licences or permissions does this business need, and do you hold them?" | Legal and IP: *licences the business model requires are held, or their absence is flagged* |
-
-The two `_3m_ago` figures are the highest-value pair in the table. They are the
-only way the audit can see a *direction* — today it sees a single frozen month
-and cannot tell a business growing 20% a month from one shrinking at the same
-rate. They are also arithmetic, so the trend is computed in code rather than
-judged by the model.
-
-### Tier 2 — saleability. Ask these when the readiness loop is built.
-
-The platform's promise is fundable **and** saleable, and the saleability half is
-currently the thinner of the two.
-
-| Field | Type | Suggested label | Closes |
-|---|---|---|---|
-| `recurring_revenue_percent` | percent | "What share of revenue is recurring or contracted?" | Revenue durability: *recurring revenue separated from one-off sales* |
-| `typical_contract_months` | integer | "How long is a typical customer contract?" | Revenue durability: *contract lengths and renewal behaviour are evidenced* |
-| `channel_dependency` | text | "Does your revenue depend on one channel, platform or partner?" | Revenue durability: *revenue dependent on a single channel or counterparty is identified* |
-| `operations_documented` | boolean | "Could someone else run day-to-day operations from written process?" | Owner independence: *operations are documented well enough for a successor* |
-| `founder_salary_minor` | money | "What do the founders pay themselves a month?" | Owner independence: *owner compensation below market is disclosed, since it flatters the margins a buyer would inherit* |
-| `systems_in_company_name` | boolean | "Are bank accounts, domains and software subscriptions in the company's name?" | Transferability: *systems, accounts and data are held by the company, not personal accounts* |
-| `supplier_dependencies` | text | "Which suppliers or platforms would hurt most to lose?" | Transferability: *supplier and platform dependencies are named* |
-| `hiring_gaps` | text | "What roles do you still need to fill?" | Team: *the roles the plan requires are either filled or named as gaps* |
-| `material_contracts_note` | text | "Any major contracts, loans or obligations we should know about?" | Legal and IP: *material contracts and any encumbrances are disclosed* |
+| `recurring_revenue_percent` | percent | "What share of revenue is recurring or contracted?" | Revenue durability |
+| `typical_contract_months` | integer | "How long is a typical customer contract?" | Revenue durability |
+| `channel_dependency` | text | "Does your revenue depend on one channel, platform or partner?" | Revenue durability |
+| `operations_documented` | boolean | "Could someone else run day-to-day operations from written process?" | Owner independence |
+| `founder_salary_minor` | money | "What do the founders pay themselves a month?" | Owner independence |
+| `systems_in_company_name` | boolean | "Are bank accounts, domains and software subscriptions in the company's name?" | Transferability |
+| `supplier_dependencies` | text | "Which suppliers or platforms would hurt most to lose?" | Transferability |
+| `hiring_gaps` | text | "What roles do you still need to fill?" | Team |
+| `material_contracts_note` | text | "Any major contracts, loans or obligations we should know about?" | Legal and IP |
 
 ### Not solvable by a question
 
-One criterion cannot be closed this way. Traction asks that *revenue is
-corroborated by a source other than the founder's own narrative*, and *named
-customers or contracts are evidenced, not just listed*. Asking a founder to
-assert it harder does not corroborate anything — this is what **document upload**
-is for, and it stays open until file storage is provisioned.
-
-### How to stage it without wrecking the form
-
-23 questions is already long; 40 would be abandoned. Recommended shape:
-
-1. **Required core (11).** Blocks the audit. Keep it exactly as it is.
-2. **"Improve your score" (the 4 new + tier 1).** Present *after* the first
-   audit returns, targeted at the dimensions that actually came back thin —
-   the audit already reports `unevidenced_dimensions`, so the app can ask only
-   the questions that would change this founder's result. That turns a long form
-   into a short, obviously-worthwhile follow-up.
-3. **Tier 2** alongside the readiness-task flow in Phase 3, where a founder is
-   already working through improvements.
-
-Point 2 is the important one: **the audit tells you which questions to ask**.
-Nothing needs to be asked speculatively.
+Traction asks that revenue is corroborated by a source other than the founder's
+own narrative. Asking harder does not corroborate anything — that is what
+document upload is for.
 
 ---
 

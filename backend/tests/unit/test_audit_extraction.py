@@ -151,6 +151,11 @@ def test_an_unknown_field_name_is_rejected_at_the_schema() -> None:
         (FieldKind.TEXT, "  a marketplace  ", "a marketplace"),
         (FieldKind.INTEGER, "roughly ten", None),
         (FieldKind.BOOLEAN, "maybe", None),
+        (FieldKind.YEAR, "2019", 2019),
+        (FieldKind.YEAR, "12 March 2019", 2019),
+        (FieldKind.YEAR, "Incorporated on 2019-03-12", 2019),
+        (FieldKind.YEAR, "no date here", None),
+        (FieldKind.YEAR, "99", None),
     ],
 )
 def test_coercion_handles_how_documents_actually_write_numbers(

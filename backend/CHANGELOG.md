@@ -9,6 +9,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Company registration intake (T1.6).** Founders can now answer legal-entity
+  questions and upload a country-specific certificate of incorporation; the
+  audit reads them as self-reported evidence (`DECISIONS.md` D7), never as a
+  verified badge.
+  - `GET /v1/registries` — static map of ISO alpha-2 → registrar / certificate
+    name / number label. Key on `NG`, not `"Nigeria"`. Countries not in the map
+    are still accepted as free text.
+  - New profile fields (all optional): `legal_name`, `registration_number`,
+    `registrar`, `incorporation_year`, `regulatory_licences`,
+    `monthly_marketing_spend_minor`, `largest_customer_revenue_share_percent`,
+    `pilot_or_lou_count`, `delivery_cost_trend`, `founder_experience`,
+    `monthly_revenue_3m_ago_minor`, `monthly_costs_3m_ago_minor`.
+  - New document kind: `registration_certificate` (migration `0015` widens
+    `documents.kind` to VARCHAR(32)).
+  - New computed figures: `revenue_change_3m_percent`,
+    `costs_change_3m_percent` — the audit can finally see a *direction*.
+  - New consistency finding: `incorporated_after_trading` (likely, not certain).
+
 ### Security
 - **Admin endpoints now refuse an unenrolled admin with `403`.** Report reveal,
   the admin-tier audit report, benchmark CRUD, interest approve/decline, and
