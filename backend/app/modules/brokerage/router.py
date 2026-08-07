@@ -12,7 +12,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, status
 
-from app.core.deps import CurrentUserDep, SessionDep
+from app.core.deps import CurrentAdmin, CurrentUserDep, SessionDep
 from app.core.errors import error_responses
 from app.modules.audit.reports import AdminReport
 from app.modules.brokerage import service
@@ -96,7 +96,7 @@ async def list_interests(
     responses=error_responses(401, 403, 404, 409, 422),
 )
 async def approve_interest(
-    interest_id: uuid.UUID, actor: CurrentUserDep, session: SessionDep
+    interest_id: uuid.UUID, actor: CurrentAdmin, session: SessionDep
 ) -> InterestResponse:
     return await service.decide_interest(session, actor, interest_id, approve=True)
 
@@ -112,7 +112,7 @@ async def approve_interest(
     responses=error_responses(401, 403, 404, 409, 422),
 )
 async def decline_interest(
-    interest_id: uuid.UUID, actor: CurrentUserDep, session: SessionDep
+    interest_id: uuid.UUID, actor: CurrentAdmin, session: SessionDep
 ) -> InterestResponse:
     return await service.decide_interest(session, actor, interest_id, approve=False)
 
@@ -137,7 +137,7 @@ async def decline_interest(
     responses=error_responses(401, 403, 404, 409, 422),
 )
 async def reveal_report(
-    interest_id: uuid.UUID, actor: CurrentUserDep, session: SessionDep
+    interest_id: uuid.UUID, actor: CurrentAdmin, session: SessionDep
 ) -> RevealResponse:
     return await service.reveal_report(session, actor, interest_id)
 

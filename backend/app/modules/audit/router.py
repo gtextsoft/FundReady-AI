@@ -12,9 +12,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, Response, status
 
-from app.core.deps import CurrentUserDep, SessionDep
-from app.core.errors import ForbiddenError, error_responses
-from app.core.security import Role
+from app.core.deps import CurrentAdmin, CurrentUserDep, SessionDep
+from app.core.errors import error_responses
+from app.core.security import assert_admin
 from app.modules.audit import service
 from app.modules.audit.benchmarks import BenchmarkMetric, Stage
 from app.modules.audit.reports import (
@@ -60,7 +60,7 @@ BENCHMARK_NOTE = (
     responses=error_responses(401, 403, 409, 422),
 )
 async def create_benchmark(
-    payload: BenchmarkCreate, actor: CurrentUserDep, session: SessionDep
+    payload: BenchmarkCreate, actor: CurrentAdmin, session: SessionDep
 ) -> BenchmarkResponse:
     benchmark = await service.create_benchmark(
         session, actor, payload.model_dump(mode="python")
@@ -79,7 +79,7 @@ async def create_benchmark(
     responses=error_responses(401, 403, 422),
 )
 async def list_benchmarks(
-    actor: CurrentUserDep,
+    actor: CurrentAdmin,
     session: SessionDep,
     sector: Annotated[str | None, Query(max_length=120)] = None,
     stage: Annotated[Stage | None, Query()] = None,
@@ -111,7 +111,7 @@ async def list_benchmarks(
     responses=error_responses(401, 403, 404, 422),
 )
 async def read_benchmark(
-    benchmark_id: uuid.UUID, actor: CurrentUserDep, session: SessionDep
+    benchmark_id: uuid.UUID, actor: CurrentAdmin, session: SessionDep
 ) -> BenchmarkResponse:
     return BenchmarkResponse.of(
         await service.get_benchmark(session, actor, benchmark_id)
@@ -134,7 +134,7 @@ async def read_benchmark(
 async def update_benchmark(
     benchmark_id: uuid.UUID,
     payload: BenchmarkUpdate,
-    actor: CurrentUserDep,
+    actor: CurrentAdmin,
     session: SessionDep,
 ) -> BenchmarkResponse:
     benchmark = await service.update_benchmark(
@@ -159,7 +159,7 @@ async def update_benchmark(
     responses=error_responses(401, 403, 404, 422),
 )
 async def retire_benchmark(
-    benchmark_id: uuid.UUID, actor: CurrentUserDep, session: SessionDep
+    benchmark_id: uuid.UUID, actor: CurrentAdmin, session: SessionDep
 ) -> BenchmarkResponse:
     return BenchmarkResponse.of(
         await service.retire_benchmark(session, actor, benchmark_id)
@@ -318,10 +318,14 @@ async def read_audit_report(
 async def read_audit_report_as_admin(
     startup_id: uuid.UUID,
     run_id: uuid.UUID,
-    actor: CurrentUserDep,
+    actor: CurrentAdmin,
     session: SessionDep,
 ) -> AdminReport:
-    if actor.role is not Role.ADMIN:
-        raise ForbiddenError
+    # CurrentAdmin gates HTTP. assert_admin repeats the rule so a direct call
+    # to this function (and any future composition root that skips the
+    # dependency) cannot widen the admin-tier report without MFA either.
+    # The role half of this check used to live here alone (T4.2); the MFA
+    # half is what was missing.
+    assert_admin(actor)
     stored = await service.get_audit_report(session, actor, startup_id, run_id)
     return admin_report(stored)

@@ -12,7 +12,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, status
 
-from app.core.deps import CurrentUserDep, SessionDep, SettingsDep
+from app.core.deps import CurrentAdmin, CurrentUserDep, SessionDep, SettingsDep
 from app.core.errors import error_responses
 from app.modules.readiness import service
 from app.modules.readiness.evidence import MAX_UPLOAD_BYTES
@@ -295,7 +295,7 @@ async def download_evidence(
     responses=error_responses(401, 403, 404, 422),
 )
 async def reopen_task(
-    task_id: uuid.UUID, actor: CurrentUserDep, session: SessionDep
+    task_id: uuid.UUID, actor: CurrentAdmin, session: SessionDep
 ) -> ReadinessTaskResponse:
     task = await service.reopen_task(session, actor, task_id)
     return ReadinessTaskResponse.model_validate(task)

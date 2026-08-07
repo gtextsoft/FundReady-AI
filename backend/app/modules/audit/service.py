@@ -25,12 +25,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import (
     ConflictError,
-    ForbiddenError,
     InvalidRequestError,
     NotFoundError,
 )
 from app.core.ownership import owned_or_404
-from app.core.security import CurrentUser, Role
+from app.core.security import CurrentUser, assert_admin
 from app.modules.audit.benchmarks import (
     ANY_SECTOR,
     GLOBAL_REGION,
@@ -73,9 +72,8 @@ _KEY_FIELDS: frozenset[str] = frozenset({"sector", "stage", "metric", "region"})
 
 
 def _require_admin(actor: CurrentUser) -> None:
-    """Only SACI writes benchmarks (`AUTH.md` section 5)."""
-    if actor.role is not Role.ADMIN:
-        raise ForbiddenError
+    """Only SACI writes benchmarks (`AUTH.md` section 5), and only with MFA."""
+    assert_admin(actor)
 
 
 def _normalise_sector(sector: str) -> str:

@@ -18,12 +18,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import (
     ConflictError,
-    ForbiddenError,
     InvalidRequestError,
     NotFoundError,
 )
 from app.core.ownership import owned_or_404
-from app.core.security import CurrentUser, Role
+from app.core.security import CurrentUser, assert_admin
 from app.core.storage import (
     StoredObject,
     delete_object,
@@ -629,8 +628,7 @@ async def reopen_task(
     somebody believes was wrong, and refusing it here would make a database edit
     the only way to correct a false pass.
     """
-    if actor.role is not Role.ADMIN:
-        raise ForbiddenError("Only a SACI admin can reopen a task.")
+    assert_admin(actor, message="Only a SACI admin can reopen a task.")
 
     task = await ReadinessTaskRepository(session).get(task_id)
     if task is None:

@@ -104,6 +104,28 @@ class CurrentUser:
     session_valid_after: datetime | None = None
 
 
+def assert_admin(actor: CurrentUser, *, message: str | None = None) -> None:
+    """SACI admin, with a second factor. Both halves, one place.
+
+    `require_role(Role.ADMIN)` enforces the same rule at the HTTP boundary
+    (`core.deps`). Admin capabilities that reach a *service* without that
+    dependency -- report reveal, benchmark writes, task reopen -- must call
+    this, or an unenrolled admin holding a valid token can exercise them.
+    AUTH.md section 9 and T1.2c require every admin capability behind MFA;
+    a check retyped per module is a check that eventually loses one half.
+
+    The unenrolled message matches `require_role` so the two layers answer
+    the same way. `message` is reserved for the role half, so reopen can keep
+    its existing wording without inventing a second MFA string.
+    """
+    if actor.role is not Role.ADMIN:
+        raise ForbiddenError(message) if message else ForbiddenError()
+    if not actor.mfa_enabled:
+        raise ForbiddenError(
+            "Admin accounts must enrol in two-factor authentication first."
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class AccessTokenClaims:
     """The verified contents of an access token."""

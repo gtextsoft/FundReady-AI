@@ -249,6 +249,12 @@ company name; send `name` explicitly to control it.
 
 ### Admin only (web) — 403 until MFA is enrolled
 
+Every row below refuses an admin who has not enrolled two-factor
+authentication with `403` and the message
+`"Admin accounts must enrol in two-factor authentication first."` —
+same response as `POST /v1/admin/users/*`. Enrol before calling any of them;
+an access token alone is not enough.
+
 | | |
 |---|---|
 | `POST /v1/admin/users` | Provision another admin |
@@ -257,6 +263,9 @@ company name; send `name` explicitly to control it.
 | `GET /v1/benchmarks` · `GET /v1/benchmarks/{id}` | Browse and read the benchmark KB |
 | `POST /v1/benchmarks` · `PATCH /v1/benchmarks/{id}` · `POST /v1/benchmarks/{id}/retire` | Create, revise, retire |
 | `GET /v1/admin/startups/{startup_id}/audits/{run_id}/report` | Any startup's report **in full** — see §5b |
+| `POST /v1/admin/interests/{id}/approve` · `POST /v1/admin/interests/{id}/decline` | Decide an interest — see §5d |
+| `POST /v1/admin/interests/{id}/reveal` | Open one full report to one investor — see §5d |
+| `POST /v1/admin/tasks/{task_id}/reopen` | Clear a locked task's attempt cap — see §5e |
 
 **The admin report path is separate from the founder's on purpose.** It is the
 same stored document served by a wider serializer, and keeping it on its own

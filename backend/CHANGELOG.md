@@ -9,6 +9,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Security
+- **Admin endpoints now refuse an unenrolled admin with `403`.** Report reveal,
+  the admin-tier audit report, benchmark CRUD, interest approve/decline, and
+  readiness-task reopen previously checked role only and skipped the MFA gate
+  that `POST /v1/admin/users/*` already enforced. They now use the same
+  `CurrentAdmin` dependency and a shared `assert_admin` check, so a token from
+  an admin who has not enrolled two-factor authentication buys nothing on those
+  paths either. Message matches the existing MFA refusal:
+  `"Admin accounts must enrol in two-factor authentication first."`
+
 ### Changed
 - **Investor discovery is now gated on readiness (T3.6).** A startup appears in
   `GET /v1/discover` only when it has opted in, **and** has a succeeded audit,

@@ -25,8 +25,8 @@ from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import ConflictError, ForbiddenError, NotFoundError
-from app.core.security import CurrentUser, Role
+from app.core.errors import ConflictError, NotFoundError
+from app.core.security import CurrentUser, Role, assert_admin
 from app.modules.audit.models import AuditRun
 from app.modules.audit.reports import AdminReport, admin_report
 from app.modules.audit.repository import AuditRunRepository
@@ -51,8 +51,8 @@ _NOT_FOUND = "No such interest."
 
 
 def _require_admin(actor: CurrentUser) -> None:
-    if actor.role is not Role.ADMIN:
-        raise ForbiddenError
+    """SACI only, and only with a second factor (AUTH.md section 9)."""
+    assert_admin(actor)
 
 
 async def _owned_interest(

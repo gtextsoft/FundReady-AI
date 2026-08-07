@@ -87,6 +87,12 @@ async def _user(
     assert user is not None
     user.role = role
     user.status = AccountStatus.ACTIVE
+    # Admin capabilities require MFA (AUTH.md section 9). Promoting the row
+    # without flipping the flag would leave the actor looking enrolled in the
+    # ORM and unenrolled in CurrentUser -- or the reverse -- and either way
+    # the suite would stop matching the production gate.
+    if role is Role.ADMIN:
+        user.mfa_enabled = True
     await session.flush()
     return user, _actor(user)
 

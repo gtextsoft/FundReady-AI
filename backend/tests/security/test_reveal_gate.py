@@ -73,7 +73,7 @@ async def _user(session: AsyncSession, role: Role = Role.FOUNDER) -> CurrentUser
         role=role,
         status=AccountStatus.ACTIVE,
         email_verified=True,
-        mfa_enabled=False,
+        mfa_enabled=(role is Role.ADMIN),
     )
 
 
