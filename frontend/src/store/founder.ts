@@ -1,8 +1,22 @@
 import { create } from 'zustand';
 import { api, isUnavailable, type SaveResult } from '@/api';
 import type { UnmappedAnswer } from '@/api/profile-mapping';
+import { isAuditFinished, type AuditReport, type AuditRun } from '@/domain/audit';
 import { assess } from '@/domain/scoring';
 import { EMPTY_PROFILE, type Assessment, type FounderProfile } from '@/domain/types';
+
+/**
+ * How often to ask whether the audit has finished, and when to give up.
+ *
+ * The audit runs an Opus-tier model over a 16k budget, so seconds-to-minutes
+ * is normal and a tight poll would just bill the server for nothing. Giving up
+ * stops the *polling*, not the audit — the run continues, and `resumeAudit`
+ * picks it up next time the screen opens.
+ */
+const POLL_INTERVAL_MS = 3_000;
+const POLL_TIMEOUT_MS = 5 * 60_000;
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export type Step = 1 | 2 | 3 | 4;
 
@@ -27,6 +41,19 @@ type FounderState = {
   load(): Promise<void>;
   /** Persists the form. Returns what the server stored and what it refused. */
   save(): Promise<SaveResult>;
+
+  // -- the real audit ------------------------------------------------------
+  /** The run being watched, or the most recent one. */
+  run: AuditRun | null;
+  /** The finished report for `run`, once it succeeded. */
+  report: AuditReport | null;
+  /** Whatever stopped the audit being requested or read. */
+  auditError: unknown;
+
+  /** Saves, queues an audit, and polls it to a terminal state. */
+  runAudit(): Promise<void>;
+  /** Picks the newest run back up — an audit outlives the screen that started it. */
+  resumeAudit(): Promise<void>;
 
   setField<K extends keyof FounderProfile>(key: K, value: FounderProfile[K]): void;
   setStep(step: Step): void;
@@ -72,6 +99,56 @@ export function isStepValid(profile: FounderProfile, step: Step): boolean {
   return REQUIRED[step].every((k) => String(profile[k]).trim() !== '');
 }
 
+/** The slice of the store the audit helpers below write to. */
+type AuditSet = (partial: Partial<FounderState>) => void;
+
+/**
+ * Reads the report for a finished run.
+ *
+ * A `failed` run has no report to fetch — asking for one is an error, not an
+ * empty result — so the failure is surfaced from the run itself, where the
+ * server put a code and a message.
+ */
+async function loadReport(run: AuditRun, set: AuditSet): Promise<void> {
+  if (run.status !== 'succeeded') {
+    set({
+      auditError: new Error(
+        run.errorMessage ?? 'The audit did not finish. Try running it again.',
+      ),
+    });
+    return;
+  }
+  set({ report: await api.getAuditReport(run.id) });
+}
+
+/**
+ * Polls one run until it reaches a terminal state.
+ *
+ * Gives up after `POLL_TIMEOUT_MS` — which stops the *polling*, not the audit.
+ * The run keeps going server-side and `resumeAudit` collects it later, so the
+ * timeout costs a wait rather than a result.
+ */
+async function pollToFinish(
+  run: AuditRun,
+  set: AuditSet,
+  get: () => FounderState,
+): Promise<void> {
+  const deadline = Date.now() + POLL_TIMEOUT_MS;
+  let current = run;
+
+  while (!isAuditFinished(current.status)) {
+    if (Date.now() > deadline) return;
+    await wait(POLL_INTERVAL_MS);
+    // Another run may have been started meanwhile (the founder edited and
+    // re-ran). Stop polling the one nobody is watching any more.
+    if (get().run?.id !== current.id) return;
+    current = await api.getAuditRun(current.id);
+    set({ run: current });
+  }
+
+  await loadReport(current, set);
+}
+
 export const useFounder = create<FounderState>((set, get) => ({
   profile: { ...EMPTY_PROFILE },
   step: 1,
@@ -81,6 +158,9 @@ export const useFounder = create<FounderState>((set, get) => ({
   loaded: false,
   dirty: false,
   unmapped: [],
+  run: null,
+  report: null,
+  auditError: null,
 
   setField(key, value) {
     set((s) => ({ profile: { ...s.profile, [key]: value }, dirty: true }));
@@ -116,6 +196,9 @@ export const useFounder = create<FounderState>((set, get) => ({
       loaded: false,
       dirty: false,
       unmapped: [],
+      run: null,
+      report: null,
+      auditError: null,
     });
   },
 
@@ -151,12 +234,38 @@ export const useFounder = create<FounderState>((set, get) => ({
   },
 
   async save() {
-    // Persisted before scoring, and separately from it: the audit engine does
-    // not exist yet, and losing a founder's answers because the *scoring* is
-    // unbuilt would be the worst of both.
+    // Persisted separately from the audit, and first: an audit that fails to
+    // queue must not also cost the founder their answers.
     const result = await api.saveProfile(get().profile);
     set({ profile: result.profile, unmapped: result.unmapped, dirty: false, loaded: true });
     return result;
+  },
+
+  async runAudit() {
+    set({ auditError: null, report: null });
+    try {
+      await get().save();
+      const queued = await api.requestAudit();
+      set({ run: queued });
+      await pollToFinish(queued, set, get);
+    } catch (error) {
+      set({ auditError: error });
+    }
+  },
+
+  async resumeAudit() {
+    // An audit takes minutes and outlives the screen that started it. Closing
+    // the app mid-run must not lose the result.
+    try {
+      const runs = await api.listAuditRuns();
+      const latest = runs[0];
+      if (!latest) return;
+      set({ run: latest });
+      if (isAuditFinished(latest.status)) await loadReport(latest, set);
+      else await pollToFinish(latest, set, get);
+    } catch (error) {
+      set({ auditError: error });
+    }
   },
 
   async submit() {

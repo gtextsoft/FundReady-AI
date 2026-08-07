@@ -34,19 +34,19 @@ export default function AssessmentScreen() {
   const { height } = useWindowDimensions();
   const [phase, setPhase] = useState(0);
   const company = useFounder((s) => s.profile.company);
-  const submit = useFounder((s) => s.submit);
+  const runAudit = useFounder((s) => s.runAudit);
   const submitted = useRef(false);
 
-  // Score in the background while the phases play out, so the results screen
-  // has something to render the moment the animation finishes.
+  // Start the real audit while the phases play out. It takes minutes, not the
+  // ~6 seconds this animation runs for, so the results screen picks up
+  // whatever state the run is in — it does not wait here.
   useEffect(() => {
     if (submitted.current) return;
     submitted.current = true;
-    // A failure here is not fatal: `submit` already resolves to null when the
-    // audit engine does not exist, and the results screen falls back to its
-    // clearly-labelled provisional estimate either way.
-    submit().catch(() => undefined);
-  }, [submit]);
+    // Failures are recorded on the store as `auditError` and rendered by the
+    // results screen. Nothing is thrown away here.
+    void runAudit();
+  }, [runAudit]);
 
   useEffect(() => {
     const id = setInterval(() => {

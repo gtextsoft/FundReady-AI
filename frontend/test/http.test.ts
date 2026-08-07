@@ -475,9 +475,101 @@ describe('api/http transport', () => {
 
   describe('unbuilt endpoints', () => {
     it('names the missing backend task rather than inventing an answer', async () => {
+      const error = await httpApi.askMentor('how am I doing?').catch((e: unknown) => e);
+      expect((error as InstanceType<typeof ApiFailure>).code).toBe('not_implemented');
+      expect((error as Error).message).toMatch(/T3\.7/);
+    });
+
+    it('refuses the prototype dealflow shape rather than inventing its numbers', async () => {
+      // `/v1/discover` exists, but the summary tier carries no MRR, growth,
+      // margin or runway — every number the prototype's card draws. Filling
+      // them in is the one thing this must never do.
       const error = await httpApi.listCompanies({} as never, 1, 20).catch((e: unknown) => e);
       expect((error as InstanceType<typeof ApiFailure>).code).toBe('not_implemented');
-      expect((error as Error).message).toMatch(/T4\.2/);
+      expect((error as Error).message).toMatch(/discoverStartups/);
+    });
+  });
+
+  describe('audit', () => {
+    const PROFILE = {
+      id: 'profile-1',
+      owner_id: 'user-1',
+      name: 'Northwind Labs',
+      sector: 'Fintech',
+      stage: 'seed',
+      country: 'NG',
+      currency: 'NGN',
+      fields: {},
+      missing_fields: [],
+      created_at: '2026-08-01T00:00:00Z',
+      updated_at: '2026-08-01T00:00:00Z',
+    };
+
+    const RUN = {
+      id: 'run-1',
+      startup_id: 'profile-1',
+      status: 'queued',
+      rubric_version: 'v1',
+      attempts: 0,
+      error_code: null,
+      error_message: null,
+      created_at: '2026-08-01T00:00:00Z',
+      started_at: null,
+      completed_at: null,
+    };
+
+    it('queues an audit against the founder own startup id', async () => {
+      await signedIn();
+      serve((call) => {
+        if (call.url.endsWith('/v1/startups/me')) return res(200, PROFILE);
+        return res(202, RUN);
+      });
+
+      const run = await httpApi.requestAudit();
+      expect(calls.some((c) => c.url === 'http://api.test/v1/startups/profile-1/audits')).toBe(true);
+      expect(run).toMatchObject({ id: 'run-1', status: 'queued', rubricVersion: 'v1' });
+    });
+
+    it('refuses to audit before there is a profile', async () => {
+      await signedIn();
+      serve(() => res(404, {}));
+      await expect(httpApi.requestAudit()).rejects.toMatchObject({ code: 'not_found' });
+      // Never posts to /startups/null/audits, which would be a confusing 422.
+      expect(calls.some((c) => c.method === 'POST')).toBe(false);
+    });
+
+    it('passes a null score through instead of scoring it zero', async () => {
+      await signedIn();
+      const report = {
+        rubric_version: 'v1',
+        data_integrity_score: 'moderate',
+        fundability: {
+          scope: 'fundability',
+          level: 'insufficient_data',
+          score: null,
+          sufficiency: 'thin',
+          rationale: 'Not enough evidence to reach a verdict.',
+          evidenced_dimensions: [],
+          unevidenced_dimensions: ['traction'],
+        },
+        saleability: {
+          scope: 'saleability',
+          level: 'not_yet',
+          score: 41,
+          sufficiency: 'partial',
+          rationale: 'Owner dependency is high.',
+          evidenced_dimensions: ['margins'],
+          unevidenced_dimensions: [],
+        },
+        findings: [],
+        action_plan: [],
+      };
+      serve((call) => (call.url.endsWith('/v1/startups/me') ? res(200, PROFILE) : res(200, report)));
+
+      const result = await httpApi.getAuditReport('run-1');
+      // A `?? 0` here would turn "could not tell" into a scored zero.
+      expect(result.fundability.score).toBeNull();
+      expect(result.saleability.score).toBe(41);
     });
   });
 });

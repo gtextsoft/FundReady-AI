@@ -1,3 +1,5 @@
+import type { AuditReport, AuditRun } from '@/domain/audit';
+import type { DiscoveredStartup, DiscoveryPage, DiscoveryQuery } from '@/domain/discovery';
 import type { UnmappedAnswer } from './profile-mapping';
 import type { AppNotification, CallRequest } from '@/domain/notifications';
 import type {
@@ -229,6 +231,32 @@ export interface FundMeApi {
    * about that is claiming to have stored them.
    */
   saveProfile(profile: FounderProfile): Promise<SaveResult>;
+
+  // ── audit ───────────────────────────────────────────────
+  /**
+   * Queues an audit of the founder's own profile.
+   *
+   * Returns immediately with a run in `queued` — the audit itself takes as
+   * long as it takes. Poll `getAuditRun` until `isAuditFinished`, then read
+   * `getAuditReport`.
+   */
+  requestAudit(): Promise<AuditRun>;
+  /** One run's status. Deliberately carries no findings. */
+  getAuditRun(runId: string): Promise<AuditRun>;
+  /** Newest first. Empty for a founder who has never been audited. */
+  listAuditRuns(): Promise<AuditRun[]>;
+  /**
+   * The founder-tier report for a finished run.
+   *
+   * Only meaningful once the run `succeeded`; asking earlier is an error, not
+   * an empty report.
+   */
+  getAuditReport(runId: string): Promise<AuditReport>;
+
+  // ── investor visibility ─────────────────────────────────
+  /** Makes the startup discoverable. Requires a cleared audit server-side. */
+  publishProfile(): Promise<void>;
+  unpublishProfile(): Promise<void>;
   enrol(programme: 'readiness' | 'wealth'): Promise<void>;
   /**
    * AI mentor. The mock answers from the founder's own metrics with rules;
@@ -240,6 +268,24 @@ export interface FundMeApi {
   // ── investor ────────────────────────────────────────────
   listCompanies(query: DealflowQuery, page: number, perPage: number): Promise<Page<CompanySummary>>;
   getCompany(id: number): Promise<Company>;
+
+  /**
+   * Discovery, at the tier the server will actually serve.
+   *
+   * Separate from `listCompanies` on purpose: that one returns the prototype's
+   * rich `Company` shape, and the summary tier does not carry enough to build
+   * one. See `domain/discovery.ts`.
+   */
+  discoverStartups(query: DiscoveryQuery): Promise<DiscoveryPage>;
+  getDiscoveredStartup(startupId: string): Promise<DiscoveredStartup>;
+  /**
+   * Registers interest. An admin decides what happens next (T4.5).
+   *
+   * `note` is context for SACI and **the founder never sees it** — say so in
+   * the UI, because an investor writes differently when the subject is not
+   * reading. Optional: the server accepts null.
+   */
+  expressInterest(startupId: string, note?: string): Promise<void>;
   getWatchlist(): Promise<number[]>;
   toggleWatch(id: number): Promise<number[]>;
   requestIntroduction(companyId: number): Promise<void>;

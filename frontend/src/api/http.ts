@@ -2,9 +2,12 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
 import { companyNameFromEmail, isPersonalEmailDomain } from '@/domain/email';
+import type { AuditReport, AuditRun, AuditStatus, Verdict } from '@/domain/audit';
+import type { DiscoveredStartup } from '@/domain/discovery';
 import {
   fromWireProfile,
   toWireProfile,
+  type ServerStage,
   type WireProfileResponse,
 } from './profile-mapping';
 import { storage } from '@/lib/storage';
@@ -346,6 +349,154 @@ async function ownProfile(): Promise<WireProfileResponse | null> {
   }
 }
 
+/**
+ * The founder's startup id, for the endpoints nested under it.
+ *
+ * Every audit route is `/v1/startups/{id}/…`, and the id is not something the
+ * app stores — it comes from `/v1/startups/me`. A founder who has not
+ * onboarded gets a named failure rather than a request to `/startups/null/…`,
+ * which the server would answer with an unhelpful `422`.
+ */
+async function requireProfileId(): Promise<string> {
+  const profile = await ownProfile();
+  if (!profile) {
+    throw new ApiFailure(
+      'not_found',
+      'Complete your startup profile before requesting an audit.',
+    );
+  }
+  return profile.id;
+}
+
+// ── audit wire shapes ───────────────────────────────────────
+
+type WireAuditRun = {
+  id: string;
+  startup_id: string;
+  status: AuditStatus;
+  rubric_version: string;
+  attempts: number;
+  error_code: string | null;
+  error_message: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+};
+
+type WireVerdict = {
+  scope: string;
+  level: string;
+  score: number | null;
+  sufficiency: string;
+  rationale: string;
+  evidenced_dimensions: string[];
+  unevidenced_dimensions: string[];
+};
+
+type WireFounderReport = {
+  rubric_version: string;
+  data_integrity_score: string;
+  fundability: WireVerdict;
+  saleability: WireVerdict;
+  findings: { code: string; severity: string; fields: string[]; message: string }[];
+  action_plan: {
+    dimension: string;
+    action: string;
+    dimension_score: number | null;
+    is_priority: boolean;
+  }[];
+};
+
+function toAuditRun(wire: WireAuditRun): AuditRun {
+  return {
+    id: wire.id,
+    startupId: wire.startup_id,
+    status: wire.status,
+    rubricVersion: wire.rubric_version,
+    attempts: wire.attempts,
+    errorCode: wire.error_code,
+    errorMessage: wire.error_message,
+    createdAt: wire.created_at,
+    startedAt: wire.started_at,
+    completedAt: wire.completed_at,
+  };
+}
+
+function toVerdict(wire: WireVerdict): Verdict {
+  return {
+    scope: wire.scope,
+    level: wire.level,
+    // Passed through, `null` and all. A `?? 0` here would turn "could not
+    // tell" into a scored zero, which is the false verdict the whole audit
+    // is built to avoid.
+    score: wire.score,
+    sufficiency: wire.sufficiency,
+    rationale: wire.rationale,
+    evidencedDimensions: wire.evidenced_dimensions ?? [],
+    unevidencedDimensions: wire.unevidenced_dimensions ?? [],
+  };
+}
+
+function toAuditReport(wire: WireFounderReport): AuditReport {
+  return {
+    rubricVersion: wire.rubric_version,
+    dataIntegrityScore: wire.data_integrity_score,
+    fundability: toVerdict(wire.fundability),
+    saleability: toVerdict(wire.saleability),
+    findings: (wire.findings ?? []).map((f) => ({
+      code: f.code,
+      severity: f.severity,
+      fields: f.fields ?? [],
+      message: f.message,
+    })),
+    actionPlan: (wire.action_plan ?? []).map((a) => ({
+      dimension: a.dimension,
+      action: a.action,
+      dimensionScore: a.dimension_score,
+      isPriority: a.is_priority,
+    })),
+  };
+}
+
+// ── discovery wire shapes ───────────────────────────────────
+
+type WireDiscoveryVerdict = { scope: string; level: string; score: number | null };
+
+type WireStartupCard = {
+  startup_id: string;
+  name: string | null;
+  sector: string | null;
+  stage: ServerStage | null;
+  country: string | null;
+  audit_run_id: string;
+  rubric_version: string;
+  fundability: WireDiscoveryVerdict;
+  saleability: WireDiscoveryVerdict;
+  published_at: string | null;
+};
+
+type WireDiscoveryPage = {
+  items: WireStartupCard[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+function toDiscovered(wire: WireStartupCard): DiscoveredStartup {
+  return {
+    startupId: wire.startup_id,
+    name: wire.name,
+    sector: wire.sector,
+    stage: wire.stage,
+    country: wire.country,
+    auditRunId: wire.audit_run_id,
+    rubricVersion: wire.rubric_version,
+    fundability: wire.fundability,
+    saleability: wire.saleability,
+    publishedAt: wire.published_at,
+  };
+}
+
 /** Every method with no endpoint behind it fails the same, nameable way. */
 function notYet<T>(feature: string, task: string): Promise<T> {
   return Promise.reject(
@@ -505,7 +656,59 @@ export const httpApi: FundMeApi = {
   purchaseUnlock: () => notYet('Payments', 'T3.3 / T3.4'),
 
   // ── founder ─────────────────────────────────────────────
-  submitAssessment: () => notYet('The fundability assessment', 'Phase 2'),
+  /**
+   * The prototype's 0-100 score with weighted parts, VC/PE fit and a colour
+   * band. **The server has no such thing and never will** — its audit returns
+   * verdicts with nullable scores, a sufficiency and a rationale. Producing an
+   * `Assessment` from a `FounderReport` would mean inventing the parts that do
+   * not exist. Use `requestAudit` / `getAuditReport` instead; this stays
+   * unimplemented so nothing silently falls back to a fabricated score.
+   */
+  submitAssessment: () => notYet('The prototype score', 'superseded by requestAudit'),
+
+  async requestAudit() {
+    const startupId = await requireProfileId();
+    return toAuditRun(
+      await request<WireAuditRun>(`/v1/startups/${startupId}/audits`, {
+        method: 'POST',
+        auth: true,
+      }),
+    );
+  },
+
+  async getAuditRun(runId: string) {
+    const startupId = await requireProfileId();
+    return toAuditRun(
+      await request<WireAuditRun>(`/v1/startups/${startupId}/audits/${runId}`, { auth: true }),
+    );
+  },
+
+  async listAuditRuns() {
+    const startupId = await requireProfileId();
+    const rows = await request<WireAuditRun[]>(`/v1/startups/${startupId}/audits`, { auth: true });
+    return rows.map(toAuditRun);
+  },
+
+  async getAuditReport(runId: string) {
+    const startupId = await requireProfileId();
+    return toAuditReport(
+      await request<WireFounderReport>(`/v1/startups/${startupId}/audits/${runId}/report`, {
+        auth: true,
+      }),
+    );
+  },
+
+  // ── investor visibility ─────────────────────────────────
+  async publishProfile() {
+    const startupId = await requireProfileId();
+    await request<unknown>(`/v1/startups/${startupId}/publish`, { method: 'POST', auth: true });
+  },
+
+  async unpublishProfile() {
+    const startupId = await requireProfileId();
+    await request<unknown>(`/v1/startups/${startupId}/unpublish`, { method: 'POST', auth: true });
+  },
+
 
   async getProfile() {
     const stored = await ownProfile();
@@ -559,8 +762,50 @@ export const httpApi: FundMeApi = {
   askMentor: () => notYet('The AI mentor', 'T3.7'),
 
   // ── investor ────────────────────────────────────────────
-  listCompanies: () => notYet('Dealflow', 'T4.2 / T4.3'),
-  getCompany: () => notYet('Company detail', 'T4.2'),
+  /**
+   * The prototype's rich dealflow card — MRR, growth, margin, LTV/CAC, runway,
+   * team, memos, risk flags. **The summary tier carries none of it**, by
+   * design: that is all full-report material and reaches an investor only
+   * after an admin reveal. Building a `Company` from `/v1/discover` would mean
+   * inventing every number on the card, so these stay unimplemented and
+   * `discoverStartups` serves what the server will actually give. Reconciling
+   * the screens is F4.2.
+   */
+  listCompanies: () => notYet('Dealflow in the prototype shape', 'use discoverStartups (F4.2)'),
+  getCompany: () => notYet('Company detail in the prototype shape', 'use getDiscoveredStartup'),
+
+  async discoverStartups(query) {
+    const params = new URLSearchParams();
+    if (query.sector) params.set('sector', query.sector);
+    if (query.stage) params.set('stage', query.stage);
+    if (query.country) params.set('country', query.country);
+    params.set('limit', String(query.limit ?? 20));
+    params.set('offset', String(query.offset ?? 0));
+
+    const page = await request<WireDiscoveryPage>(`/v1/discover?${params.toString()}`, {
+      auth: true,
+    });
+    return {
+      items: (page.items ?? []).map(toDiscovered),
+      total: page.total,
+      limit: page.limit,
+      offset: page.offset,
+    };
+  },
+
+  async getDiscoveredStartup(startupId: string) {
+    return toDiscovered(await request<WireStartupCard>(`/v1/discover/${startupId}`, { auth: true }));
+  },
+
+  async expressInterest(startupId: string, note?: string) {
+    await request<unknown>(`/v1/discover/${startupId}/interest`, {
+      method: 'POST',
+      // Explicitly null rather than omitted: the field is nullable server-side
+      // and sending nothing at all makes the body shape depend on the caller.
+      body: { note: note?.trim() || null },
+      auth: true,
+    });
+  },
   getWatchlist: () => notYet('The watchlist', 'no backend task yet'),
   toggleWatch: () => notYet('The watchlist', 'no backend task yet'),
   requestIntroduction: () => notYet('Introductions', 'T4.5'),
