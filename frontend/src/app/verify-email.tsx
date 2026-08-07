@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/button';
@@ -9,25 +9,27 @@ import { Mark } from '@/components/ui/mark';
 import { Mono, Txt, TxtSemi } from '@/components/ui/text';
 import { Unavailable } from '@/components/unavailable';
 import { C } from '@/theme/tokens';
-import { api } from '@/api';
-import { tokenFromParams } from '@/lib/deep-link';
+import { api, RESEND_COOLDOWN_MS } from '@/api';
+import { isValidEmail } from '@/domain/email';
 import { homeFor, SIGN_IN } from '@/lib/routes';
 import { useSession } from '@/store/session';
 
 /**
- * Confirm the address on the account.
+ * Confirm the address on the account with the six-digit code from the email.
  *
  * The *state* here is real: `emailVerified` comes from the server's own
  * `email_verified` on every load, so the moment the backend marks an address
  * confirmed this screen agrees.
  *
- * Two ways in. Normally the account is signed in and lands here from the
- * dashboard. But the verification email points at
- * `{APP_LINK_BASE_URL}/verify-email?token=…`, so this screen is also the far
- * end of that link — and whoever follows it may well not be signed in on this
- * device. The confirm endpoint takes no authorization for exactly that reason,
- * so the token is submitted regardless and the session is only used to *show*
- * the result.
+ * **The email carries a code, not a link.** There is deliberately no deep-link
+ * handling left here: a link would have to be a credential in a URL, and the
+ * server now checks a code against one named account instead. `reset-password`
+ * still uses a token link, which is why `lib/deep-link.ts` remains.
+ *
+ * **Usable signed out.** Neither endpoint is authenticated, because someone who
+ * registered on a laptop may be reading the mail on a phone. Signed in, the
+ * address comes off the session; signed out, the screen asks for it, because
+ * the server needs it to know which account the code belongs to.
  *
  * Deliberately skippable. AUTH.md permits browsing your own empty account
  * while unverified -- it is the sensitive actions that are gated, and
@@ -35,7 +37,6 @@ import { useSession } from '@/store/session';
  */
 export default function VerifyEmail() {
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams();
 
   const session = useSession((s) => s.session);
   const role = useSession((s) => s.role);
@@ -45,31 +46,51 @@ export default function VerifyEmail() {
 
   const account = role === 'investor' ? investorAccount : founderAccount;
 
-  const [token, setToken] = useState('');
+  // Signed in, the address is known and must not be editable — a code is only
+  // ever checked against the account it was issued for, so letting someone
+  // type a different address here would only produce confusing failures.
+  const sessionEmail = session?.email ?? '';
+  const [typedEmail, setTypedEmail] = useState('');
+  const email = sessionEmail || typedEmail;
+
+  const [code, setCode] = useState('');
   const [busy, setBusy] = useState<'resend' | 'confirm' | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [checking, setChecking] = useState(false);
+  const [sentAt, setSentAt] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   /**
    * Set when *this screen* completed the confirmation. Needed on top of the
-   * server state because a link followed while signed out has no account to
-   * re-read — without it, a successful confirmation would still render
-   * "pending".
+   * server state because someone verifying while signed out has no account to
+   * re-read — without it, a success would still render "pending".
    */
   const [confirmedHere, setConfirmedHere] = useState(false);
 
   const verified = confirmedHere || (account?.emailVerified ?? false);
 
-  const linked = tokenFromParams(params);
+  // The server drops a resend made within 60s of the last one and still
+  // answers 202, so the countdown is the only thing that stops the button
+  // promising an email that was never dispatched.
+  const cooldownLeft = sentAt === null ? 0 : Math.max(0, sentAt + RESEND_COOLDOWN_MS - now);
+  const cooldownSeconds = Math.ceil(cooldownLeft / 1000);
 
-  async function confirmWith(value: string) {
-    const trimmed = value.trim();
-    if (!trimmed) return;
+  useEffect(() => {
+    if (cooldownLeft <= 0) return;
+    const id = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(id);
+  }, [cooldownLeft]);
+
+  const digits = code.replace(/[\s-]/g, '');
+  const canConfirm = digits.length > 0 && isValidEmail(email);
+
+  async function confirm() {
+    if (!canConfirm) return;
     setBusy('confirm');
     setError(null);
     try {
-      await api.confirmEmail(trimmed);
+      await api.confirmEmail(email, code);
       setConfirmedHere(true);
-      // Best effort: signed out, there is no account to re-read, and the
+      // Best effort: signed out there is no account to re-read, and the
       // confirmation has already succeeded either way.
       await refreshAccount().catch(() => undefined);
     } catch (e) {
@@ -79,36 +100,23 @@ export default function VerifyEmail() {
     }
   }
 
-  /**
-   * A token on the URL is submitted on arrival rather than shown in a box —
-   * the person already clicked the link, and asking them to press Confirm
-   * afterwards is a step that exists only because the code was not read.
-   *
-   * The ref guard is what keeps it to one attempt. Without it a re-render (or
-   * the React Compiler re-running this) would spend the token again, and the
-   * second attempt fails: these are single-use.
-   */
-  const attempted = useRef(false);
-  useEffect(() => {
-    if (!linked || attempted.current) return;
-    attempted.current = true;
-    void confirmWith(linked);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [linked]);
-
   async function resend() {
+    if (!isValidEmail(email) || cooldownLeft > 0) return;
     setBusy('resend');
     setError(null);
     try {
-      await api.resendVerificationEmail();
+      await api.resendVerificationEmail(email);
+      // Start the countdown on the attempt, not on a confirmation: the 202
+      // says nothing about whether a message went out.
+      setSentAt(Date.now());
+      setNow(Date.now());
+      setCode('');
     } catch (e) {
       setError(e);
     } finally {
       setBusy(null);
     }
   }
-
-  const confirm = () => confirmWith(token);
 
   /** Re-reads the server, so a confirmation completed elsewhere lands here. */
   async function recheck() {
@@ -124,7 +132,9 @@ export default function VerifyEmail() {
   }
 
   return (
-    <KeyboardAvoidingView className="flex-1 bg-ground" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView
+      className="flex-1 bg-ground"
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
         contentContainerStyle={{
           flexGrow: 1,
@@ -153,76 +163,93 @@ export default function VerifyEmail() {
               className="h-[6px] w-[6px] rounded-full"
               style={{ backgroundColor: verified ? C.grn : C.amb }}
             />
-            <Mono className="text-[10px]" style={{ letterSpacing: 1, color: verified ? C.grn : C.amb }}>
+            <Mono
+              className="text-[10px]"
+              style={{ letterSpacing: 1, color: verified ? C.grn : C.amb }}>
               {verified ? 'VERIFIED' : 'PENDING VERIFICATION'}
             </Mono>
           </View>
 
           <Txt className="mb-6 text-[13px] text-ink-muted" style={{ lineHeight: 20 }}>
             {verified
-              ? `${session?.email ?? 'Your address'} is confirmed. Everything that needs a confirmed address is now open to you.`
-              : `We need to know you control ${session?.email ?? 'this address'} before you can be discovered by investors, upload documents, or pay for anything. You can look around your own account in the meantime.`}
+              ? `${email || 'Your address'} is confirmed. Everything that needs a confirmed address is now open to you.`
+              : `Enter the six-digit code we emailed${sessionEmail ? ` to ${sessionEmail}` : ''}. You can look around your own account in the meantime.`}
           </Txt>
 
           {!verified ? (
             <>
-              {/* The link carried the token, so there is nothing to type —
-                  show the attempt, not an input someone has to re-fill. */}
-              {linked && busy === 'confirm' ? (
-                <View className="rounded-[11px] border border-line bg-surface-1 p-4">
-                  <Txt className="text-[12.5px] text-ink-muted">
-                    Confirming your address…
-                  </Txt>
-                </View>
-              ) : (
-                <>
-                  {linked ? null : (
-                    <Field
-                      label="Confirmation code"
-                      placeholder="Paste the code from your email"
-                      value={token}
-                      onChangeText={setToken}
-                      autoCapitalize="none"
-                    />
-                  )}
+              <View className="gap-[14px]">
+                {/* Signed out, the server has no way to know which account the
+                    code belongs to, so the address has to come from here. */}
+                {sessionEmail ? null : (
+                  <Field
+                    label="Email address"
+                    placeholder="you@company.com"
+                    value={typedEmail}
+                    onChangeText={(v) => {
+                      setTypedEmail(v);
+                      if (error) setError(null);
+                    }}
+                    autoCapitalize="none"
+                    autoComplete="email"
+                    keyboardType="email-address"
+                  />
+                )}
 
-                  <View className="mt-[18px] gap-[10px]">
-                    {linked ? (
-                      <Button
-                        label="Try again"
-                        loading={busy === 'confirm'}
-                        onPress={() => confirmWith(linked)}
-                      />
-                    ) : (
-                      <Button
-                        label="Confirm email"
-                        loading={busy === 'confirm'}
-                        disabled={!token.trim()}
-                        onPress={confirm}
-                      />
-                    )}
-                    {/* Both of these act on the signed-in account, so they are
-                        meaningless to someone who followed the link on a
-                        device that is signed out. */}
-                    {session ? (
-                      <>
-                        <Button
-                          label="Resend the email"
-                          variant="secondary"
-                          loading={busy === 'resend'}
-                          onPress={resend}
-                        />
-                        <Button
-                          label="I've confirmed — check again"
-                          variant="secondary"
-                          loading={checking}
-                          onPress={recheck}
-                        />
-                      </>
-                    ) : null}
-                  </View>
-                </>
-              )}
+                <Field
+                  label="Verification code"
+                  placeholder="123456"
+                  value={code}
+                  onChangeText={(v) => {
+                    setCode(v);
+                    if (error) setError(null);
+                  }}
+                  // Not `number-pad`: a code pasted from an email arrives with
+                  // spaces, and the server ignores them anyway.
+                  keyboardType="numbers-and-punctuation"
+                  autoCapitalize="none"
+                  autoComplete="one-time-code"
+                  textContentType="oneTimeCode"
+                  mono
+                  onSubmitEditing={confirm}
+                  hint="Six digits, from the email. It expires shortly after it is sent."
+                />
+              </View>
+
+              <View className="mt-[18px] gap-[10px]">
+                <Button
+                  label="Confirm email"
+                  loading={busy === 'confirm'}
+                  disabled={!canConfirm}
+                  onPress={confirm}
+                />
+                <Button
+                  label={
+                    cooldownLeft > 0 ? `Send a new code in ${cooldownSeconds}s` : 'Send a new code'
+                  }
+                  variant="secondary"
+                  loading={busy === 'resend'}
+                  disabled={cooldownLeft > 0 || !isValidEmail(email)}
+                  onPress={resend}
+                />
+                {session ? (
+                  <Button
+                    label="I've confirmed — check again"
+                    variant="secondary"
+                    loading={checking}
+                    onPress={recheck}
+                  />
+                ) : null}
+              </View>
+
+              {/* Deliberately does not claim a message was sent: the endpoint
+                  answers the same whether or not one was. */}
+              {sentAt !== null && !error ? (
+                <Txt className="mt-4 text-[12px] text-ink-faint" style={{ lineHeight: 18 }}>
+                  If that address needs verifying, a new code is on its way and any earlier one has
+                  stopped working.
+                </Txt>
+              ) : null}
             </>
           ) : (
             <Button
@@ -231,10 +258,11 @@ export default function VerifyEmail() {
             />
           )}
 
-          {/* Unknown, expired and already-used tokens are one message by
-              design, so the title must not claim to know which it was. */}
+          {/* A wrong code, an expired one, one already used and one whose
+              attempts are exhausted all fail identically, so the title must not
+              claim to know which it was. */}
           {error ? (
-            <Unavailable title="That link did not work" error={error} className="mt-5" />
+            <Unavailable title="That code did not work" error={error} className="mt-5" />
           ) : null}
 
           {!verified ? (

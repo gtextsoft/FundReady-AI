@@ -117,6 +117,15 @@ export function isUnavailable(error: unknown): error is ApiFailure {
   return error instanceof ApiFailure && error.code === 'not_implemented';
 }
 
+/**
+ * How long the server ignores a repeat verification-code request.
+ *
+ * The endpoint answers `202` either way, so a second press inside this window
+ * looks successful and sends nothing. The countdown exists so the UI does not
+ * promise an email that was never dispatched.
+ */
+export const RESEND_COOLDOWN_MS = 60_000;
+
 /** What came back from a profile save, including what could not be saved. */
 export type SaveResult = {
   /** The profile as the server now holds it. */
@@ -177,17 +186,33 @@ export interface FundMeApi {
 
   // ── email verification ──────────────────────────────────
   /**
-   * Send (or resend) the verification message to the signed-in address.
+   * Send another verification code, invalidating the previous one.
    *
-   * Resolves whether or not anything was sent, for the same anti-enumeration
-   * reason as the reset above.
+   * Takes the address rather than reading it off the session: whoever is
+   * verifying may not be signed in on this device.
+   *
+   * Resolves whether the address has no account, is already verified, or
+   * simply asked again too soon — one uniform answer, for the same
+   * anti-enumeration reason as the password reset above. **It therefore
+   * cannot tell you an email went out**, so never claim one did.
+   *
+   * The server drops a request made within 60 seconds of the last one, so do
+   * not offer this as an instant retry — see `RESEND_COOLDOWN_MS`.
    */
-  resendVerificationEmail(): Promise<void>;
+  resendVerificationEmail(email: string): Promise<void>;
   /**
-   * Complete verification with the token from the email. Single-use and
-   * expiring, so a second attempt with the same token must fail.
+   * Confirm an address with the six-digit code from the email.
+   *
+   * **Both parts are required.** A six-digit code is only checked against the
+   * one account it belongs to — without the address it would be a code valid
+   * against whichever account happened to match, which is a different and much
+   * weaker thing.
+   *
+   * Spaces and hyphens in the code are ignored, so a pasted `123 456` works.
+   * A wrong code, an expired one, one already used, and one whose attempts are
+   * exhausted all fail identically — do not try to tell the user which.
    */
-  confirmEmail(token: string): Promise<void>;
+  confirmEmail(email: string, code: string): Promise<void>;
 
   // ── two-factor ──────────────────────────────────────────
   /**

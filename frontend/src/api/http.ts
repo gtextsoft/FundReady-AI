@@ -626,18 +626,31 @@ export const httpApi: FundMeApi = {
   },
 
   // ── email verification ──────────────────────────────────
-  // The verification email points at the app, not the API: mail scanners
-  // prefetch links, which would spend the single-use token before the person
-  // ever clicked. The client lifts the token out and posts it here.
-  async confirmEmail(token: string) {
+  // The email carries a six-digit code, not a link. Neither call is
+  // authenticated, deliberately: whoever is verifying may have registered on a
+  // laptop and be reading the mail on a phone, and requiring a session would
+  // close the only door they have.
+  async confirmEmail(email: string, code: string) {
     await request<void>('/v1/auth/verify-email', {
       method: 'POST',
-      body: { token: token.trim() },
+      body: {
+        email: email.trim().toLowerCase(),
+        // Sent as typed apart from whitespace and hyphens, which the server
+        // ignores anyway — stripping them here means a pasted "123 456" does
+        // not fail a length check on the way out.
+        code: code.replace(/[\s-]/g, ''),
+      },
     });
   },
 
-  // No resend endpoint exists; registration sends the only message so far.
-  resendVerificationEmail: () => notYet<void>('Resending the verification email', 'no endpoint yet'),
+  async resendVerificationEmail(email: string) {
+    // Always 202 — no account, already verified, and asked-again-too-soon are
+    // one answer. Nothing here can be reported as "sent".
+    await request<unknown>('/v1/auth/verify-email/resend', {
+      method: 'POST',
+      body: { email: email.trim().toLowerCase() },
+    });
+  },
 
   /** Exchange the login challenge and a code for a real session. */
   async verifyMfa(mfaToken: string, code: string) {

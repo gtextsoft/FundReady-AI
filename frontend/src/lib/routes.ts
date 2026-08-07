@@ -18,10 +18,11 @@ export const MFA = '/mfa' as Href;
 export const FORGOT_PASSWORD = '/forgot-password' as Href;
 
 /**
- * The two routes an emailed link lands on. The backend builds them as
- * `{APP_LINK_BASE_URL}/verify-email?token=…` and `.../reset-password?token=…`,
- * so **these path segments are a contract with the server** — renaming one here
- * breaks every link already sitting in someone's inbox.
+ * The one route an emailed link still lands on. The backend builds it as
+ * `{APP_LINK_BASE_URL}/reset-password?token=…`, so **this path segment is a
+ * contract with the server** — renaming it breaks every reset link already
+ * sitting in someone's inbox. (Verification moved to a six-digit code, so
+ * `VERIFY_EMAIL` above is an in-app destination only.)
  */
 export const RESET_PASSWORD = '/reset-password' as Href;
 

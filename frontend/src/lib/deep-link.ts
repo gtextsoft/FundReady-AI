@@ -1,12 +1,16 @@
 /**
  * Tokens arriving on a link from an email.
  *
- * The backend sends `{APP_LINK_BASE_URL}/verify-email?token=…` and
- * `{APP_LINK_BASE_URL}/reset-password?token=…` — links that point at **this
- * app**, not at the API. That is deliberate on both sides: mail security
- * scanners prefetch every URL in a message, so a `GET` endpoint on the API
- * would have its single-use token spent before the recipient ever clicked. The
- * client lifts the token out and `POST`s it.
+ * The backend sends `{APP_LINK_BASE_URL}/reset-password?token=…` — a link that
+ * points at **this app**, not at the API. That is deliberate on both sides:
+ * mail security scanners prefetch every URL in a message, so a `GET` endpoint
+ * on the API would have its single-use token spent before the recipient ever
+ * clicked. The client lifts the token out and `POST`s it.
+ *
+ * **Email verification no longer arrives as a link.** It sends a six-digit
+ * code, checked against one named account, so `verify-email` reads nothing
+ * from the URL. Password reset is the only remaining token link — which is
+ * what this file is still for.
  *
  * There is no URL parser here on purpose. expo-router's own linking already
  * resolves `sacifundme://reset-password?token=x`, the Expo Go form

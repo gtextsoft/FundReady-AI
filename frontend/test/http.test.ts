@@ -329,6 +329,68 @@ describe('api/http transport', () => {
     });
   });
 
+  describe('email verification', () => {
+    it('sends the address alongside the code', async () => {
+      serve(() => res(204));
+      await httpApi.confirmEmail('  Ada@Northwind-Labs.com ', '123456');
+
+      // Both parts are required: a six-digit code is only checked against the
+      // one account it belongs to. Without the address the server would have
+      // to match it against whichever account happened to fit.
+      expect(calls[0]).toMatchObject({
+        url: 'http://api.test/v1/auth/verify-email',
+        method: 'POST',
+        body: { email: 'ada@northwind-labs.com', code: '123456' },
+      });
+    });
+
+    it('strips the spacing a pasted code carries', async () => {
+      serve(() => res(204));
+      await httpApi.confirmEmail('ada@northwind-labs.com', ' 123 456 ');
+      expect((calls[0].body as { code: string }).code).toBe('123456');
+
+      calls.length = 0;
+      await httpApi.confirmEmail('ada@northwind-labs.com', '123-456');
+      expect((calls[0].body as { code: string }).code).toBe('123456');
+    });
+
+    it('reports a bad code as validation, not as something worse', async () => {
+      // Wrong, expired, already used and attempts-exhausted are one failure by
+      // design — the client must not try to tell them apart.
+      serve(() => res(422, { error: { message: 'That code is invalid or has expired.' } }));
+      await expect(
+        httpApi.confirmEmail('ada@northwind-labs.com', '000000'),
+      ).rejects.toMatchObject({ code: 'validation' });
+    });
+
+    it('is unauthenticated, so it works on a device that is signed out', async () => {
+      serve(() => res(204));
+      await httpApi.confirmEmail('ada@northwind-labs.com', '123456');
+      expect(calls[0].auth).toBeNull();
+    });
+
+    describe('resend', () => {
+      it('posts the address to the resend endpoint', async () => {
+        serve(() => res(202, {}));
+        await httpApi.resendVerificationEmail('  Ada@Northwind-Labs.com ');
+        expect(calls[0]).toMatchObject({
+          url: 'http://api.test/v1/auth/verify-email/resend',
+          method: 'POST',
+          body: { email: 'ada@northwind-labs.com' },
+        });
+        expect(calls[0].auth).toBeNull();
+      });
+
+      it('resolves on the uniform 202, which says nothing about delivery', async () => {
+        // No account, already verified, and asked-again-too-soon are all 202.
+        serve(() => res(202, {}));
+        await expect(
+          httpApi.resendVerificationEmail('nobody@northwind-labs.com'),
+        ).resolves.toBeUndefined();
+      });
+    });
+  });
+
   describe('password reset', () => {
     it('posts the token and drops the tokens this device is holding', async () => {
       await signedIn();
