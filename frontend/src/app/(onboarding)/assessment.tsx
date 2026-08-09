@@ -17,7 +17,8 @@ import Animated, {
 import { Mark } from '@/components/ui/mark';
 import { Mono, Txt, TxtMed } from '@/components/ui/text';
 import { C } from '@/theme/tokens';
-import { route } from '@/lib/routes';
+import { FOUNDER_HOME, route } from '@/lib/routes';
+import { useBackTo } from '@/lib/use-back-to';
 import { useFounder } from '@/store/founder';
 
 const PHASES = [
@@ -36,6 +37,10 @@ export default function AssessmentScreen() {
   const company = useFounder((s) => s.profile.company);
   const runAudit = useFounder((s) => s.runAudit);
   const submitted = useRef(false);
+
+  // The answers are already on their way to the server. Back means dashboard,
+  // not back into the form they came from.
+  useBackTo(FOUNDER_HOME);
 
   // Start the real audit while the phases play out. It takes minutes, not the
   // ~6 seconds this animation runs for, so the results screen picks up

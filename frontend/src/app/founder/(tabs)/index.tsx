@@ -149,7 +149,7 @@ export default function FounderDashboard() {
         />
         <ModuleTile
           glyph="⎘"
-          title="Documents"
+          title="Assessment"
           subtitle={profile.deck ? profile.deck : 'No deck on file'}
           gate={ALLOWED}
           onPress={() => router.push(route('/onboarding'))}

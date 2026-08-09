@@ -13,6 +13,7 @@ import { AuditFailed, AuditPending, AuditReportView } from '@/components/founder
 import { api } from '@/api';
 import type { Assessment, Insight } from '@/domain/types';
 import { FOUNDER_HOME, VERIFY_EMAIL } from '@/lib/routes';
+import { useBackTo } from '@/lib/use-back-to';
 import { useFounder } from '@/store/founder';
 import { useSession } from '@/store/session';
 
@@ -26,6 +27,10 @@ export default function Results() {
   const report = useFounder((s) => s.report);
   const auditError = useFounder((s) => s.auditError);
   const resumeAudit = useFounder((s) => s.resumeAudit);
+
+  // Same rule as the assessment screen: the submission is done, so back goes
+  // forward to the dashboard rather than into the form.
+  useBackTo(FOUNDER_HOME);
 
   // An audit outlives the screen that started it, so pick the newest one back
   // up on arrival. Skipped when this screen already has a run in hand.

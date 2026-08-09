@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { Keyboard, Pressable, View } from 'react-native';
 import { FieldLabel, Txt, TxtMed } from './text';
 import { Sheet } from './sheet';
 import { C } from '@/theme/tokens';
@@ -29,7 +29,14 @@ export function Select<T extends string>({
         accessibilityRole="button"
         accessibilityLabel={label}
         accessibilityValue={{ text: value || placeholder }}
-        onPress={() => setOpen(true)}
+        // The keyboard is usually up when this is tapped — the field above it
+        // was just being typed into. Left open, it covers the bottom of the
+        // sheet, so the options behind it cannot be reached however far the
+        // list is scrolled.
+        onPress={() => {
+          Keyboard.dismiss();
+          setOpen(true);
+        }}
         className="h-[46px] flex-row items-center justify-between rounded-[9px] border border-line-strong bg-surface-1 px-[14px]">
         <Txt className={`text-[15px] ${value ? 'text-ink' : 'text-ink-faint'}`}>{value || placeholder}</Txt>
         <Txt className="text-[11px] text-ink-faint">▾</Txt>

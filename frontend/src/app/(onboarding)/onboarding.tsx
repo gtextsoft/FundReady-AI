@@ -67,7 +67,11 @@ export default function Onboarding() {
       return;
     }
     if (step < 4) setStep((step + 1) as Step);
-    else router.push(route('/assessment'));
+    // `replace`, not `push`: once the assessment is submitted the form must
+    // not still be sitting underneath it. Going back into a half-edited copy
+    // of answers that have already been sent is how someone ends up
+    // resubmitting a different profile than the one they were scored on.
+    else router.replace(route('/assessment'));
   }
 
   /** Step 1 backs out to the dashboard, not to sign-in — they are signed up. */

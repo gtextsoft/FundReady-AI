@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,7 @@ import { Unavailable } from '@/components/unavailable';
 import { C } from '@/theme/tokens';
 import { api, RESEND_COOLDOWN_MS } from '@/api';
 import { isValidEmail } from '@/domain/email';
-import { homeFor, SIGN_IN } from '@/lib/routes';
+import { homeFor, ONBOARDING, SIGN_IN } from '@/lib/routes';
 import { useSession } from '@/store/session';
 
 /**
@@ -37,12 +37,27 @@ import { useSession } from '@/store/session';
  */
 export default function VerifyEmail() {
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ next?: string }>();
+
+  /**
+   * Where to go once confirmed, and whether this screen may be skipped.
+   *
+   * Registration sends `?next=onboarding` (or `investor`). Arriving that way
+   * makes verification compulsory: there is no "skip", because everything on
+   * the other side of this screen is refused by the server until the address
+   * is confirmed. Reached from the dashboard instead, there is no `next` and
+   * the screen stays skippable — AUTH.md allows browsing your own empty
+   * account while unverified.
+   */
+  const next = params.next;
+  const required = next !== undefined;
 
   const session = useSession((s) => s.session);
   const role = useSession((s) => s.role);
   const founderAccount = useSession((s) => s.founderAccount);
   const investorAccount = useSession((s) => s.investorAccount);
   const refreshAccount = useSession((s) => s.refreshAccount);
+  const signOut = useSession((s) => s.signOut);
 
   const account = role === 'investor' ? investorAccount : founderAccount;
 
@@ -67,6 +82,12 @@ export default function VerifyEmail() {
   const [confirmedHere, setConfirmedHere] = useState(false);
 
   const verified = confirmedHere || (account?.emailVerified ?? false);
+
+  // `next=onboarding` continues into the assessment, which is where a founder
+  // was heading before this screen existed. Anything else falls back to their
+  // own side of the marketplace.
+  const onward = next === 'onboarding' ? ONBOARDING : homeFor(role);
+  const onwardLabel = next === 'onboarding' ? 'Start your assessment' : 'Continue';
 
   // The server drops a resend made within 60s of the last one and still
   // answers 202, so the countdown is the only thing that stops the button
@@ -253,8 +274,8 @@ export default function VerifyEmail() {
             </>
           ) : (
             <Button
-              label={session ? 'Continue' : 'Sign in'}
-              onPress={() => router.replace(session ? homeFor(role) : SIGN_IN)}
+              label={session ? onwardLabel : 'Sign in'}
+              onPress={() => router.replace(session ? onward : SIGN_IN)}
             />
           )}
 
@@ -265,7 +286,11 @@ export default function VerifyEmail() {
             <Unavailable title="That code did not work" error={error} className="mt-5" />
           ) : null}
 
-          {!verified ? (
+          {/* No way past this screen when it is required: everything on the
+              other side of it is refused by the server until the address is
+              confirmed, so "skip" would only lead somewhere that does not
+              work. Signing out stays available. */}
+          {!verified && !required ? (
             <Pressable
               accessibilityRole="link"
               className="mt-6 items-center"
@@ -273,6 +298,15 @@ export default function VerifyEmail() {
               <Txt className="text-[12.5px] text-ink-muted">
                 {session ? 'Skip for now' : 'Back to sign in'}
               </Txt>
+            </Pressable>
+          ) : null}
+
+          {!verified && required ? (
+            <Pressable
+              accessibilityRole="link"
+              className="mt-6 items-center"
+              onPress={() => void signOut()}>
+              <Txt className="text-[12.5px] text-ink-muted">Use a different account</Txt>
             </Pressable>
           ) : null}
         </View>
