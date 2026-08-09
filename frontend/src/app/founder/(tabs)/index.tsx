@@ -9,9 +9,11 @@ import { Mark } from '@/components/ui/mark';
 import { Eyebrow, Mono, Txt, TxtSemi } from '@/components/ui/text';
 import { C, band } from '@/theme/tokens';
 import { gate, hasAccess, isPaid, type Gate } from '@/domain/access';
+import type { AuditReport, AuditRun } from '@/domain/audit';
+import { assess } from '@/domain/scoring';
 import type { FounderAccount } from '@/domain/types';
 import { route, VERIFY_EMAIL } from '@/lib/routes';
-import { useFounder } from '@/store/founder';
+import { isAssessmentComplete, useFounder } from '@/store/founder';
 import { useNotifications } from '@/store/notifications';
 import { useSession } from '@/store/session';
 
@@ -25,19 +27,27 @@ export default function FounderDashboard() {
   const account = useSession((s) => s.founderAccount);
   const refreshAccount = useSession((s) => s.refreshAccount);
 
-  const assessment = useFounder((s) => s.assessment);
   const profile = useFounder((s) => s.profile);
+  const report = useFounder((s) => s.report);
+  const run = useFounder((s) => s.run);
+  const loadProfile = useFounder((s) => s.load);
+  const loadLatestAudit = useFounder((s) => s.loadLatestAudit);
 
   const loadNotifications = useNotifications((s) => s.load);
   const unread = useNotifications((s) => s.unreadCount());
   const pendingCalls = useNotifications((s) => s.pendingCalls().length);
 
   // Verification and billing state change server-side, so re-read on focus.
+  // The profile and the latest audit come with them: the score below is the
+  // one thing on this screen a founder checks *because* it may have changed
+  // since they last looked.
   useFocusEffect(
     useCallback(() => {
       refreshAccount();
       loadNotifications('founder');
-    }, [refreshAccount, loadNotifications]),
+      void loadProfile();
+      void loadLatestAudit();
+    }, [refreshAccount, loadNotifications, loadProfile, loadLatestAudit]),
   );
 
   if (!account) return <View className="flex-1 bg-ground" />;
@@ -52,6 +62,16 @@ export default function FounderDashboard() {
   const canRequests = gate(account, 'investorRequests');
   const canProgrammes = gate(account, 'programmes');
   const canReassess = gate(account, 'reassess');
+
+  /**
+   * Whether there is an assessment to show at all.
+   *
+   * A finished audit is the strongest signal; a run in flight counts too, so
+   * the card reports progress rather than pretending nothing happened. With
+   * neither, a complete stored profile still means they took it — the audit
+   * engine simply has not scored it yet.
+   */
+  const assessed = report !== null || run !== null || isAssessmentComplete(profile);
 
   const goPaywall = () => router.push(route('/founder/paywall'));
   const goVerify = () => router.push(route('/founder/verify'));
@@ -113,7 +133,20 @@ export default function FounderDashboard() {
 
       {/* fundability */}
       <Eyebrow className="mb-[10px] mt-6">FUNDABILITY</Eyebrow>
-      <ScoreCard account={account} score={assessment?.score ?? null} />
+      <ScoreCard
+        account={account}
+        report={report}
+        run={run}
+        // Only computed when the form is actually complete, so a half-filled
+        // profile cannot produce a number that looks like a verdict.
+        // `assess(profile)` rather than the store's `liveAssessment()`: that
+        // one reads state internally, which looks pure to the React Compiler
+        // and gets memoised, so the score would stay frozen after a
+        // re-assessment. Passing the profile keeps the dependency visible
+        // (AGENTS.md, trap 7).
+        provisional={assessed && !report ? assess(profile).score : null}
+        assessed={assessed}
+      />
 
       {/* modules */}
       <Eyebrow className="mb-[10px] mt-6">YOUR TOOLS</Eyebrow>
@@ -150,9 +183,13 @@ export default function FounderDashboard() {
         <ModuleTile
           glyph="⎘"
           title="Assessment"
-          subtitle={profile.deck ? profile.deck : 'No deck on file'}
+          subtitle={assessed ? 'Your score and action plan' : 'Not taken yet'}
           gate={ALLOWED}
-          onPress={() => router.push(route('/onboarding'))}
+          // Once it has been taken, this opens the result. Reopening the form
+          // is what "Re-assess" is for, and sending someone back into it to
+          // *see* their score would invite them to edit answers they have
+          // already been scored on.
+          onPress={() => router.push(route(assessed ? '/results' : '/onboarding'))}
         />
         <ModuleTile
           glyph="◇"
@@ -166,8 +203,33 @@ export default function FounderDashboard() {
   );
 }
 
-function ScoreCard({ account, score }: { account: FounderAccount; score: number | null }) {
-  if (score === null) {
+/**
+ * The Fundability card.
+ *
+ * Four states, and the distinctions matter more than the layout. A scored
+ * audit is the real thing. A run still going is progress, not a score. A
+ * complete profile with no audit yet gets the on-device estimate, **labelled**
+ * — it is a heuristic over the form, not a verdict. Nothing at all gets the
+ * invitation to start.
+ *
+ * `score: null` from a real audit is its own case: the audit reached a verdict
+ * of "not enough to tell", and rendering that as a number would be inventing
+ * the one thing it declined to say.
+ */
+function ScoreCard({
+  account,
+  report,
+  run,
+  provisional,
+  assessed,
+}: {
+  account: FounderAccount;
+  report: AuditReport | null;
+  run: AuditRun | null;
+  provisional: number | null;
+  assessed: boolean;
+}) {
+  if (!assessed) {
     return (
       <Pressable
         accessibilityRole="button"
@@ -184,29 +246,79 @@ function ScoreCard({ account, score }: { account: FounderAccount; score: number 
     );
   }
 
+  const open = () => router.push(route('/results'));
+
+  // An audit that is queued or running has no score yet, and saying so beats
+  // showing a stale one.
+  if (!report && run && run.status !== 'failed') {
+    return (
+      <Pressable
+        accessibilityRole="button"
+        onPress={open}
+        className="rounded-[12px] border border-line bg-surface-1 p-[16px]">
+        <View className="flex-row items-center gap-2">
+          <View className="h-[6px] w-[6px] rounded-full" style={{ backgroundColor: C.blue }} />
+          <TxtSemi className="text-[14px]">Your audit is running</TxtSemi>
+        </View>
+        <Txt className="mt-[5px] text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+          Scoring against rubric {run.rubricVersion}. This takes a few minutes — you can leave the
+          app and come back.
+        </Txt>
+      </Pressable>
+    );
+  }
+
+  const verdict = report?.fundability ?? null;
+  const score = verdict ? verdict.score : provisional;
+  const isReal = report !== null;
+
+  // A real audit that could not reach a number.
+  if (isReal && score === null) {
+    return (
+      <Pressable
+        accessibilityRole="button"
+        onPress={open}
+        className="rounded-[12px] border border-line bg-surface-1 p-[16px]">
+        <TxtSemi className="text-[14px]">Not enough to tell yet</TxtSemi>
+        <Txt className="mt-[5px] text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+          {verdict?.rationale ?? 'The audit could not reach a verdict on what it was given.'}
+        </Txt>
+        <Txt className="mt-3 text-[12.5px]" style={{ color: C.blue }}>
+          See what is missing →
+        </Txt>
+      </Pressable>
+    );
+  }
+
+  if (score === null) return null;
+
   const b = band(score);
   const visible = account.verification === 'verified' && hasAccess(account);
 
   return (
     <Pressable
       accessibilityRole="button"
-      onPress={() => router.push(route('/results'))}
+      onPress={open}
       className="flex-row items-center gap-4 rounded-[12px] border border-line bg-surface-1 p-[16px]">
       <View
         className="h-[62px] w-[62px] items-center justify-center rounded-full"
-        style={{ borderWidth: 3, borderColor: b.color }}>
+        style={{ borderWidth: 3, borderColor: isReal ? b.color : C.lineStrong }}>
         <Mono className="text-[22px]" style={{ letterSpacing: -1 }}>
           {score}
         </Mono>
       </View>
       <View className="flex-1">
-        <TxtSemi className="text-[14px]" style={{ color: b.color }}>
+        <TxtSemi className="text-[14px]" style={{ color: isReal ? b.color : C.inkMuted }}>
           {b.label}
         </TxtSemi>
+        {/* The estimate is never dressed as an audit: it is drawn in muted
+            ink and says what it is. */}
         <Txt className="mt-[3px] text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
-          {visible
-            ? 'Investors matching your profile can see this score.'
-            : 'Hidden from investors until your company is verified.'}
+          {!isReal
+            ? 'Provisional estimate from your answers — not a SACI audit, and no investor can see it.'
+            : visible
+              ? 'Investors matching your profile can see this score.'
+              : 'Hidden from investors until your company is verified.'}
         </Txt>
       </View>
       <Txt className="text-[13px] text-ink-faint">›</Txt>

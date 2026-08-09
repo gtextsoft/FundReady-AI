@@ -54,6 +54,15 @@ type FounderState = {
   runAudit(): Promise<void>;
   /** Picks the newest run back up — an audit outlives the screen that started it. */
   resumeAudit(): Promise<void>;
+  /**
+   * Reads the newest run and its report, without polling.
+   *
+   * For screens that only want to *show* the latest state — the dashboard —
+   * rather than wait on one. `resumeAudit` keeps polling until the run
+   * finishes, which is right on the results screen and wrong on a tab
+   * somebody may sit on for a while.
+   */
+  loadLatestAudit(): Promise<void>;
 
   setField<K extends keyof FounderProfile>(key: K, value: FounderProfile[K]): void;
   setStep(step: Step): void;
@@ -97,6 +106,17 @@ const REQUIRED: Record<Step, (keyof FounderProfile)[]> = {
 
 export function isStepValid(profile: FounderProfile, step: Step): boolean {
   return REQUIRED[step].every((k) => String(profile[k]).trim() !== '');
+}
+
+/**
+ * True once every step has the answers the server needs to audit.
+ *
+ * This is what "has taken the assessment" means when there is no audit run to
+ * point at — a founder who filled the form before the audit engine could run
+ * it still has a profile worth scoring provisionally.
+ */
+export function isAssessmentComplete(profile: FounderProfile): boolean {
+  return ([1, 2, 3, 4] as Step[]).every((step) => isStepValid(profile, step));
 }
 
 /** The slice of the store the audit helpers below write to. */
@@ -250,6 +270,21 @@ export const useFounder = create<FounderState>((set, get) => ({
       await pollToFinish(queued, set, get);
     } catch (error) {
       set({ auditError: error });
+    }
+  },
+
+  async loadLatestAudit() {
+    try {
+      const runs = await api.listAuditRuns();
+      const latest = runs[0];
+      if (!latest) return;
+      set({ run: latest });
+      if (isAuditFinished(latest.status)) await loadReport(latest, set);
+    } catch {
+      // Silent on purpose. This runs on the dashboard opening, where the
+      // common failure is the 403 an unverified account gets on every route —
+      // a normal state, not something to put an error panel in front of
+      // somebody who did not ask for an audit just now.
     }
   },
 

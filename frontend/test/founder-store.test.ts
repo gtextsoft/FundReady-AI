@@ -9,11 +9,13 @@
  * person to reach this screen.
  */
 
-import { useFounder } from '@/store/founder';
+import { isAssessmentComplete, useFounder } from '@/store/founder';
 import { ApiFailure } from '@/api/contract';
 import { EMPTY_PROFILE, type FounderProfile } from '@/domain/types';
 
 const mockGetProfile = jest.fn();
+const mockListAuditRuns = jest.fn();
+const mockGetAuditReport = jest.fn();
 
 jest.mock('@/api', () => ({
   ...jest.requireActual('@/api/contract'),
@@ -21,6 +23,8 @@ jest.mock('@/api', () => ({
     getProfile: (...args: unknown[]) => mockGetProfile(...args),
     saveProfile: jest.fn(),
     submitAssessment: jest.fn(),
+    listAuditRuns: (...args: unknown[]) => mockListAuditRuns(...args),
+    getAuditReport: (...args: unknown[]) => mockGetAuditReport(...args),
   },
 }));
 
@@ -81,5 +85,96 @@ describe('loading a stored profile', () => {
 
     expect(useFounder.getState().profile.company).toBe('What I Am Typing');
     expect(useFounder.getState().loaded).toBe(true);
+  });
+});
+
+describe('isAssessmentComplete', () => {
+  const full: FounderProfile = {
+    ...EMPTY_PROFILE,
+    company: 'Northwind Labs',
+    sector: 'Fintech',
+    location: 'Lagos, Nigeria',
+    year: '2023',
+    description: 'Reconciliation software.',
+    businessModel: 'Subscription.',
+    stage: 'Seed',
+    revenue: '48000',
+    costs: '62000',
+    cash: '410000',
+    founders: '2',
+    teamSize: '7',
+  };
+
+  it('is true only once every step has what the audit needs', () => {
+    expect(isAssessmentComplete(full)).toBe(true);
+    expect(isAssessmentComplete(EMPTY_PROFILE)).toBe(false);
+  });
+
+  it('is false when one required answer is missing', () => {
+    // This is what decides whether the dashboard offers a score or an
+    // invitation, so a half-filled form must not read as "assessed".
+    for (const missing of ['description', 'cash', 'teamSize'] as const) {
+      expect(isAssessmentComplete({ ...full, [missing]: '' })).toBe(false);
+    }
+  });
+});
+
+describe('loadLatestAudit', () => {
+  beforeEach(() => {
+    mockListAuditRuns.mockReset();
+    mockGetAuditReport.mockReset();
+    reset();
+  });
+
+  const run = (status: string) => ({
+    id: 'run-1',
+    startupId: 'p1',
+    status,
+    rubricVersion: 'v1',
+    attempts: 0,
+    errorCode: null,
+    errorMessage: null,
+    createdAt: '2026-08-09T00:00:00Z',
+    startedAt: null,
+    completedAt: null,
+  });
+
+  it('reads the report when the newest run succeeded', async () => {
+    mockListAuditRuns.mockResolvedValue([run('succeeded')]);
+    mockGetAuditReport.mockResolvedValue({ rubricVersion: 'v1' });
+
+    await useFounder.getState().loadLatestAudit();
+
+    expect(useFounder.getState().run?.status).toBe('succeeded');
+    expect(useFounder.getState().report).toEqual({ rubricVersion: 'v1' });
+  });
+
+  it('does not poll an unfinished run', async () => {
+    // The dashboard only shows the latest state. Polling from a tab someone
+    // may sit on would keep firing requests for as long as they leave it open.
+    mockListAuditRuns.mockResolvedValue([run('queued')]);
+
+    await useFounder.getState().loadLatestAudit();
+
+    expect(useFounder.getState().run?.status).toBe('queued');
+    expect(useFounder.getState().report).toBeNull();
+    expect(mockGetAuditReport).not.toHaveBeenCalled();
+  });
+
+  it('stays silent when the server refuses an unverified account', async () => {
+    // A 403 here is the normal state of a new account, and the dashboard must
+    // not throw an error panel at somebody who did not ask for an audit.
+    mockListAuditRuns.mockRejectedValue(
+      new ApiFailure('forbidden', 'Verify your email address to continue.'),
+    );
+
+    await expect(useFounder.getState().loadLatestAudit()).resolves.toBeUndefined();
+    expect(useFounder.getState().auditError).toBeNull();
+  });
+
+  it('does nothing when there has never been a run', async () => {
+    mockListAuditRuns.mockResolvedValue([]);
+    await useFounder.getState().loadLatestAudit();
+    expect(useFounder.getState().run).toBeNull();
   });
 });
