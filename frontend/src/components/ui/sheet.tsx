@@ -50,7 +50,17 @@ export function Sheet({
               </Pressable>
             ) : null}
           </View>
-          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          {/* `shrink` is load-bearing. Without it the ScrollView takes its
+              full content height and overflows the panel's `max-h-[82%]`
+              instead of scrolling inside it. React Native does not clip by
+              default, so the overflowing rows still *render* — below the
+              sheet, outside its bounds, where taps never reach them. The
+              symptom is the worst kind: a list that looks complete but whose
+              last few entries silently do nothing. */}
+          <ScrollView
+            className="shrink"
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled">
             {children}
           </ScrollView>
         </Animated.View>

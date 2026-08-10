@@ -60,6 +60,47 @@ jobs:
       - name: Tests
         run: pytest
 
+  frontend:
+    name: Frontend lint, types, tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          # Root-relative for the same reason as the Python job above: this is
+          # an action input, so `working-directory` does not reach it.
+          cache-dependency-path: frontend/package-lock.json
+
+      # `npm ci` deliberately, not `npm install`: it installs the lockfile
+      # exactly and fails if `package.json` and the lock have drifted. It also
+      # runs without `--legacy-peer-deps`, which is why `jest-expo` is not a
+      # dependency here -- see the note in `frontend/jest.config.js`.
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test
+
+      # NOT a gate yet, deliberately. The app predates Prettier by ~80 files,
+      # so `--check` fails everywhere and a repo-wide reformat would bury real
+      # changes in whitespace. Run `npm run format:write` to take that diff in
+      # one commit, then promote this to a required step.
+      - name: Format (advisory)
+        run: npm run format || true
+        continue-on-error: true
+
   secret-scan:
     name: Secret scan
     runs-on: ubuntu-latest

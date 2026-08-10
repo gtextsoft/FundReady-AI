@@ -60,44 +60,165 @@ export type Company = {
 
 export type RevModel = 'MRR' | 'ARR';
 
+/** A yes/no the founder has not answered yet. */
+export type YesNo = '' | 'Yes' | 'No';
+
+/**
+ * Direction of the cost to serve one more customer.
+ *
+ * Three choices rather than a free-text box, even though the server stores it
+ * as text: the direction is the whole signal, and a fixed set is something an
+ * audit can compare across submissions.
+ */
+export const COST_TRENDS = ['Falling', 'Flat', 'Rising'] as const;
+export type CostTrend = '' | (typeof COST_TRENDS)[number];
+
 /**
  * The founder onboarding form. Every field is a string because these are raw
  * text inputs — scoring parses them. An empty string means "not answered yet".
+ *
+ * **Every question here asks for something the founder knows, never something
+ * the platform can work out.** Gross margin, lifetime value and market size
+ * used to be asked directly; all three were removed (`docs/INTAKE.md`). The
+ * server computes the first two from raw figures, and the audit rubric marks
+ * down a market size quoted as a single unsourced number — so asking for one
+ * handed the founder a way to score badly. Cost of revenue, ARPU and churn are
+ * their replacements: smaller questions, and checkable.
  */
 export type FounderProfile = {
+  // -- About the company ---------------------------------------------------
   company: string;
   sector: string;
   location: string;
   year: string;
   stage: string;
+  /** What the business does. Required before an audit can run. */
+  description: string;
+  /** How it makes money. Required before an audit can run. */
+  businessModel: string;
+  website: string;
+
+  // -- Registration --------------------------------------------------------
+  // Collected on the company-verification screen rather than in the
+  // assessment, because that screen already asks most of it. They live on the
+  // profile because that is where the server stores them.
+  /** Registered legal name, exactly as on the certificate. */
+  legalName: string;
+  registrationNumber: string;
+  /** The body it is registered with — CAC, Companies House, and so on. */
+  registrar: string;
+  /** Year of incorporation, which can differ from when trading started. */
+  incorporationYear: string;
+  /** Licences the model requires, and whether they are held. */
+  regulatoryLicences: string;
+
+  // -- Market and plan -----------------------------------------------------
+  /** The reachable market, and how the founder arrived at it. */
+  marketSize: string;
+  /** Who else solves this for their customers today. */
+  competition: string;
+  /** The one thing holding growth back right now. */
+  growthConstraint: string;
+  /** What new capital buys, mapped to the constraint above. */
+  useOfFunds: string;
+
+  // -- Money ---------------------------------------------------------------
+  /** Whether `revenue` is stated monthly or annually. A unit, not a figure. */
   revModel: RevModel;
   revenue: string;
-  growth: string;
-  tam: string;
-  margin: string;
+  /** Total monthly costs. Required before an audit can run. */
+  costs: string;
+  /** Cost of delivering the revenue. The server derives gross margin from it. */
+  costOfRevenue: string;
+  /** Cash in the bank. Required before an audit can run — it sets runway. */
+  cash: string;
+  totalRaised: string;
+  raiseTarget: string;
+  /** Monthly sales and marketing spend, salaries included. */
+  marketingSpend: string;
+
+  // -- Customers -----------------------------------------------------------
+  customers: string;
+  /** Average revenue per customer per month. Half of lifetime value. */
+  arpu: string;
+  /** Monthly churn, as a percentage. The other half. */
+  churn: string;
   cac: string;
-  ltv: string;
+  /** Monthly active users, for businesses that count them separately. */
+  activeUsers: string;
+  /** Signed pilots or letters of intent that are not paying yet. */
+  pilots: string;
+  /** Share of revenue from the biggest customer — concentration risk. */
+  customerConcentration: string;
+  /**
+   * Whether the cost to serve one more customer is falling, flat or rising.
+   * Free text on the server, but asked as three choices: the direction is what
+   * matters, and a fixed set produces data an audit can actually compare.
+   */
+  deliveryCostTrend: CostTrend;
+
+  // -- Team and ownership --------------------------------------------------
   founders: string;
-  technical: '' | 'Yes' | 'No';
+  foundersFullTime: string;
+  /** Everyone, not just founders. Required before an audit can run. */
+  teamSize: string;
+  /** Whether the company owns what its people built. */
+  ipOwned: YesNo;
+  /** Whether customer contracts survive a change of owner. */
+  contractsTransferable: YesNo;
+  /** What only the founder can currently do. */
+  keyPersonDependency: string;
+  /** Prior experience of the founders, specific enough to check. */
+  founderExperience: string;
+  /** Who owns what, in summary. */
+  capTable: string;
+
   /** Filename of the uploaded deck, or '' when nothing is on file. */
   deck: string;
 };
 
 export const EMPTY_PROFILE: FounderProfile = {
+  legalName: '',
+  registrationNumber: '',
+  registrar: '',
+  incorporationYear: '',
+  regulatoryLicences: '',
+  marketSize: '',
+  competition: '',
+  growthConstraint: '',
+  useOfFunds: '',
+  marketingSpend: '',
+  activeUsers: '',
+  pilots: '',
+  customerConcentration: '',
+  deliveryCostTrend: '',
+  founderExperience: '',
+  capTable: '',
   company: '',
   sector: '',
   location: '',
   year: '',
   stage: '',
+  description: '',
+  businessModel: '',
+  website: '',
   revModel: 'MRR',
   revenue: '',
-  growth: '',
-  tam: '',
-  margin: '',
+  costs: '',
+  costOfRevenue: '',
+  cash: '',
+  totalRaised: '',
+  raiseTarget: '',
+  customers: '',
+  arpu: '',
+  churn: '',
   cac: '',
-  ltv: '',
   founders: '',
-  technical: '',
+  foundersFullTime: '',
+  teamSize: '',
+  ipOwned: '',
+  contractsTransferable: '',
+  keyPersonDependency: '',
   deck: '',
 };
 

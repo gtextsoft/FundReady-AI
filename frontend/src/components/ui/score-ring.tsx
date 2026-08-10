@@ -1,8 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { Animated, Easing, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { Mono, Txt } from './text';
-import { C } from '@/theme/tokens';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -18,7 +17,11 @@ const CIRCUMFERENCE = 2 * Math.PI * R; // 439.8
  * identical to native.
  */
 export function ScoreRing({ score, color }: { score: number; color: string }) {
-  const offset = useRef(new Animated.Value(CIRCUMFERENCE)).current;
+  // A lazy `useState` initialiser rather than `useRef(...).current`: both give
+  // one stable Animated.Value, but reading `.current` during render is a real
+  // hazard the linter is right to flag, and the ref form also constructs a
+  // throwaway Value on every render.
+  const [offset] = useState(() => new Animated.Value(CIRCUMFERENCE));
 
   useEffect(() => {
     Animated.timing(offset, {

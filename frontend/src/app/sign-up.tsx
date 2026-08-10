@@ -11,16 +11,14 @@ import { Mono, Txt, TxtMed, TxtSemi } from '@/components/ui/text';
 import { C } from '@/theme/tokens';
 import { api, type DomainSso, type Role } from '@/api';
 import { checkFounderEmail, emailDomain, isValidEmail } from '@/domain/email';
-import { homeFor, ONBOARDING, SIGN_IN } from '@/lib/routes';
+import { checkPassword, MIN_PASSWORD } from '@/domain/password';
+import { homeFor, route, SIGN_IN } from '@/lib/routes';
 import { useSession } from '@/store/session';
 
 const ROLES = [
   { value: 'founder' as Role, label: "I'm raising" },
   { value: 'investor' as Role, label: "I'm investing" },
 ];
-
-/** Mirrors the server's minimum (identity/schemas.py). Kept in step by hand. */
-const MIN_PASSWORD = 12;
 
 /** The headline is the only copy above the form — the subhead was removed. */
 const HEADLINE: Record<Role, string> = {
@@ -51,8 +49,22 @@ export default function SignUp() {
 
   if (status === 'signedIn') return <Redirect href={homeFor(sessionRole)} />;
 
-  /** Founders go straight into the assessment; investors into dealflow. */
-  const landing = role === 'investor' ? homeFor('investor') : ONBOARDING;
+  /**
+   * Everyone confirms their address before anything else.
+   *
+   * This is not only a policy choice. The server refuses every profile,
+   * audit and discovery route with `403 "Verify your email address to
+   * continue"` until the address is confirmed, so the old route — straight
+   * into a four-step assessment — walked founders into a form that could not
+   * save. Verifying first turns a confusing failure at the end into one
+   * instruction at the start.
+   *
+   * `next` is where they land once confirmed, so the assessment still follows
+   * for a founder without an extra tap.
+   */
+  const landing = route(
+    role === 'investor' ? '/verify-email?next=investor' : '/verify-email?next=onboarding',
+  );
 
   function onChangeEmail(value: string) {
     setEmail(value);
@@ -115,13 +127,13 @@ export default function SignUp() {
     }
 
     // The server rejects anything shorter, so say so here rather than
-    // round-tripping to find out.
-    if (password.length < MIN_PASSWORD) {
-      setPasswordError(`Use at least ${MIN_PASSWORD} characters.`);
+    // round-tripping to find out. `confirm` also catches the typo before it
+    // becomes an account nobody can log into.
+    const passwordCheck = checkPassword(password, confirm);
+    if (!passwordCheck.ok) {
+      setPasswordError(passwordCheck.message);
       return;
     }
-
-    // Catches the typo before it becomes an account nobody can log into.
     if (confirm !== password) {
       setPasswordError('Both passwords must match.');
       return;

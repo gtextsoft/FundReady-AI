@@ -1,11 +1,21 @@
+import { Platform } from 'react-native';
+import Constants from 'expo-constants';
+
 import { companyNameFromEmail, isPersonalEmailDomain } from '@/domain/email';
+import type { AuditReport, AuditRun, AuditStatus, Verdict } from '@/domain/audit';
+import type { DiscoveredStartup } from '@/domain/discovery';
+import {
+  fromWireProfile,
+  toWireProfile,
+  type ServerStage,
+  type WireProfileResponse,
+} from './profile-mapping';
 import { storage } from '@/lib/storage';
 import type { VerificationStatus } from '@/domain/types';
 import type {
   Credentials,
   DomainLookup,
   FundMeApi,
-  Role,
   Session,
 } from './contract';
 import { ApiFailure } from './contract';
@@ -14,8 +24,9 @@ import { TRIAL_DAYS } from '@/domain/access';
 /**
  * The real backend.
  *
- * Only authentication exists server-side today: register, login, refresh,
- * logout and `/v1/users/me`. Every other method on `FundMeApi` has no endpoint
+ * Live today: authentication (register, login, refresh, logout,
+ * `/v1/users/me`), email verification, password reset, MFA, and the Startup
+ * Profile (`/v1/startups`). Every other method on `FundMeApi` has no endpoint
  * behind it yet, so it throws `not_implemented` rather than inventing an
  * answer — screens render an explicit "not available yet" state instead of
  * showing numbers nobody computed.
@@ -24,7 +35,44 @@ import { TRIAL_DAYS } from '@/domain/access';
  * with a real call. The contract and the screens do not change.
  */
 
-const BASE_URL = (process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000').replace(/\/+$/, '');
+/** The API port. Only used when the host is inferred rather than configured. */
+const DEV_API_PORT = 8000;
+
+/**
+ * Where the API lives.
+ *
+ * `EXPO_PUBLIC_API_URL` wins when it is set -- that is what staging and
+ * production will use. With it unset, the host is taken from whatever address
+ * served this bundle and the API port substituted.
+ *
+ * That inference exists because a phone cannot reach `localhost` (on a device,
+ * that is the device), so development otherwise needs the machine's LAN
+ * address baked in at bundle time -- and DHCP moves it. Reusing the dev
+ * server's own host means the app follows the machine wherever it lands, with
+ * no edit and no rebuild.
+ */
+function resolveBaseUrl(): string {
+  const configured = process.env.EXPO_PUBLIC_API_URL?.trim();
+  if (configured) return configured.replace(/\/+$/, '');
+
+  // Native (Expo Go): the dev server's address, e.g. "192.168.0.139:8081".
+  // Populated only in a development build, which is exactly when it is wanted.
+  const hostUri = Constants.expoConfig?.hostUri ?? Constants.expoGoConfig?.debuggerHost;
+  const fromExpo = hostUri?.split('/')[0]?.split(':')[0];
+  if (fromExpo) return `http://${fromExpo}:${DEV_API_PORT}`;
+
+  // Web: `hostUri` is not populated there, so read the address the page was
+  // actually served from. Without this branch a LAN-served web preview calls
+  // localhost, which the browser then blocks as a private-network request.
+  if (Platform.OS === 'web' && typeof globalThis.location !== 'undefined') {
+    const { hostname, protocol } = globalThis.location;
+    if (hostname) return `${protocol}//${hostname}:${DEV_API_PORT}`;
+  }
+
+  return `http://localhost:${DEV_API_PORT}`;
+}
+
+const BASE_URL = resolveBaseUrl();
 
 /** Access + refresh live together; they are only ever valid as a pair. */
 const TOKENS_KEY = 'saci.fundme.tokens';
@@ -196,8 +244,9 @@ export class MfaRequired extends Error {
 type MeResponse = {
   id: string;
   email: string;
-  first_name: string;
-  last_name: string;
+  // Nullable: accounts created before the columns existed carry no name.
+  first_name: string | null;
+  last_name: string | null;
   role: 'founder' | 'investor' | 'admin';
   status: 'pending_verification' | 'active' | 'suspended';
   email_verified: boolean;
@@ -233,9 +282,12 @@ function sessionFrom(me: MeResponse): Session {
       'Admin accounts are managed in the SACI console, not in the app.',
     );
   }
-  const given = `${me.first_name} ${me.last_name}`.trim();
-  // Accounts predating the name fields have none; fall back to the address so
-  // the UI still has something to address them by.
+  const firstName = me.first_name ?? '';
+  const lastName = me.last_name ?? '';
+  const given = `${firstName} ${lastName}`.trim();
+
+  // Accounts predating the name columns carry none, so fall back to the
+  // address rather than showing an empty header.
   const handle = me.email.split('@')[0] || 'there';
   const fromEmail = handle.replace(/[._-]+/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
 
@@ -244,8 +296,8 @@ function sessionFrom(me: MeResponse): Session {
     userId: me.id,
     email: me.email,
     role: me.role,
-    firstName: me.first_name,
-    lastName: me.last_name,
+    firstName,
+    lastName,
     displayName: given || fromEmail,
   };
 }
@@ -281,6 +333,170 @@ async function logIn(creds: Credentials): Promise<Session> {
   return establish(result.tokens);
 }
 
+/**
+ * The founder's own startup profile, or null when they have not made one.
+ *
+ * A `404` here is the ordinary "not onboarded yet" answer, not a failure — the
+ * endpoint deliberately returns it rather than an empty object, so there is no
+ * way to confuse "no profile" with "a profile with nothing in it".
+ */
+async function ownProfile(): Promise<WireProfileResponse | null> {
+  try {
+    return await request<WireProfileResponse>('/v1/startups/me', { auth: true });
+  } catch (error) {
+    if (error instanceof ApiFailure && error.code === 'not_found') return null;
+    throw error;
+  }
+}
+
+/**
+ * The founder's startup id, for the endpoints nested under it.
+ *
+ * Every audit route is `/v1/startups/{id}/…`, and the id is not something the
+ * app stores — it comes from `/v1/startups/me`. A founder who has not
+ * onboarded gets a named failure rather than a request to `/startups/null/…`,
+ * which the server would answer with an unhelpful `422`.
+ */
+async function requireProfileId(): Promise<string> {
+  const profile = await ownProfile();
+  if (!profile) {
+    throw new ApiFailure(
+      'not_found',
+      'Complete your startup profile before requesting an audit.',
+    );
+  }
+  return profile.id;
+}
+
+// ── audit wire shapes ───────────────────────────────────────
+
+type WireAuditRun = {
+  id: string;
+  startup_id: string;
+  status: AuditStatus;
+  rubric_version: string;
+  attempts: number;
+  error_code: string | null;
+  error_message: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+};
+
+type WireVerdict = {
+  scope: string;
+  level: string;
+  score: number | null;
+  sufficiency: string;
+  rationale: string;
+  evidenced_dimensions: string[];
+  unevidenced_dimensions: string[];
+};
+
+type WireFounderReport = {
+  rubric_version: string;
+  data_integrity_score: string;
+  fundability: WireVerdict;
+  saleability: WireVerdict;
+  findings: { code: string; severity: string; fields: string[]; message: string }[];
+  action_plan: {
+    dimension: string;
+    action: string;
+    dimension_score: number | null;
+    is_priority: boolean;
+  }[];
+};
+
+function toAuditRun(wire: WireAuditRun): AuditRun {
+  return {
+    id: wire.id,
+    startupId: wire.startup_id,
+    status: wire.status,
+    rubricVersion: wire.rubric_version,
+    attempts: wire.attempts,
+    errorCode: wire.error_code,
+    errorMessage: wire.error_message,
+    createdAt: wire.created_at,
+    startedAt: wire.started_at,
+    completedAt: wire.completed_at,
+  };
+}
+
+function toVerdict(wire: WireVerdict): Verdict {
+  return {
+    scope: wire.scope,
+    level: wire.level,
+    // Passed through, `null` and all. A `?? 0` here would turn "could not
+    // tell" into a scored zero, which is the false verdict the whole audit
+    // is built to avoid.
+    score: wire.score,
+    sufficiency: wire.sufficiency,
+    rationale: wire.rationale,
+    evidencedDimensions: wire.evidenced_dimensions ?? [],
+    unevidencedDimensions: wire.unevidenced_dimensions ?? [],
+  };
+}
+
+function toAuditReport(wire: WireFounderReport): AuditReport {
+  return {
+    rubricVersion: wire.rubric_version,
+    dataIntegrityScore: wire.data_integrity_score,
+    fundability: toVerdict(wire.fundability),
+    saleability: toVerdict(wire.saleability),
+    findings: (wire.findings ?? []).map((f) => ({
+      code: f.code,
+      severity: f.severity,
+      fields: f.fields ?? [],
+      message: f.message,
+    })),
+    actionPlan: (wire.action_plan ?? []).map((a) => ({
+      dimension: a.dimension,
+      action: a.action,
+      dimensionScore: a.dimension_score,
+      isPriority: a.is_priority,
+    })),
+  };
+}
+
+// ── discovery wire shapes ───────────────────────────────────
+
+type WireDiscoveryVerdict = { scope: string; level: string; score: number | null };
+
+type WireStartupCard = {
+  startup_id: string;
+  name: string | null;
+  sector: string | null;
+  stage: ServerStage | null;
+  country: string | null;
+  audit_run_id: string;
+  rubric_version: string;
+  fundability: WireDiscoveryVerdict;
+  saleability: WireDiscoveryVerdict;
+  published_at: string | null;
+};
+
+type WireDiscoveryPage = {
+  items: WireStartupCard[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+function toDiscovered(wire: WireStartupCard): DiscoveredStartup {
+  return {
+    startupId: wire.startup_id,
+    name: wire.name,
+    sector: wire.sector,
+    stage: wire.stage,
+    country: wire.country,
+    auditRunId: wire.audit_run_id,
+    rubricVersion: wire.rubric_version,
+    fundability: wire.fundability,
+    saleability: wire.saleability,
+    publishedAt: wire.published_at,
+  };
+}
+
 /** Every method with no endpoint behind it fails the same, nameable way. */
 function notYet<T>(feature: string, task: string): Promise<T> {
   return Promise.reject(
@@ -296,26 +512,25 @@ export const httpApi: FundMeApi = {
   signIn: logIn,
 
   async signUp({ email, password, role, firstName, lastName }) {
-    // NOTE: the server does not yet enforce the company-domain rule for
-    // founders, so this check is currently the only one there is. It belongs
-    // server-side — a client check can always be bypassed. Flagged in TASKS.md.
+    // The server enforces this too (T1.4a), and it is the authority — a client
+    // check can always be bypassed. This one exists to answer instantly and to
+    // name the reason, rather than surfacing a bare 422 after a round trip.
     if (role === 'founder' && isPersonalEmailDomain(email.split('@')[1] ?? '')) {
       throw new ApiFailure('validation', 'personal_email_domain');
     }
-
-    // NOTE: `firstName`/`lastName` are collected but deliberately NOT sent.
-    // The register schema rejects unknown fields, and personal names are not
-    // on it yet -- sending them would 422 the whole registration. Add the two
-    // lines back the moment the backend accepts them.
-    void firstName;
-    void lastName;
 
     // Registration answers 202 with no tokens, and answers identically whether
     // or not the address was already taken, so we cannot tell from it whether
     // an account was created. Logging in straight after is what proves it.
     await request<unknown>('/v1/auth/register', {
       method: 'POST',
-      body: { email: email.trim().toLowerCase(), password, role },
+      body: {
+        email: email.trim().toLowerCase(),
+        password,
+        role,
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+      },
     });
 
     try {
@@ -361,17 +576,38 @@ export const httpApi: FundMeApi = {
     });
   },
 
+  async resetPassword(token: string, password: string) {
+    await request<void>('/v1/auth/password-reset/confirm', {
+      method: 'POST',
+      body: { token: token.trim(), password },
+    });
+    // The server has just revoked every refresh token and invalidated every
+    // access token it had issued, so anything this device is still holding is
+    // dead. Dropping it here is what keeps the app from spending the next
+    // request discovering that — and, if a *different* person completed the
+    // reset, from leaving a live-looking session on a device they now control.
+    await clearTokens();
+  },
+
   // ── accounts ────────────────────────────────────────────
   async getFounderAccount() {
-    const me = await fetchMe();
+    // Two calls rather than one, deliberately. The company name now has a real
+    // home (T1.4), and a name read off a stored profile beats one guessed from
+    // an email domain everywhere it is shown. The profile read is tolerant:
+    // a founder who has not onboarded has no profile, which is not an error.
+    const [me, profile] = await Promise.all([
+      fetchMe(),
+      ownProfile().catch(() => null),
+    ]);
     const created = new Date(me.created_at).getTime();
+
     return {
       emailVerified: me.email_verified,
-      // No company record exists server-side yet (T1.4), so this is guessed
-      // from the sign-up domain purely as a display default. Anything the
-      // founder actually types wins over it everywhere it is shown.
-      companyName: companyNameFromEmail(me.email),
-      // Company-registration verification has no endpoint yet (T1.4). This is
+      // The stored name first; the domain guess only until one exists. The
+      // server fills the name in from the verified company domain at
+      // registration (T1.4a), so in practice this falls back rarely.
+      companyName: profile?.name || companyNameFromEmail(me.email),
+      // Company-registration verification still has no endpoint. This is
       // deliberately NOT read off `kyc_status`, which is investor identity.
       verification: 'unverified',
       registration: null,
@@ -390,18 +626,31 @@ export const httpApi: FundMeApi = {
   },
 
   // ── email verification ──────────────────────────────────
-  // The verification email points at the app, not the API: mail scanners
-  // prefetch links, which would spend the single-use token before the person
-  // ever clicked. The client lifts the token out and posts it here.
-  async confirmEmail(token: string) {
+  // The email carries a six-digit code, not a link. Neither call is
+  // authenticated, deliberately: whoever is verifying may have registered on a
+  // laptop and be reading the mail on a phone, and requiring a session would
+  // close the only door they have.
+  async confirmEmail(email: string, code: string) {
     await request<void>('/v1/auth/verify-email', {
       method: 'POST',
-      body: { token: token.trim() },
+      body: {
+        email: email.trim().toLowerCase(),
+        // Sent as typed apart from whitespace and hyphens, which the server
+        // ignores anyway — stripping them here means a pasted "123 456" does
+        // not fail a length check on the way out.
+        code: code.replace(/[\s-]/g, ''),
+      },
     });
   },
 
-  // No resend endpoint exists; registration sends the only message so far.
-  resendVerificationEmail: () => notYet<void>('Resending the verification email', 'no endpoint yet'),
+  async resendVerificationEmail(email: string) {
+    // Always 202 — no account, already verified, and asked-again-too-soon are
+    // one answer. Nothing here can be reported as "sent".
+    await request<unknown>('/v1/auth/verify-email/resend', {
+      method: 'POST',
+      body: { email: email.trim().toLowerCase() },
+    });
+  },
 
   /** Exchange the login challenge and a code for a real session. */
   async verifyMfa(mfaToken: string, code: string) {
@@ -420,14 +669,156 @@ export const httpApi: FundMeApi = {
   purchaseUnlock: () => notYet('Payments', 'T3.3 / T3.4'),
 
   // ── founder ─────────────────────────────────────────────
-  submitAssessment: () => notYet('The fundability assessment', 'Phase 2'),
-  getProfile: () => notYet('Your startup profile', 'T1.4'),
+  /**
+   * The prototype's 0-100 score with weighted parts, VC/PE fit and a colour
+   * band. **The server has no such thing and never will** — its audit returns
+   * verdicts with nullable scores, a sufficiency and a rationale. Producing an
+   * `Assessment` from a `FounderReport` would mean inventing the parts that do
+   * not exist. Use `requestAudit` / `getAuditReport` instead; this stays
+   * unimplemented so nothing silently falls back to a fabricated score.
+   */
+  submitAssessment: () => notYet('The prototype score', 'superseded by requestAudit'),
+
+  async requestAudit() {
+    const startupId = await requireProfileId();
+    return toAuditRun(
+      await request<WireAuditRun>(`/v1/startups/${startupId}/audits`, {
+        method: 'POST',
+        auth: true,
+      }),
+    );
+  },
+
+  async getAuditRun(runId: string) {
+    const startupId = await requireProfileId();
+    return toAuditRun(
+      await request<WireAuditRun>(`/v1/startups/${startupId}/audits/${runId}`, { auth: true }),
+    );
+  },
+
+  async listAuditRuns() {
+    const startupId = await requireProfileId();
+    const rows = await request<WireAuditRun[]>(`/v1/startups/${startupId}/audits`, { auth: true });
+    return rows.map(toAuditRun);
+  },
+
+  async getAuditReport(runId: string) {
+    const startupId = await requireProfileId();
+    return toAuditReport(
+      await request<WireFounderReport>(`/v1/startups/${startupId}/audits/${runId}/report`, {
+        auth: true,
+      }),
+    );
+  },
+
+  // ── investor visibility ─────────────────────────────────
+  async publishProfile() {
+    const startupId = await requireProfileId();
+    await request<unknown>(`/v1/startups/${startupId}/publish`, { method: 'POST', auth: true });
+  },
+
+  async unpublishProfile() {
+    const startupId = await requireProfileId();
+    await request<unknown>(`/v1/startups/${startupId}/unpublish`, { method: 'POST', auth: true });
+  },
+
+
+  async getProfile() {
+    const stored = await ownProfile();
+    return stored ? fromWireProfile(stored) : null;
+  },
+
+  async saveProfile(profile) {
+    const { wire, unmapped } = toWireProfile(profile);
+    const existing = await ownProfile();
+
+    let saved: WireProfileResponse;
+    if (existing) {
+      saved = await request<WireProfileResponse>(`/v1/startups/${existing.id}`, {
+        method: 'PATCH',
+        body: wire,
+        auth: true,
+      });
+    } else {
+      try {
+        saved = await request<WireProfileResponse>('/v1/startups', {
+          method: 'POST',
+          body: wire,
+          auth: true,
+        });
+      } catch (error) {
+        // One profile per founder. Two devices onboarding at once both see
+        // "none yet" and both POST; the loser gets a 409 and should update the
+        // profile that now exists rather than report a failure.
+        if (!(error instanceof ApiFailure) || error.code !== 'conflict') throw error;
+        const created = await ownProfile();
+        if (!created) throw error;
+        saved = await request<WireProfileResponse>(`/v1/startups/${created.id}`, {
+          method: 'PATCH',
+          body: wire,
+          auth: true,
+        });
+      }
+    }
+
+    return {
+      // Read back what was stored rather than echoing what was sent: the
+      // server normalises (country upper-cased, unknown fields refused) and
+      // the form should show what actually exists.
+      profile: fromWireProfile(saved),
+      unmapped,
+      missingFields: saved.missing_fields ?? [],
+    };
+  },
+
   enrol: () => notYet('Programme enrolment', 'T3.2'),
   askMentor: () => notYet('The AI mentor', 'T3.7'),
 
   // ── investor ────────────────────────────────────────────
-  listCompanies: () => notYet('Dealflow', 'T4.2 / T4.3'),
-  getCompany: () => notYet('Company detail', 'T4.2'),
+  /**
+   * The prototype's rich dealflow card — MRR, growth, margin, LTV/CAC, runway,
+   * team, memos, risk flags. **The summary tier carries none of it**, by
+   * design: that is all full-report material and reaches an investor only
+   * after an admin reveal. Building a `Company` from `/v1/discover` would mean
+   * inventing every number on the card, so these stay unimplemented and
+   * `discoverStartups` serves what the server will actually give. Reconciling
+   * the screens is F4.2.
+   */
+  listCompanies: () => notYet('Dealflow in the prototype shape', 'use discoverStartups (F4.2)'),
+  getCompany: () => notYet('Company detail in the prototype shape', 'use getDiscoveredStartup'),
+
+  async discoverStartups(query) {
+    const params = new URLSearchParams();
+    if (query.sector) params.set('sector', query.sector);
+    if (query.stage) params.set('stage', query.stage);
+    if (query.country) params.set('country', query.country);
+    params.set('limit', String(query.limit ?? 20));
+    params.set('offset', String(query.offset ?? 0));
+
+    const page = await request<WireDiscoveryPage>(`/v1/discover?${params.toString()}`, {
+      auth: true,
+    });
+    return {
+      items: (page.items ?? []).map(toDiscovered),
+      total: page.total,
+      limit: page.limit,
+      offset: page.offset,
+    };
+  },
+
+  async getDiscoveredStartup(startupId: string) {
+    return toDiscovered(await request<WireStartupCard>(`/v1/discover/${startupId}`, { auth: true }));
+  },
+
+  async expressInterest(startupId: string, note?: string) {
+    await request<unknown>(`/v1/discover/${startupId}/interest`, {
+      method: 'POST',
+      // Explicitly null rather than omitted: the field is nullable server-side
+      // and sending nothing at all makes the body shape depend on the caller.
+      body: { note: note?.trim() || null },
+      auth: true,
+    });
+  },
   getWatchlist: () => notYet('The watchlist', 'no backend task yet'),
   toggleWatch: () => notYet('The watchlist', 'no backend task yet'),
   requestIntroduction: () => notYet('Introductions', 'T4.5'),

@@ -41,8 +41,14 @@ export function Slider({
     [min, max, step, onChange],
   );
 
+  // The rule fires because `PanResponder.create` is handed callbacks that read
+  // `pageXRef.current`. They are gesture handlers — they only ever run after
+  // the gesture starts, never during render, which is the case the rule exists
+  // to catch. Reading the ref at build time instead would freeze the layout
+  // position at first mount and break the slider on rotation.
   const responder = useMemo(
     () =>
+      // eslint-disable-next-line react-hooks/refs
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: () => true,

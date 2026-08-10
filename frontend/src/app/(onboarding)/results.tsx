@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,10 +9,13 @@ import { ScoreRing } from '@/components/ui/score-ring';
 import { Eyebrow, Mono, Txt, TxtSemi } from '@/components/ui/text';
 import { C } from '@/theme/tokens';
 import { Unavailable } from '@/components/unavailable';
+import { AuditFailed, AuditPending, AuditReportView } from '@/components/founder/audit-report';
 import { api } from '@/api';
 import type { Assessment, Insight } from '@/domain/types';
-import { FOUNDER_HOME } from '@/lib/routes';
+import { FOUNDER_HOME, VERIFY_EMAIL } from '@/lib/routes';
+import { useBackTo } from '@/lib/use-back-to';
 import { useFounder } from '@/store/founder';
+import { useSession } from '@/store/session';
 
 export default function Results() {
   const insets = useSafeAreaInsets();
@@ -20,11 +23,35 @@ export default function Results() {
   const stored = useFounder((s) => s.assessment);
   const liveAssessment = useFounder((s) => s.liveAssessment);
 
-  // `stored` is the audit the server returned. There is no audit engine yet
-  // (Phase 2), so in practice this is always the local estimate — which is a
-  // heuristic over the form, not a scored audit, and is labelled as such below.
+  const run = useFounder((s) => s.run);
+  const report = useFounder((s) => s.report);
+  const auditError = useFounder((s) => s.auditError);
+  const resumeAudit = useFounder((s) => s.resumeAudit);
+
+  // Same rule as the assessment screen: the submission is done, so back goes
+  // forward to the dashboard rather than into the form.
+  useBackTo(FOUNDER_HOME);
+
+  // An audit outlives the screen that started it, so pick the newest one back
+  // up on arrival. Skipped when this screen already has a run in hand.
+  useEffect(() => {
+    if (!run) void resumeAudit();
+  }, [run, resumeAudit]);
+
+  // `stored` is the prototype's on-device heuristic. The real audit is `report`
+  // and it wins whenever it exists — the estimate is a stand-in for the wait,
+  // not a second opinion.
   const a: Assessment = stored ?? liveAssessment();
-  const provisional = stored === null;
+  const provisional = report === null;
+
+  const unmapped = useFounder((s) => s.unmapped);
+
+  // Read off the account rather than pattern-matched out of the error text.
+  // The server sends this as a plain `forbidden` with no distinct code, so the
+  // message is the only other signal and matching on prose would break the
+  // first time it is reworded.
+  const founderAccount = useSession((s) => s.founderAccount);
+  const needsEmail = founderAccount !== null && !founderAccount.emailVerified;
 
   const [openStrengths, setOpenStrengths] = useState(true);
   const [openRisks, setOpenRisks] = useState(true);
@@ -46,6 +73,38 @@ export default function Results() {
         </View>
       </View>
 
+      {/* The audit's own state comes first — while it is running, the estimate
+          below is a stand-in for the wait, not a second opinion. */}
+      {run && !report && run.status !== 'failed' ? <AuditPending run={run} /> : null}
+      {run?.status === 'failed' ? <AuditFailed run={run} /> : null}
+      {/* Everything past registration is gated on a confirmed address — the
+          server answers every audit, profile and discovery route with 403
+          "Verify your email address to continue" until then. That is the
+          normal state for someone who just signed up, so it gets an
+          instruction and a way out, not a raw error panel. */}
+      {auditError && !run && needsEmail ? (
+        <View
+          className="mb-4 rounded-[12px] p-[13px]"
+          style={{ borderWidth: 1, borderColor: '#3d2f14', backgroundColor: 'rgba(245,166,35,0.08)' }}>
+          <Mono className="text-[9px]" style={{ letterSpacing: 1.2, color: C.amb }}>
+            CONFIRM YOUR EMAIL
+          </Mono>
+          <Txt className="mb-3 mt-[7px] text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+            Your answers are saved, but nothing can be audited until you confirm your address. Open
+            the link we emailed you, then come back and run it again.
+          </Txt>
+          <Button
+            label="Confirm my email"
+            variant="amber"
+            onPress={() => router.push(VERIFY_EMAIL)}
+          />
+        </View>
+      ) : null}
+
+      {auditError && !run && !needsEmail ? (
+        <Unavailable title="The audit could not be started" error={auditError} className="mb-4" />
+      ) : null}
+
       {provisional ? (
         <View
           className="mb-4 rounded-[12px] p-[13px]"
@@ -54,42 +113,77 @@ export default function Results() {
             PROVISIONAL ESTIMATE
           </Mono>
           <Txt className="mt-[7px] text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
-            Calculated on this device from what you entered. It is not a SACI audit — nothing here has been
-            verified against documents, and no investor can see it. The real scored audit arrives when the
-            audit engine is built.
+            Calculated on this device from what you entered. It is not a SACI audit — nothing here
+            has been verified against your documents, and no investor can see it.
           </Txt>
         </View>
       ) : null}
 
-      <View className="overflow-hidden rounded-[14px] border border-line">
-        <LinearGradient colors={['#0f0f0f', '#0a0a0a']} className="items-center px-5 pb-[22px] pt-[26px]">
-          <ScoreRing score={a.score} color={a.bandColor} />
-          <TxtSemi className="mt-[14px] text-[14px]" style={{ color: a.bandColor }}>
-            {a.bandLabel}
-          </TxtSemi>
-          <View className="mt-[14px] w-full flex-row gap-2">
-            <FitTile label="VC-FIT" value={a.vcFit} />
-            <FitTile label="PE-FIT" value={a.peFit} />
-          </View>
-        </LinearGradient>
-      </View>
+      {/* Answers the server has no field for. Saying nothing here would let
+          the screen imply everything typed was stored — and the audit would
+          later be silent about figures the founder knows they entered. */}
+      {unmapped.length > 0 ? (
+        <View
+          className="mb-4 rounded-[12px] p-[13px]"
+          style={{ borderWidth: 1, borderStyle: 'dashed', borderColor: C.lineDash }}>
+          <Mono className="text-[9px]" style={{ letterSpacing: 1.2, color: C.amb }}>
+            NOT SAVED YET
+          </Mono>
+          <Txt className="mt-[7px] text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+            {unmapped.length === 1 ? 'One answer has' : `${unmapped.length} answers have`} nowhere to
+            be stored yet, so {unmapped.length === 1 ? 'it is' : 'they are'} not part of any audit:
+          </Txt>
+          {unmapped.map((answer) => (
+            <Txt
+              key={answer.field}
+              className="mt-[6px] text-[12px] text-ink-faint"
+              style={{ lineHeight: 18 }}>
+              • {answer.field} — {answer.reason}
+            </Txt>
+          ))}
+        </View>
+      ) : null}
 
-      <Section
-        title="Key strengths"
-        dotColor={C.grn}
-        open={openStrengths}
-        onToggle={() => setOpenStrengths((v) => !v)}
-        items={a.strengths}
-        className="mt-6"
-      />
-      <Section
-        title="Critical gaps"
-        dotColor={C.amb}
-        open={openRisks}
-        onToggle={() => setOpenRisks((v) => !v)}
-        items={a.risks}
-        className="mt-[22px]"
-      />
+      {/* The real audit replaces the estimate rather than sitting beside it.
+          Two scores on one screen, one of which is not the audit, is exactly
+          the ambiguity the provisional label exists to prevent. */}
+      {report ? (
+        <AuditReportView report={report} />
+      ) : (
+        <>
+          <View className="overflow-hidden rounded-[14px] border border-line">
+            <LinearGradient
+              colors={['#0f0f0f', '#0a0a0a']}
+              className="items-center px-5 pb-[22px] pt-[26px]">
+              <ScoreRing score={a.score} color={a.bandColor} />
+              <TxtSemi className="mt-[14px] text-[14px]" style={{ color: a.bandColor }}>
+                {a.bandLabel}
+              </TxtSemi>
+              <View className="mt-[14px] w-full flex-row gap-2">
+                <FitTile label="VC-FIT" value={a.vcFit} />
+                <FitTile label="PE-FIT" value={a.peFit} />
+              </View>
+            </LinearGradient>
+          </View>
+
+          <Section
+            title="Key strengths"
+            dotColor={C.grn}
+            open={openStrengths}
+            onToggle={() => setOpenStrengths((v) => !v)}
+            items={a.strengths}
+            className="mt-6"
+          />
+          <Section
+            title="Critical gaps"
+            dotColor={C.amb}
+            open={openRisks}
+            onToggle={() => setOpenRisks((v) => !v)}
+            items={a.risks}
+            className="mt-[22px]"
+          />
+        </>
+      )}
 
       <Eyebrow className="mb-[10px] mt-7">YOUR RECOMMENDED PATH</Eyebrow>
 

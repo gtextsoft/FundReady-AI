@@ -1,0 +1,8 @@
+node_modules
+.expo
+dist
+android
+ios
+.ui-shots
+package-lock.json
+assets

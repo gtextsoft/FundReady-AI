@@ -1,3 +1,6 @@
+import type { AuditReport, AuditRun } from '@/domain/audit';
+import type { DiscoveredStartup, DiscoveryPage, DiscoveryQuery } from '@/domain/discovery';
+import type { UnmappedAnswer } from './profile-mapping';
 import type { AppNotification, CallRequest } from '@/domain/notifications';
 import type {
   Assessment,
@@ -114,6 +117,25 @@ export function isUnavailable(error: unknown): error is ApiFailure {
   return error instanceof ApiFailure && error.code === 'not_implemented';
 }
 
+/**
+ * How long the server ignores a repeat verification-code request.
+ *
+ * The endpoint answers `202` either way, so a second press inside this window
+ * looks successful and sends nothing. The countdown exists so the UI does not
+ * promise an email that was never dispatched.
+ */
+export const RESEND_COOLDOWN_MS = 60_000;
+
+/** What came back from a profile save, including what could not be saved. */
+export type SaveResult = {
+  /** The profile as the server now holds it. */
+  profile: FounderProfile;
+  /** Answers with no field on the server. See `api/profile-mapping.ts`. */
+  unmapped: UnmappedAnswer[];
+  /** Fields an audit will still need, computed server-side on every read. */
+  missingFields: string[];
+};
+
 export type PaymentReceipt = {
   reference: string;
   amount: number;
@@ -148,20 +170,49 @@ export interface FundMeApi {
    * caller which emails are registered is an account-enumeration leak.
    */
   requestPasswordReset(email: string): Promise<void>;
+  /**
+   * Complete the reset with the token from the email and a new password.
+   *
+   * The token is single-use and expires in an hour; a second attempt with the
+   * same one fails. Succeeding **ends every session on every device** — the
+   * server revokes all refresh tokens and invalidates the access tokens it has
+   * already issued — so the caller must sign in again afterwards, and should
+   * say so rather than letting the sign-out look like a fault.
+   *
+   * Unknown, expired and already-used tokens come back as one indistinguishable
+   * `validation` failure, deliberately.
+   */
+  resetPassword(token: string, password: string): Promise<void>;
 
   // ── email verification ──────────────────────────────────
   /**
-   * Send (or resend) the verification message to the signed-in address.
+   * Send another verification code, invalidating the previous one.
    *
-   * Resolves whether or not anything was sent, for the same anti-enumeration
-   * reason as the reset above.
+   * Takes the address rather than reading it off the session: whoever is
+   * verifying may not be signed in on this device.
+   *
+   * Resolves whether the address has no account, is already verified, or
+   * simply asked again too soon — one uniform answer, for the same
+   * anti-enumeration reason as the password reset above. **It therefore
+   * cannot tell you an email went out**, so never claim one did.
+   *
+   * The server drops a request made within 60 seconds of the last one, so do
+   * not offer this as an instant retry — see `RESEND_COOLDOWN_MS`.
    */
-  resendVerificationEmail(): Promise<void>;
+  resendVerificationEmail(email: string): Promise<void>;
   /**
-   * Complete verification with the token from the email. Single-use and
-   * expiring, so a second attempt with the same token must fail.
+   * Confirm an address with the six-digit code from the email.
+   *
+   * **Both parts are required.** A six-digit code is only checked against the
+   * one account it belongs to — without the address it would be a code valid
+   * against whichever account happened to match, which is a different and much
+   * weaker thing.
+   *
+   * Spaces and hyphens in the code are ignored, so a pasted `123 456` works.
+   * A wrong code, an expired one, one already used, and one whose attempts are
+   * exhausted all fail identically — do not try to tell the user which.
    */
-  confirmEmail(token: string): Promise<void>;
+  confirmEmail(email: string, code: string): Promise<void>;
 
   // ── two-factor ──────────────────────────────────────────
   /**
@@ -195,6 +246,42 @@ export interface FundMeApi {
   submitAssessment(profile: FounderProfile): Promise<Assessment>;
   /** Latest saved profile, or null for a founder who has not onboarded. */
   getProfile(): Promise<FounderProfile | null>;
+  /**
+   * Persists the onboarding form, creating the profile on first save.
+   *
+   * Returns what the server actually stored — read the form back from this
+   * rather than assuming it kept what was sent — together with any answers it
+   * had no field for. **Show `unmapped` to the founder.** They are answers
+   * someone typed that are not being saved, and a screen that stays silent
+   * about that is claiming to have stored them.
+   */
+  saveProfile(profile: FounderProfile): Promise<SaveResult>;
+
+  // ── audit ───────────────────────────────────────────────
+  /**
+   * Queues an audit of the founder's own profile.
+   *
+   * Returns immediately with a run in `queued` — the audit itself takes as
+   * long as it takes. Poll `getAuditRun` until `isAuditFinished`, then read
+   * `getAuditReport`.
+   */
+  requestAudit(): Promise<AuditRun>;
+  /** One run's status. Deliberately carries no findings. */
+  getAuditRun(runId: string): Promise<AuditRun>;
+  /** Newest first. Empty for a founder who has never been audited. */
+  listAuditRuns(): Promise<AuditRun[]>;
+  /**
+   * The founder-tier report for a finished run.
+   *
+   * Only meaningful once the run `succeeded`; asking earlier is an error, not
+   * an empty report.
+   */
+  getAuditReport(runId: string): Promise<AuditReport>;
+
+  // ── investor visibility ─────────────────────────────────
+  /** Makes the startup discoverable. Requires a cleared audit server-side. */
+  publishProfile(): Promise<void>;
+  unpublishProfile(): Promise<void>;
   enrol(programme: 'readiness' | 'wealth'): Promise<void>;
   /**
    * AI mentor. The mock answers from the founder's own metrics with rules;
@@ -206,6 +293,24 @@ export interface FundMeApi {
   // ── investor ────────────────────────────────────────────
   listCompanies(query: DealflowQuery, page: number, perPage: number): Promise<Page<CompanySummary>>;
   getCompany(id: number): Promise<Company>;
+
+  /**
+   * Discovery, at the tier the server will actually serve.
+   *
+   * Separate from `listCompanies` on purpose: that one returns the prototype's
+   * rich `Company` shape, and the summary tier does not carry enough to build
+   * one. See `domain/discovery.ts`.
+   */
+  discoverStartups(query: DiscoveryQuery): Promise<DiscoveryPage>;
+  getDiscoveredStartup(startupId: string): Promise<DiscoveredStartup>;
+  /**
+   * Registers interest. An admin decides what happens next (T4.5).
+   *
+   * `note` is context for SACI and **the founder never sees it** — say so in
+   * the UI, because an investor writes differently when the subject is not
+   * reading. Optional: the server accepts null.
+   */
+  expressInterest(startupId: string, note?: string): Promise<void>;
   getWatchlist(): Promise<number[]>;
   toggleWatch(id: number): Promise<number[]>;
   requestIntroduction(companyId: number): Promise<void>;

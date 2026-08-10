@@ -12,6 +12,7 @@ import { C } from '@/theme/tokens';
 import { Unavailable } from '@/components/unavailable';
 import { api } from '@/api';
 import type { CompanyRegistration } from '@/domain/types';
+import { useFounder } from '@/store/founder';
 import { useSession } from '@/store/session';
 
 /**
@@ -41,13 +42,23 @@ export default function VerifyCompany() {
   const insets = useSafeAreaInsets();
   const account = useSession((s) => s.founderAccount);
   const setFounderAccount = useSession((s) => s.setFounderAccount);
+  const profile = useFounder((s) => s.profile);
+  const setField = useFounder((s) => s.setField);
+  const save = useFounder((s) => s.save);
 
+  // Seeded from the stored profile first: these are real profile fields now,
+  // so whatever was saved last time is what should be shown.
   const [country, setCountry] = useState(account?.registration?.country ?? '');
-  const [legalName, setLegalName] = useState(account?.registration?.legalName ?? '');
-  const [registrationNumber, setRegistrationNumber] = useState(account?.registration?.registrationNumber ?? '');
-  const [registrar, setRegistrar] = useState(account?.registration?.registrar ?? '');
+  const [legalName, setLegalName] = useState(profile.legalName || (account?.registration?.legalName ?? ''));
+  const [registrationNumber, setRegistrationNumber] = useState(
+    profile.registrationNumber || (account?.registration?.registrationNumber ?? ''),
+  );
+  const [registrar, setRegistrar] = useState(profile.registrar || (account?.registration?.registrar ?? ''));
+  const [incorporationYear, setIncorporationYear] = useState(profile.incorporationYear);
+  const [regulatoryLicences, setRegulatoryLicences] = useState(profile.regulatoryLicences);
   const [document, setDocument] = useState(account?.registration?.document ?? '');
   const [docError, setDocError] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [touched, setTouched] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -82,7 +93,19 @@ export default function VerifyCompany() {
       return;
     }
     setBusy(true);
+    setError(null);
     try {
+      // The registration details are Startup Profile fields, so they are saved
+      // even though the *review* workflow below has no endpoint yet. Storing
+      // them is what lets an audit cite a registered legal entity at all.
+      setField('legalName', legalName.trim());
+      setField('registrationNumber', registrationNumber.trim());
+      setField('registrar', registrar.trim() || REGISTRARS[country] || 'Registrar');
+      setField('incorporationYear', incorporationYear.trim());
+      setField('regulatoryLicences', regulatoryLicences.trim());
+      await save();
+      setSaved(true);
+
       const registration: CompanyRegistration = {
         country,
         legalName: legalName.trim(),
@@ -93,7 +116,9 @@ export default function VerifyCompany() {
       setFounderAccount(await api.submitCompanyRegistration(registration));
       router.back();
     } catch (e) {
-      // Stay on the screen: navigating back would imply it was submitted.
+      // Stay on the screen: navigating back would imply the review started.
+      // The details themselves are already saved by this point, which is why
+      // `saved` is tracked separately from the submission.
       setError(e);
     } finally {
       setBusy(false);
@@ -169,6 +194,23 @@ export default function VerifyCompany() {
             onChangeText={setRegistrar}
             hint="The government body you filed with. Prefilled from your country."
           />
+          <Field
+            label="Year incorporated"
+            placeholder="2023"
+            value={incorporationYear}
+            onChangeText={setIncorporationYear}
+            keyboardType="number-pad"
+            mono
+            hint="As on the certificate. This can differ from when you started trading."
+          />
+          <Field
+            label="Licences your model needs"
+            placeholder="Lending licence — applied for, awaiting CBN approval"
+            value={regulatoryLicences}
+            onChangeText={setRegulatoryLicences}
+            multiline
+            hint="What the business requires and whether you hold it. &quot;None needed&quot; is a real answer."
+          />
 
           <View className="gap-[9px]">
             <FieldLabel>Certificate of incorporation</FieldLabel>
@@ -212,7 +254,26 @@ export default function VerifyCompany() {
           Your certificate is used only to confirm registration and is never shown to investors.
         </Txt>
 
-        {error ? <Unavailable title="Verification is not live" error={error} className="mt-5" /> : null}
+        {/* The details and the review are different things now. Saving the
+            first can succeed while the second has no endpoint, and saying
+            "verification is not live" over a successful save would be wrong. */}
+        {saved && error ? (
+          <View
+            className="mt-5 rounded-[12px] p-[13px]"
+            style={{ borderWidth: 1, borderColor: '#3d2f14', backgroundColor: 'rgba(245,166,35,0.08)' }}>
+            <Mono className="text-[9px]" style={{ letterSpacing: 1.2, color: C.amb }}>
+              DETAILS SAVED
+            </Mono>
+            <Txt className="mt-[7px] text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+              Your registration details are stored against your profile and the audit can use them.
+              The review that marks you verified to investors is not built yet.
+            </Txt>
+          </View>
+        ) : null}
+
+        {error && !saved ? (
+          <Unavailable title="Could not save your details" error={error} className="mt-5" />
+        ) : null}
       </ScrollView>
 
       <View className="border-t border-line-soft bg-ground px-[18px] pt-3" style={{ paddingBottom: insets.bottom + 14 }}>

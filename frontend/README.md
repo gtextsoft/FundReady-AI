@@ -1,56 +1,70 @@
-# Welcome to your Expo app 👋
+# SACI FundMe — mobile frontend
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Expo SDK 57 / React Native 0.86 / expo-router / NativeWind 4. Two sides of one
+marketplace, kept strictly apart: **founder** (dashboard, assessment, company
+verification, paywall, AI mentor) and **investor** (dealflow, deep dive,
+watchlist, scheduling).
 
-## Get started
+The backend lives in [`../backend`](../backend) and this app talks to it through
+one seam only — `src/api/`. **Read [`AGENTS.md`](AGENTS.md) before changing
+anything**: it documents the traps that compile, typecheck and serve HTTP 200
+while rendering wrong.
 
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Running it
 
 ```bash
-npm run reset-project
+npm install
+
+# Web preview. The larger heap is required — Metro OOMs at the default.
+NODE_OPTIONS="--max-old-space-size=4096" npx expo start --web --port 8097
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Port 8081 is often taken by another project's Metro, hence `--port`. For a
+physical phone, use Expo Go from the same command.
 
-### Other setup steps
+### Pointing it at the API
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+Copy `.env.example` to `.env`. `EXPO_PUBLIC_API_URL` is the only setting, and it
+is optional: with it unset the app takes the host that served the bundle and
+substitutes port 8000, so a phone follows your machine around the network
+without a rebuild.
 
-## Learn more
+> `EXPO_PUBLIC_*` values are inlined into the bundle at build time and are
+> readable by anyone who has the app. Never put a secret in one.
 
-To learn more about developing your project with Expo, look at the following resources:
+Run the backend alongside it:
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+```bash
+cd ../backend && uvicorn app.main:app --reload --host 0.0.0.0
+```
 
-## Join the community
+`--host 0.0.0.0` matters for a phone, and the device's origin has to be in the
+backend's `CORS_ALLOWED_ORIGINS`.
 
-Join our community of developers creating universal apps.
+## Checks
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```bash
+npm run lint       # eslint
+npm run typecheck  # tsc --noEmit
+npm test           # jest
+```
+
+CI runs all three on every push. A green run does **not** mean the UI renders
+correctly — there are no component rendering tests, deliberately (see
+`jest.config.js`). For that, drive the real browser:
+
+```bash
+npm install playwright-core --no-save
+node scripts/verify-ui.js   # needs the dev server on :8097
+```
+
+That harness is currently stale — it was written against a mock that has since
+been deleted. Repairing it is task F0.5 in [`TASKS.md`](TASKS.md).
+
+## What is built
+
+[`TASKS.md`](TASKS.md) is the queue, phased to line up with
+`../backend/TASKS.md`. Authentication, email verification, password reset, MFA
+and the Startup Profile are live against the real API. Everything else rejects
+with `not_implemented` and renders as an explicit **NOT BUILT YET** panel rather
+than showing invented data.

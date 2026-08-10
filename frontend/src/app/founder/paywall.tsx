@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { Button } from '@/components/ui/button';
-import { Mono, Txt, TxtSemi } from '@/components/ui/text';
+import { Mono, Txt } from '@/components/ui/text';
 import { C } from '@/theme/tokens';
 import { daysLeftInTrial, hasAccess, isPaid, TRIAL_DAYS } from '@/domain/access';
 import { UNLOCK_BENEFITS, UNLOCK_PRICE } from '@/domain/pricing';
