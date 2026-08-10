@@ -194,7 +194,20 @@ class Settings(BaseSettings):
         ]
 
     def missing_production_settings(self) -> list[str]:
-        """Names of required settings that are absent, for production only."""
+        """Names of required settings that are absent, for production only.
+
+        **Required means "some code reads it", not "it exists as a field".**
+        This list previously demanded `STRIPE_SECRET_KEY` and
+        `STRIPE_WEBHOOK_SECRET`, which nothing reads until T3.3 -- so
+        `APP_ENV=production` could not boot at all, and the only ways past it
+        were to stay on staging or to invent a Stripe value that looks real in
+        a secret manager and is not. A check that cannot be satisfied honestly
+        teaches an operator to satisfy it dishonestly, which is worse than not
+        having it.
+
+        They return here in the change that makes `commerce` read them, where
+        the module that needs a setting is the thing that asserts it.
+        """
         if not self.is_production:
             return []
 
@@ -215,8 +228,14 @@ class Settings(BaseSettings):
             "R2_BUCKET_EVIDENCE": self.r2_bucket_evidence,
             "REDIS_URL": self.redis_url,
             "ANTHROPIC_API_KEY": self.anthropic_api_key,
-            "STRIPE_SECRET_KEY": self.stripe_secret_key,
-            "STRIPE_WEBHOOK_SECRET": self.stripe_webhook_secret,
+            # Email is required, and its absence is the worst failure mode this
+            # check has: nothing else reports it. Registration succeeds, the
+            # account sits at `pending_verification`, the verification email is
+            # never sent, and the founder can never log in -- with no error
+            # anywhere and a deploy that looks healthy. It was missing from this
+            # list, so `APP_ENV=production` booted happily into exactly that.
+            "RESEND_API_KEY": self.resend_api_key,
+            "EMAIL_FROM_ADDRESS": self.email_from_address,
         }
         return sorted(name for name, value in required.items() if _is_blank(value))
 

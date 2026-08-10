@@ -29,7 +29,7 @@ back to something a founder actually submitted.
 """
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from enum import StrEnum
 from typing import Final
@@ -47,6 +47,15 @@ __all__ = [
     "VerdictLevel",
     "synthesise",
 ]
+
+PRIORITY_DIMENSIONS: Final = 5
+"""How many dimensions contribute one item each to the founder's short list.
+
+Five rather than a number of *items*, because a single weak dimension can raise
+several unmet criteria and a "top 5 items" list is then five restatements of one
+problem. Tuned by what a founder will actually act on in a week, not by
+evidence -- there is none yet, and `T2.9`'s golden set is the place to get some.
+"""
 
 READY_THRESHOLD: Final = 70
 """Mean in-scope score at or above which a verdict reads `ready`.
@@ -112,6 +121,19 @@ class ActionItem:
     """The score that produced this item, or `None` when the dimension was
     unscoreable. Used to order the plan worst-first, not shown as a grade."""
 
+    is_priority: bool = False
+    """Whether this belongs in the short list a founder is shown first.
+
+    The first live run produced **44 items**. They were specific and correct and
+    no founder reads 44; a plan that long is functionally the same as no plan.
+
+    Marking rather than truncating, deliberately. Every item stays in the
+    response, so nothing a founder needs is dropped and the client can offer
+    "show everything" -- and the field is additive, so the existing array does
+    not change shape for the mobile developer. Cutting the list server-side
+    would have been the version that loses data and breaks a contract at once.
+    """
+
 
 @dataclass(frozen=True, slots=True)
 class Verdict:
@@ -143,13 +165,53 @@ class AuditReport:
     rubric_version: str
 
 
+def _weighted_score(scope: Scope, evidenced: Sequence[DimensionScore]) -> int:
+    """The dimensions the rubric declared, weighted the way it declared them.
+
+    **This used to be a plain mean, and `DimensionSpec.weight` was defined
+    eleven times and read nowhere** -- its own docstring said "Synthesis (T2.7)
+    applies these" and synthesis did not. That is not cosmetic. Under the
+    declared weights the three saleability-only dimensions carry 50 of 150;
+    under an unweighted mean they carried 3 of 10. So the two verdicts diverged
+    about half as much as the rubric intends, and a business that is plainly
+    less saleable than it is fundable came out roughly ten points apart instead
+    of twenty -- which is exactly what `founder-dependent-agency` exists to
+    prove and could not.
+
+    **Normalised over the dimensions actually evidenced**, not over the scope's
+    full weight. Dividing by the full weight would silently penalise a profile
+    for the dimensions it could not evidence, on top of them already being
+    counted against it by the coverage gate and the `thin` rule -- the same
+    thing charged three times.
+
+    Integer floor division, matching the mean it replaces: T2.9 requires the
+    same input to give the same score, and a float here would make that depend
+    on summation order.
+    """
+    weights = {spec.key: spec.weight for spec in dimensions_for(scope)}
+    total = sum(weights[score.dimension] for score in evidenced)
+    if total <= 0:  # pragma: no cover - every declared weight is positive
+        return sum(score.score for score in evidenced) // len(evidenced)
+    return sum(score.score * weights[score.dimension] for score in evidenced) // total
+
+
 def _verdict_for(
     scope: Scope,
     scores: Sequence[DimensionScore],
     *,
     integrity: Decimal,
 ) -> Verdict:
-    """Reduce the in-scope dimensions to one verdict."""
+    """Reduce the in-scope dimensions to one verdict.
+
+    **Coverage is a plain count while the score is weighted, deliberately.**
+    They answer different questions: the score asks how good the business looks
+    across what could be assessed, and importance belongs there; coverage asks
+    how much of the assessment was made at all, and that is a question about
+    breadth. Weighting coverage too would let a profile that evidenced only the
+    two heaviest dimensions clear the gate with nine of eleven questions
+    unanswered -- a confident verdict off a fraction of the evidence, which is
+    the failure `CLAUDE.md` section 5 names as a guarantee.
+    """
     in_scope_keys = {spec.key for spec in dimensions_for(scope)}
     relevant = [score for score in scores if score.dimension in in_scope_keys]
 
@@ -198,7 +260,7 @@ def _verdict_for(
             ),
         )
 
-    mean = sum(score.score for score in evidenced) // len(evidenced)
+    mean = _weighted_score(scope, evidenced)
     thin = unevidenced or any(
         score.sufficiency is DataSufficiency.PROVISIONAL for score in evidenced
     )
@@ -254,16 +316,42 @@ def _action_plan(scores: Sequence[DimensionScore]) -> tuple[ActionItem, ...]:
                 )
             )
 
-    return tuple(
-        sorted(
-            items,
-            key=lambda item: (
-                item.dimension_score is not None,
-                item.dimension_score if item.dimension_score is not None else 0,
-                item.dimension.value,
-            ),
-        )
+    ordered = sorted(
+        items,
+        key=lambda item: (
+            item.dimension_score is not None,
+            item.dimension_score if item.dimension_score is not None else 0,
+            item.dimension.value,
+        ),
     )
+
+    # **One item per dimension, across the worst few dimensions** -- not simply
+    # the first N of the list. A dimension can contribute several unmet
+    # criteria, so "top 5 items" is routinely five ways of saying the same thing
+    # about the same weakness, which is a worse short list than a longer one.
+    # Spreading it gives the founder five distinct things to go and do.
+    priority_dimensions: list[Dimension] = []
+    for item in ordered:
+        if (
+            item.dimension not in priority_dimensions
+            and len(priority_dimensions) < PRIORITY_DIMENSIONS
+        ):
+            priority_dimensions.append(item.dimension)
+
+    seen: set[Dimension] = set()
+    plan: list[ActionItem] = []
+    for item in ordered:
+        first_of_its_dimension = item.dimension not in seen
+        seen.add(item.dimension)
+        plan.append(
+            replace(
+                item,
+                is_priority=(
+                    first_of_its_dimension and item.dimension in priority_dimensions
+                ),
+            )
+        )
+    return tuple(plan)
 
 
 def synthesise(

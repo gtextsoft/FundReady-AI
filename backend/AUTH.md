@@ -49,14 +49,21 @@ Role is coarse. The real access decision layers conditions on top (§5).
 
 ### 3.2 Registration
 
-- **Founder / Investor:** self-service. `POST /v1/auth/register` creates the user with `status = pending_verification` and sends a verification email.
+- **Founder / Investor:** self-service. `POST /v1/auth/register` creates the user with `status = pending_verification` and emails a **six-digit verification code**.
+- **Verification is a code, not a link.** `POST /v1/auth/verify-email` takes the address *and* the code. Six digits is a million combinations, which is nothing to a script, so the code carries three constraints a 256-bit link never needed:
+  - **Bound to one account.** The address is part of the request and part of the stored hash, so a guessed code cannot match whichever account happens to hold it — an attacker must spend their guesses on a single target.
+  - **Five attempts, then it is burned.** The count is committed on each wrong guess rather than rolled back with the failing request; otherwise the cap resets every attempt and stops nothing.
+  - **Fifteen minutes, and one live code per account.** Issuing a new one invalidates the previous, so a resend never doubles the guesses available per email.
+  - **Stored HMAC-SHA256, keyed with the server secret** — never a bare digest. Six digits behind an unkeyed hash is a million-entry rainbow table, so a database leak would otherwise hand over every outstanding code.
+  - Every failure returns one message: wrong, expired, spent, exhausted, and *no such account* are indistinguishable, because the address is caller-supplied and a distinct "no account" would rebuild the enumeration oracle this section exists to prevent.
+- `POST /v1/auth/verify-email/resend` issues another code. Always `202`, whatever the address is, and silently does nothing within 60 seconds of the last send — a resend button with no floor beneath it is a mailbomb aimed at somebody else's inbox. Per-IP and per-account rate limiting proper is T5.5.
 - **Email verification is required before any sensitive action** — buying, uploading, discovery, interest. Browsing one's own empty account is permitted while unverified.
 - **Admin: no self-service.** Admins are provisioned only by an existing admin, and that creation is itself audit-logged (§9).
 - Registration responses are **identical whether or not the email already exists** — otherwise the endpoint is an account-enumeration oracle. The differing behaviour is in the email that gets sent, not the API response.
 - **Founders must register with a company email address** (`DECISIONS.md` **D20**). A consumer mailbox provider (`gmail.com`, `outlook.com`, `yahoo.com`, …) is refused with `422` and `details.reason = "consumer_email_domain"`. Investors are **not** restricted — an angel investing personally has no company domain, and the KYC gate (§8) is what establishes who they are.
   - This rejection is **explicit, not uniform**, and that does not contradict the bullet above. The uniform response protects *account existence*; this answer is about the **domain the caller just typed**, which they already know, and reveals nothing about who has an account. Answering uniformly would be worse: the founder would wait for a verification email that was never going to arrive.
   - The check runs **before** the duplicate lookup, so a refused signup writes nothing and a corrected retry is not a duplicate.
-  - **The blocklist is a heuristic, not verification.** It recognises the providers people actually use; it cannot enumerate every one, and passing it proves nothing about corporate identity — anyone can buy a domain. What *is* verified is control of the mailbox, because the account stays `pending_verification` until the emailed link is clicked. Never treat "has a company domain" as proof that a company exists or that this person belongs to it.
+  - **The blocklist is a heuristic, not verification.** It recognises the providers people actually use; it cannot enumerate every one, and passing it proves nothing about corporate identity — anyone can buy a domain. What *is* verified is control of the mailbox, because the account stays `pending_verification` until the emailed code is entered. Never treat "has a company domain" as proof that a company exists or that this person belongs to it.
   - The verified domain also supplies the **initial company name** on the Startup Profile (`DECISIONS.md` D20). That value is a prefill the founder can change, never an authoritative company name.
 
 ### 3.3 Login
@@ -232,7 +239,7 @@ Notes that matter:
 - Argon2id per §3.1. Passwords are never stored or logged in plaintext by us.
 - **Minimum strength:** at least 12 characters; reject the obvious (email local-part, the word "fundready", common-password list). Length beats composition rules — no forced symbol classes.
 - **Breached-password check** via the HIBP range API (k-anonymity: only a 5-character SHA-1 prefix leaves our servers, never the password). Free, no key. **Fails open** — if the service is unreachable the signup proceeds and the failure is logged, because an outage at a third party must not stop registration.
-- **Email verification** required before sensitive actions. Verification tokens are single-use, expiring (24 h), and **stored hashed**.
+- **Email verification** required before sensitive actions. Verification codes are single-use, expiring (15 min), attempt-capped, and **stored keyed-hashed** (§3.2).
 - **Password reset:** single-use, expiring (1 h), hashed-at-rest token, delivered by email. Requesting a reset returns the **same response whether or not the account exists**. Completing a reset bumps `session_valid_after` and revokes every refresh token.
 - **Rate limiting and lockout** on login, registration, password-reset, refresh, and MFA verification — per-IP and per-account. Exponential backoff, then a temporary lock, to blunt credential stuffing. Backed by Redis (already in the stack); implementation lands in T5.5.
 
@@ -290,7 +297,9 @@ Notes that matter:
 
 `auth_tokens` (email verification and password reset):
 
-- `id` · `user_id` · `purpose` (`email_verification` | `password_reset`) · `token_hash` · `expires_at` · `used_at` · `created_at`
+- `id` · `user_id` · `purpose` (`email_verification` | `password_reset`) · `token_hash` · `expires_at` · `used_at` · `attempt_count` · `created_at`
+- `token_hash` holds two different things by purpose: a **bare SHA-256** of the 256-bit reset token, and an **HMAC-SHA256 keyed with the server secret** for a verification code, over the user id, purpose, and digits together (§3.2).
+- `attempt_count` is wrong guesses against a verification code, committed as they happen. Always zero for a reset token — nobody guesses 256 bits.
 
 `mfa_recovery_codes`:
 

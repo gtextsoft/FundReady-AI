@@ -27,11 +27,15 @@ from app.core.logging import (
     RequestContextMiddleware,
     configure_logging,
 )
+from app.core.monitoring import init_sentry
 from app.core.security import CurrentUser, set_user_loader
 from app.modules.audit import router as audit_router
+from app.modules.brokerage import router as brokerage_router
 from app.modules.identity import router as identity_router
 from app.modules.identity import service as identity_service
 from app.modules.intake import router as intake_router
+from app.modules.investor import router as investor_router
+from app.modules.readiness import router as readiness_router
 
 API_V1_PREFIX = "/v1"
 
@@ -66,7 +70,11 @@ async def _load_user(user_id: uuid.UUID) -> CurrentUser | None:
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """Configure logging on startup; release pooled connections on shutdown."""
     settings = get_settings()
+    # Logging first: `init_sentry` logs whether it started, and that line should
+    # be formatted like every other. The worker's `main` orders these the same
+    # way for the same reason.
     configure_logging(settings)
+    init_sentry(settings, component="api")
     set_user_loader(_load_user)
     logger.info(
         "api starting",
@@ -118,3 +126,6 @@ app.include_router(health.router, prefix=API_V1_PREFIX)
 app.include_router(identity_router.router, prefix=API_V1_PREFIX)
 app.include_router(intake_router.router, prefix=API_V1_PREFIX)
 app.include_router(audit_router.router, prefix=API_V1_PREFIX)
+app.include_router(readiness_router.router, prefix=API_V1_PREFIX)
+app.include_router(investor_router.router, prefix=API_V1_PREFIX)
+app.include_router(brokerage_router.router, prefix=API_V1_PREFIX)

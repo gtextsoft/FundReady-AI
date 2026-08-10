@@ -5,6 +5,7 @@ are one short list somebody can review without reading the upload flow -- the
 same reason the profile field registry lives in `fields.py`.
 """
 
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final
 
@@ -18,15 +19,21 @@ MAX_UPLOAD_BYTES: Final[int] = 25 * 1024 * 1024
 class DocumentKind(StrEnum):
     """What the founder says this file is.
 
-    The three named in `fundready-prd.md` §4.1, plus an escape hatch. It steers
-    extraction (T2.4) -- a cap table and a financial model are read for
-    different things -- so it is the founder's declaration, not a fact, and
-    extraction must cope with being told the wrong one.
+    The three named in `fundready-prd.md` §4.1, a country-specific certificate
+    of incorporation (T1.6), plus an escape hatch. It steers extraction
+    (T2.4) -- a cap table and a financial model are read for different
+    things -- so it is the founder's declaration, not a fact, and extraction
+    must cope with being told the wrong one.
+
+    A registration certificate is still self-reported evidence
+    (`DECISIONS.md` D7): extraction reads legal name and registration number
+    off it with a citation; nothing is labelled verified.
     """
 
     DECK = "deck"
     FINANCIALS = "financials"
     CAP_TABLE = "cap_table"
+    REGISTRATION_CERTIFICATE = "registration_certificate"
     OTHER = "other"
 
 
@@ -82,6 +89,24 @@ ALLOWED_CONTENT_TYPES: Final[dict[str, str]] = {
 }
 
 
+@dataclass(frozen=True, slots=True)
+class DocumentPayload:
+    """One stored document, fetched, as plain data.
+
+    What the audit worker is handed instead of a `Document` row: the ORM object
+    belongs to a session the worker closes before the model calls begin, and
+    touching an attribute afterwards is a lazy load against a connection that is
+    gone. Plain data also keeps `audit` from importing `intake.models`
+    (`ARCHITECTURE.md` section 3) -- the composition root maps this into
+    `audit.extraction.SourceDocument`.
+    """
+
+    document_id: str
+    filename: str
+    content_type: str
+    content: bytes
+
+
 def is_allowed_content_type(content_type: str) -> bool:
     """Whether this MIME type is on the allowlist.
 
@@ -95,6 +120,7 @@ __all__ = [
     "ALLOWED_CONTENT_TYPES",
     "MAX_UPLOAD_BYTES",
     "DocumentKind",
+    "DocumentPayload",
     "DocumentStatus",
     "ScanStatus",
     "is_allowed_content_type",

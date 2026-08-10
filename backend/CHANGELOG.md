@@ -10,6 +10,274 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Company registration intake (T1.6).** Founders can now answer legal-entity
+  questions and upload a country-specific certificate of incorporation; the
+  audit reads them as self-reported evidence (`DECISIONS.md` D7), never as a
+  verified badge.
+  - `GET /v1/registries` — static map of ISO alpha-2 → registrar / certificate
+    name / number label. Key on `NG`, not `"Nigeria"`. Countries not in the map
+    are still accepted as free text.
+  - New profile fields (all optional): `legal_name`, `registration_number`,
+    `registrar`, `incorporation_year`, `regulatory_licences`,
+    `monthly_marketing_spend_minor`, `largest_customer_revenue_share_percent`,
+    `pilot_or_lou_count`, `delivery_cost_trend`, `founder_experience`,
+    `monthly_revenue_3m_ago_minor`, `monthly_costs_3m_ago_minor`.
+  - New document kind: `registration_certificate` (migration `0015` widens
+    `documents.kind` to VARCHAR(32)).
+  - New computed figures: `revenue_change_3m_percent`,
+    `costs_change_3m_percent` — the audit can finally see a *direction*.
+  - New consistency finding: `incorporated_after_trading` (likely, not certain).
+
+### Security
+- **Admin endpoints now refuse an unenrolled admin with `403`.** Report reveal,
+  the admin-tier audit report, benchmark CRUD, interest approve/decline, and
+  readiness-task reopen previously checked role only and skipped the MFA gate
+  that admin user-management already enforced. They now use the same
+  `CurrentAdmin` dependency and a shared `assert_admin` check, so a token from
+  an admin who has not enrolled two-factor authentication buys nothing on those
+  paths either. Message matches the existing MFA refusal:
+  `"Admin accounts must enrol in two-factor authentication first."`
+
+### Changed
+- **BREAKING: `POST /v1/auth/verify-email` now takes `{ email, code }`, not
+  `{ token }`.** Email verification is a **six-digit code typed into the app**
+  rather than a link that opens it. A client still sending `token` gets a `422`.
+  - **Send the address with the code.** Six digits are only checked against the
+    account they were issued to, so the API cannot find the code from the digits
+    alone — keep the address from the registration screen.
+  - Spaces and hyphens are stripped, so a pasted `418 305` works. Anything that
+    is not six digits after stripping is rejected before it reaches an account.
+  - **The code expires in 15 minutes and allows 5 attempts**, then it is dead
+    and only a new email helps. The old link lasted 24 hours; do not carry that
+    expectation over into the UI copy.
+  - **Every failure is the same `422`** — wrong code, expired, spent, exhausted,
+    and *no account for that address* share one message. Do not branch on it,
+    and do not read it as evidence that an account exists.
+  - Success is still `204`, and `APP_LINK_BASE_URL` is untouched: it no longer
+    carries verification, but the password-reset link is unchanged and still
+    goes through it.
+- **Investor discovery is now gated on readiness (T3.6).** A startup appears in
+  `GET /v1/discover` only when it has opted in, **and** has a succeeded audit,
+  **and** has no required task outstanding in that audit's plan. Previously
+  opting in plus any succeeded audit was enough, so a startup with every
+  required task open was discoverable.
+  - **`publish` is unchanged and still always succeeds.** It is consent, not
+    eligibility. Do not treat a successful publish as "we are visible" — read
+    **`discoverable`** from `GET /v1/startups/{id}/tasks/summary`. Note it is
+    deliberately *not* called `investor_visible`: that name is already taken on
+    `ProfileResponse` and means consent alone, so two fields with one name would
+    give two different answers to the same question.
+  - Visibility can now be **lost** without the founder doing anything: a
+    re-audit that raises a new required gap hides them until it is closed. Do
+    not cache visibility.
+- **`GET /v1/startups/{id}/tasks/summary` gained `has_audit`, `gate_cleared`
+  and `investor_visible`**, and its counts are now **scoped to the tasks the
+  latest succeeded audit raised** rather than every task ever generated. Tasks
+  from a superseded report — including ones graded `failed` and no longer being
+  asked for — are excluded, so the progress bar can reach zero. Additive fields;
+  the existing counts may read lower than before for a startup that has been
+  re-audited.
+- **Passing evidence changes what a re-audit sees.** Passed submissions are now
+  part of the audit's inputs, so `POST /v1/startups/{id}/audits` mints a real
+  new run after a founder completes tasks instead of returning the pre-work
+  verdict. **Nothing enqueues this automatically** — prompt the founder to
+  request a re-audit once their required tasks pass.
+
+### Added
+- **`POST /v1/auth/verify-email/resend`** — issues a fresh verification code and
+  emails it, **invalidating the previous one**. Takes `{ email }` and always
+  returns `202` with the same body, whether the address has no account, is
+  already verified, or asked again too soon. A code requested within 60 seconds
+  of the last one is silently not sent, so put a countdown on the button rather
+  than offering an instant retry.
+- **Evidence upload and AI assessment — five new endpoints (T3.5).** This is
+  what makes a readiness task completable; before it, every task was
+  permanently `open`.
+  - `POST /v1/tasks/{id}/evidence` · `POST /v1/evidence/{id}/complete` ·
+    `GET /v1/tasks/{id}/evidence` · `GET /v1/evidence/{id}/download` ·
+    `POST /v1/admin/tasks/{id}/reopen` (admin).
+  - **Upload flow is identical to §5 documents** — reserve, `PUT` to a signed
+    URL, `complete`. Same allowlist, same 25 MiB cap, same rejection reasons.
+  - **Grading is asynchronous.** `complete` returns immediately and the task
+    moves to `submitted`; poll until `outcome` is non-null.
+  - **Three outcomes:** `pass`, `fail`, `needs_more`. `needs_more` is the
+    deliberate default whenever the grader is unsure — expect it to be common,
+    and frame it as "nearly there", not a rejection. `reasons` is present on
+    every outcome including a pass, and is written to be shown to the founder
+    directly.
+  - **A founder gets 3 graded attempts per task**, exposed as
+    `attempts_remaining` on every task response. At `0`, starting an upload
+    returns `409`. **Check the field before offering an upload button.** A
+    `needs_more` consumes an attempt; a rejected upload and an errored grading
+    do not. Only a SACI admin can reopen a locked task, and every reopen is
+    audit-logged.
+  - **Attach related files to one task** — the grader reads a task's
+    outstanding submissions as one set, so a screenshot plus its dated invoice
+    is one attempt, not two.
+  - **New enums:** `EvidenceStatus` (`pending`, `ready`, `rejected`) and
+    `AssessmentOutcome` (`pass`, `fail`, `needs_more`). They are different axes
+    and share no values: `status` is whether the file arrived, `outcome` is how
+    the work was graded.
+  - **New fields on the task response:** `assessment_attempts` and
+    `attempts_remaining`. Additive.
+- **Readiness tasks — three new endpoints (T3.1).** All additive; nothing
+  existing changed shape.
+  - `GET /v1/startups/{id}/tasks` — the list, paged and filterable by `status`
+    and `requirement`.
+  - `GET /v1/startups/{id}/tasks/summary` — counts only, for a home screen that
+    loads on every app launch.
+  - `GET /v1/startups/{id}/tasks/{task_id}` — one task.
+  - **Why:** an audit was producing 44 action items, storing them in
+    `AuditRun.report`, and stopping there. The report is what a founder reads
+    once; the tasks are what they work through, and until now there was nothing
+    to work through.
+  - **`requirement` is `required` or `recommended`, and it is computed, not
+    judged.** A dimension that scored below the readiness threshold — or could
+    not be scored at all — produces required tasks; a dimension at or above it
+    produces recommended ones. It therefore **changes between audits** as a
+    founder improves. Re-read it on every fetch; do not cache it.
+  - **There is no endpoint that completes a task, and there will not be.**
+    `DECISIONS.md` D10: readiness is earned by doing the work, uploading
+    evidence, and having the AI assess it — not by asserting completion and not
+    by paying. Do not build a checkbox that PATCHes a status; nothing accepts
+    one. The evidence flow that moves a task is T3.5.
+  - **`id` is stable across re-audits.** Tasks are reconciled against each new
+    report rather than regenerated, so local state keyed on the id survives. A
+    gap that is still raised keeps its task; one that is dropped goes
+    `obsolete` **only if untouched**; one that comes back reopens.
+  - **New enums:** `Requirement` (`required`, `recommended`), `TaskStatus`
+    (`open`, `submitted`, `passed`, `failed`, `needs_more`, `obsolete`), and
+    `Dimension` (the eleven rubric areas). Every `TaskStatus` value is
+    reachable now that T3.5 has landed in the same release.
+  - **The paged envelope is the list convention** — `{items, total, limit,
+    offset}`, matching `GET /v1/discover`. `benchmarks` and `documents` still
+    return bare arrays; `documents` will change and will get a version story
+    when it does, because the client already consumes the current shape.
+- **`is_priority` on every `action_plan` item** in the founder and admin report
+  responses (`GET /v1/startups/{id}/audits/{run_id}/report` and the admin
+  path). Additive and optional — a client that ignores it renders exactly what
+  it rendered before.
+  - **Why:** the first real audit produced **44 action items**. Every one was
+    specific and correct, and a plan that long is functionally no plan.
+  - **What is marked:** at most five, one from each of the worst five
+    dimensions. Not "the top five items" — a single weak dimension can raise
+    several unmet criteria, and five restatements of one problem is a worse
+    short list than a long one.
+  - **Nothing is truncated.** The array still carries every item, so a client
+    must offer a way to see the rest; the short list is a default view, not a
+    filter applied server-side.
+  - Reports stored before this change have no item marked. Treat an empty short
+    list as "show everything".
+
+### Changed
+- **Dimension scores are now weighted the way the rubric declares** in both
+  verdicts. `DimensionSpec.weight` was defined on all eleven dimensions and read
+  nowhere; synthesis took a plain mean. **No response field changed shape**, but
+  `fundability.score` and `saleability.score` will differ from what the same
+  inputs produced before, and the two verdicts now diverge roughly twice as far
+  — which is what the rubric always intended. A cached or stored score from an
+  earlier run is not comparable with a new one.
+
+### Infrastructure
+- **Document storage is live, 2026-08-04 (T1.5).** No API change — the upload
+  endpoints already existed and were tested against dummy credentials. What
+  changed is that R2 is now provisioned, so they work: a real file went
+  `PUT` → `head_object` → signed `GET` → `delete`, bytes matching.
+  - Buckets are `documents` and `evidence`, named **without the product in
+    them** so a rename costs nothing.
+  - **The mobile client's direct `PUT` to a signed URL is now worth testing on
+    a real device.** From a native build this is fine; from Expo Web it needs a
+    CORS policy on the bucket allowing `PUT` from the app origin, which is not
+    configured.
+- **The audit queue is live (T2.8).** Upstash Redis, real worker, real model
+  call — see the fixes below for the two bugs that surfaced.
+
+### Fixed
+- **The background worker could never start on Windows, 2026-08-03.** RQ's
+  default `Worker` forks a work horse per job and `os.fork` does not exist
+  there, so the worker claimed its first job and died with an `AttributeError`.
+  Not a production bug — Render runs Linux — but it is why no audit had ever
+  been run through the queue on a development machine, and therefore why the
+  transport went untested for so long. `SimpleWorker` is now selected where the
+  platform cannot fork; the forking worker, and its per-job isolation, is kept
+  everywhere else.
+- **A Redis connection pool was created per enqueue.** `Redis.from_url` builds a
+  new pool on every call and `get_queue()` runs once per dispatch, so a busy API
+  process leaked connections. Invisible on a self-hosted Redis; on a managed one
+  that caps concurrent connections it presents as an intermittently failing
+  queue. Now a single lazily-built client, keyed on the URL so a changed
+  `REDIS_URL` still takes effect, with `health_check_interval` and
+  `socket_keepalive` set because managed Redis closes idle connections while RQ
+  sits in a blocking read.
+
+### Added
+- **The audit report is readable, 2026-08-03 (T4.2).** **Additive; nothing
+  existing changed.** Until now `AuditRun.report` was populated and served by
+  nothing — an audit could run, store a full report, and no caller could ever
+  read the result.
+  - `GET /v1/startups/{startup_id}/audits/{run_id}/report` — the founder's own
+    report in full: both verdicts with their reasoning, the data-integrity
+    score, every finding, and the action plan.
+  - `GET /v1/admin/startups/{startup_id}/audits/{run_id}/report` — **SACI admins
+    only**, everything including the engineer-facing `detail` on each finding.
+    A separate route rather than the founder route widened by role, so a change
+    to one cannot silently widen the other.
+  - **`404` until the run has succeeded.** No report exists while a run is
+    `queued`, `running`, or `failed`, and an empty `200` would have clients
+    rendering a blank verdict as a real one.
+  - **Three rendering rules the client must follow**, documented in
+    `CLIENTS.md` §5b: `insufficient_data` must never render as "not fundable"
+    (it is an absence, not a failure); `provisional` must be visibly labelled
+    provisional and will be the common case; `score` is `null` for
+    `insufficient_data` and must not be coerced to `0`.
+  - `data_integrity_score` is a **string**, not a float — it is a `Decimal`
+    server-side and JSON floats would change the value.
+  - An investor has **no access to either endpoint**. Summary-tier data reaches
+    them through discovery, and a full report only through a SACI reveal.
+- **Four market and growth questions on the Startup Profile, 2026-08-03.**
+  **Additive and optional — no existing request or response shape changed, and
+  no migration was needed** (profile fields live in a JSONB document).
+  `market_size_note`, `competition_note`, `growth_constraint`, `use_of_funds`.
+  - **Why:** rubric v1 grades `market_opportunity` and `scalability` against
+    criteria — a derived market size, named competitors, the constraint capital
+    would relieve, a capital plan that maps to it — that **nothing on the form
+    asked for**. Both dimensions therefore came back unevidenced on essentially
+    every profile, and `_verdict_for` requires *every* in-scope dimension to be
+    evidenced before a verdict can read `ready` or `not_yet`. A founder could
+    answer the whole form correctly and still be capped at `provisional`.
+  - **Mobile impact:** four new optional text inputs. Until they ship, the cap
+    above stays in place. `CLIENTS.md` §4a carries the labels, placeholder
+    guidance, and why `growth_constraint` and `use_of_funds` must stay separate.
+  - `total_raised_minor` and `current_raise_target_minor` are unchanged but are
+    now documented as **context only** — how much a founder wants is not
+    evidence about growth until `use_of_funds` says what it buys. Ask both or
+    neither.
+  - 17 further rubric criteria still have no question behind them. The
+    prioritised list is in `FOUNDER-ONBOARDING.md`; none is built.
+- **The golden set is scored, 2026-08-03 (T2.9).** Not an API change — internal
+  test fixtures and documentation only. Recorded here because it turned up two
+  defects that will change API behaviour when they are fixed.
+  - **Every expectation carries `reviewed_by`.** Two companies are
+    `deterministic` (the verdict comes from the integrity floor or the coverage
+    ratio, so no judgement is in it); six are `assistant-draft`, scored by
+    Claude against the published rubric. The audit engine runs on the same model
+    family, so an eval report over those six measures agreement as much as
+    accuracy, and the loader groups by provenance so a report cannot blend the
+    two into one percentage.
+  - **`ready` and `not_yet` require every in-scope dimension to be evidenced.**
+    `_verdict_for` collapses a verdict to `provisional` if *any* dimension is
+    unevidenced or hedged. Five of the eight fixtures asserted a level their own
+    profile could never produce; four were enriched to reach it and the rest
+    corrected. A client rendering audit results should expect `provisional` to
+    be the common case today, not the exception.
+  - **Two rubric dimensions have no profile field behind them.**
+    `market_opportunity` and `scalability` are graded against criteria the
+    Startup Profile never collects, which is why `provisional` dominates. Fixing
+    it means new intake fields and so a change to the founder-facing form — see
+    `TASKS.md` open follow-ups before building that screen.
+  - **`DimensionSpec.weight` is not applied.** Documented as being applied by
+    synthesis; it is not. Fixing it will move every audit score, including ones
+    already shown to founders.
 - **Audits are reachable over HTTP, 2026-08-02 (T2.8).** Three endpoints, all
   founder-owned and ownership-checked. **Additive; nothing existing changed.**
   - `POST /v1/startups/{startup_id}/audits` — queues a run. Returns **`202`**
@@ -49,6 +317,65 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   because request bodies here carry bearer tokens and founder financials.
 
 ### Fixed
+- **Throwaway email inboxes were accepted at registration, 2026-08-03.** The
+  consumer-domain rule (D20) recognised gmail and its peers and nothing else, so
+  `founder@mailinator.com`, `@10minutemail.com`, `@guerrillamail.com` and every
+  other throwaway provider registered cleanly — and were handed a company name
+  read off the domain ("Mailinator", "Temp Mail").
+  - **This was account takeover, not a weak identity signal.** Most of those
+    services serve inboxes with no password: a mailinator address is readable by
+    anyone who knows it. An account on one publishes its own verification link,
+    and every future password-reset link, to whoever cares to look.
+  - Refused for **every** self-service role, unlike the consumer rule which is
+    founders-only. An investor reads summary-tier startup data, and a stranger
+    holding that mailbox reads it too. New stable
+    `error_code` reason: `disposable_email_domain`, distinct from
+    `consumer_email_domain` because the two need different help text — "use your
+    company address" is wrong advice for a throwaway domain. `CLIENTS.md` §4a
+    documents both.
+  - **No MX lookup was added**, deliberately. It would prove a domain *can*
+    receive mail; the verification email already proves it *did* — and a DNS
+    call on the registration path buys a new failure mode on an endpoint that
+    must not wobble, for a check the next step performs anyway.
+- **A `failed` audit run could never be retried, 2026-08-03.** `CLIENTS.md` §5a,
+  `AuditStatus.FAILED`, and the founder-facing failure message all promised that
+  resubmitting retries a failed run. None of it was true: the re-dispatch check
+  only covered a run that was `queued` with zero attempts, so a `failed` run was
+  found by fingerprint and handed back unchanged with `200` forever, and the only
+  escape was editing the profile to change the fingerprint. Resubmitting now
+  returns the run to `queued` under the same id and re-dispatches it.
+  - **`200` no longer implies nothing was queued** — read the returned `status`.
+    `CLIENTS.md` §5a and the endpoint description are updated; the `200` response
+    now declares the `AuditRun` schema it was always returning.
+  - **Retries are capped** (`AuditRun.attempts`, which only a worker increments).
+    Past the cap the run stays `failed` with the new stable
+    `error_code: audit_retries_exhausted`. An audit is the most expensive call
+    the platform makes, and an uncapped retry button bills a founder a full pass
+    per tap (D14, D16). New sibling code `audit_requeue_failed` covers a retry
+    that could not be dispatched — transient, and resubmitting is correct.
+- **A pre-scoring failure left an audit run with no terminal state, 2026-08-03.**
+  The worker's `try` began after the database work, so a raise from
+  `assemble_benchmark_context` (or the snapshot read, or the finance
+  calculations) escaped the handler entirely. Those run between `mark_running`
+  and its commit, so the session unwound and took the `running` mark and the
+  `attempts` increment with it: the row went back to `queued` with zero attempts,
+  the founder polled `queued` with no error, and resubmitting re-dispatched the
+  same failure unboundedly with `error_code` never written. The whole body is now
+  inside the `try`, and the failure recorder cannot itself raise.
+- **Tracebacks bypassed log redaction, 2026-08-03.** `RedactionFilter` scrubs a
+  record's message and context; the traceback is built from `exc_info` in the
+  formatter and never passed through it, so a psycopg error quoting the Neon DSN
+  with inline credentials, or an Anthropic error echoing `sk-ant-…`, was written
+  to stdout verbatim (`CLAUDE.md` §4).
+- **Sentry was configured but never started in the API, 2026-08-03.** `init_sentry`
+  was only ever called from the worker's `main`, so with `SENTRY_DSN` set in
+  production an unhandled 500 in any endpoint reported to nobody — while the
+  module docstring claimed both entry points called it.
+  - **Sentry was also collecting stack locals.** `send_default_pii=False` does
+    not cover them, and the SDK defaults `include_local_variables` on: the audit
+    worker's failure path has the founder's full financial profile bound in the
+    frame that raises. Now off, with a `before_send` hook applying the same
+    redaction to exception text.
 - **`CLIENTS.md` drift was only guarded in one direction.** The guide's paths
   were checked for existence, but a **new endpoint that was never documented
   passed silently** — the failure that actually happens. The reverse guard

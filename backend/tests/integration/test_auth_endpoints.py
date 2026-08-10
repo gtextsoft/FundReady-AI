@@ -17,6 +17,7 @@ from app.core.config import get_settings
 from app.core.db import get_session
 from app.core.security import CurrentUser, set_user_loader
 from app.modules.identity import service
+from app.modules.identity.repository import UserRepository
 from tests.conftest import requires_database
 
 pytestmark = [pytest.mark.integration, requires_database]
@@ -171,6 +172,123 @@ class TestRegisterEndpoint:
 
         assert response.status_code == 422
         assert rejected not in response.text
+
+
+class TestVerifyEmailEndpoint:
+    """Verification is a six-digit code, so the contract has to carry the address.
+
+    These go through the real request path because the enumeration properties
+    live in the *response*: a wrong code, an unknown address, and an exhausted
+    one must be indistinguishable to the caller.
+    """
+
+    async def issue_code(self, db_session: AsyncSession, email: str) -> str:
+        user = await UserRepository(db_session).get_by_email(email)
+        assert user is not None
+        return await service.issue_verification_code(db_session, user)
+
+    async def test_the_right_code_activates_the_account(
+        self, client: AsyncClient, db_session: AsyncSession
+    ) -> None:
+        email = unique_email()
+        await register(client, email)
+        code = await self.issue_code(db_session, email)
+
+        response = await client.post(
+            "/v1/auth/verify-email", json={"email": email, "code": code}
+        )
+
+        assert response.status_code == 204, response.text
+        tokens = await login(client, email)
+        me = await client.get(
+            "/v1/users/me",
+            headers={"Authorization": f"Bearer {tokens['access_token']}"},
+        )
+        assert me.json()["status"] == "active"
+        assert me.json()["email_verified"] is True
+
+    async def test_a_spaced_code_is_accepted(
+        self, client: AsyncClient, db_session: AsyncSession
+    ) -> None:
+        email = unique_email()
+        await register(client, email)
+        code = await self.issue_code(db_session, email)
+
+        response = await client.post(
+            "/v1/auth/verify-email",
+            json={"email": email, "code": f"{code[:3]} {code[3:]}"},
+        )
+
+        assert response.status_code == 204, response.text
+
+    @pytest.mark.parametrize("code", ["12345", "1234567", "abcdef", ""])
+    async def test_a_malformed_code_never_reaches_the_account(
+        self, client: AsyncClient, code: str
+    ) -> None:
+        email = unique_email()
+        await register(client, email)
+
+        response = await client.post(
+            "/v1/auth/verify-email", json={"email": email, "code": code}
+        )
+
+        assert response.status_code == 422
+
+    async def test_a_wrong_code_and_an_unknown_address_look_identical(
+        self, client: AsyncClient
+    ) -> None:
+        """Otherwise this endpoint answers "does this address have an account"."""
+        email = unique_email()
+        await register(client, email)
+
+        wrong = await client.post(
+            "/v1/auth/verify-email", json={"email": email, "code": "000000"}
+        )
+        unknown = await client.post(
+            "/v1/auth/verify-email",
+            json={"email": unique_email(), "code": "000000"},
+        )
+
+        assert wrong.status_code == unknown.status_code == 422
+        assert wrong.json() == unknown.json()
+
+    async def test_the_code_is_never_echoed_back(
+        self, client: AsyncClient, db_session: AsyncSession
+    ) -> None:
+        email = unique_email()
+        await register(client, email)
+        code = await self.issue_code(db_session, email)
+
+        response = await client.post(
+            "/v1/auth/verify-email", json={"email": email, "code": "000000"}
+        )
+
+        assert code not in response.text
+
+
+class TestResendVerificationEndpoint:
+    async def test_an_unknown_address_still_returns_202(
+        self, client: AsyncClient
+    ) -> None:
+        response = await client.post(
+            "/v1/auth/verify-email/resend", json={"email": unique_email()}
+        )
+
+        assert response.status_code == 202
+        assert response.json()["status"] == "pending_verification"
+
+    async def test_a_registered_address_gets_the_same_answer(
+        self, client: AsyncClient
+    ) -> None:
+        email = unique_email()
+        await register(client, email)
+
+        known = await client.post("/v1/auth/verify-email/resend", json={"email": email})
+        unknown = await client.post(
+            "/v1/auth/verify-email/resend", json={"email": unique_email()}
+        )
+
+        assert known.json() == unknown.json()
 
 
 class TestLoginEndpoint:

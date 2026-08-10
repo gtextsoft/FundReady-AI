@@ -19,6 +19,7 @@ follows applies the identical rule.
 
 import logging
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,8 +29,10 @@ from app.core.errors import ConflictError, InvalidRequestError, NotFoundError
 from app.core.ownership import owned_or_404
 from app.core.security import CurrentUser, Role
 from app.core.storage import (
+    ObjectTooLargeError,
     StoredObject,
     delete_object,
+    get_object,
     head_object,
     object_key,
     signed_download_url,
@@ -39,6 +42,7 @@ from app.modules.identity import service as identity
 from app.modules.intake.documents import (
     MAX_UPLOAD_BYTES,
     DocumentKind,
+    DocumentPayload,
     DocumentStatus,
     ScanStatus,
     is_allowed_content_type,
@@ -157,6 +161,59 @@ async def get_own_profile(session: AsyncSession, actor: CurrentUser) -> StartupP
     return profile
 
 
+async def set_discoverability(
+    session: AsyncSession,
+    actor: CurrentUser,
+    profile_id: uuid.UUID,
+    *,
+    visible: bool,
+) -> StartupProfile:
+    """Opt this startup in to, or out of, investor discovery (T4.3).
+
+    **Publishing is a separate decision from being audited**, which is why this
+    is an explicit action rather than something derived from having a report.
+    A founder who runs an audit has asked what their business looks like; they
+    have not agreed to show it to investors, and inferring the second from the
+    first would publish confidential data because somebody used the product.
+
+    **This flag is consent, not eligibility, and the two are enforced in
+    different places on purpose.** Setting it says "I am willing to be seen".
+    Whether there is anything *to* see is decided at read time: the discovery
+    query inner-joins to a succeeded audit, so a published profile with no
+    verdict simply does not appear. A founder may therefore publish before
+    auditing and will start appearing when the audit lands.
+
+    Checking the audit here instead would mean this module reaching into
+    `audit`, which already depends on `intake` -- a circular import, and a
+    boundary violation `ARCHITECTURE.md` section 3 forbids. It would also be
+    the weaker of the two guards: a check at write time says nothing about a
+    run that is later deleted or superseded, whereas the join cannot go stale.
+    The endpoint description tells the client to expect the delay.
+
+    **Unpublishing is unconditional.** Withdrawing consent must never be harder
+    than giving it.
+
+    When the readiness gate lands (T3.6) it constrains the publish branch only.
+    Nothing here changes shape.
+    """
+    profile = _authorise(await StartupProfileRepository(session).get(profile_id), actor)
+
+    profile.investor_visible = visible
+    profile.published_at = datetime.now(UTC) if visible else None
+    await session.flush()
+
+    logger.info(
+        "startup discoverability changed",
+        extra={
+            "context": {
+                "startup_id": str(profile.id),
+                "investor_visible": visible,
+            }
+        },
+    )
+    return profile
+
+
 async def update_profile(
     session: AsyncSession,
     actor: CurrentUser,
@@ -235,7 +292,7 @@ async def request_upload(
         owner_id=profile.owner_id,
         startup_id=profile.id,
         kind=kind,
-        filename=_safe_filename(filename),
+        filename=safe_filename(filename),
         storage_key=key,
     )
     return document, signed_upload_url(key, content_type=content_type)
@@ -322,6 +379,91 @@ async def list_documents(
     return await DocumentRepository(session).list_for_startup(profile.id)
 
 
+def _is_auditable(document: Document) -> bool:
+    """Whether the audit may read this document.
+
+    `READY` only -- an upload that never completed validation has no trustworthy
+    bytes behind it -- and never one the scanner flagged. `SKIPPED` **is**
+    allowed and that is not an oversight: no scanner is wired yet (T5.5), so
+    `scan_document` settles every upload at `SKIPPED`, and refusing it would
+    mean refusing every document that exists. When the scanner lands, this is
+    the one line that has to change.
+    """
+    return (
+        document.status is DocumentStatus.READY
+        and document.scan_status is not ScanStatus.INFECTED
+    )
+
+
+async def auditable_storage_keys(
+    session: AsyncSession, startup_id: uuid.UUID
+) -> list[str]:
+    """The storage keys the audit would read, for the idempotency fingerprint.
+
+    Keys rather than ids, and separate from `load_auditable_documents`, because
+    the fingerprint is computed in the request that creates the AuditRun -- long
+    before any bytes are fetched, and it must not fetch any. Reading a key list
+    is one indexed query; reading the documents is several megabytes over the
+    network, on the request thread.
+    """
+    documents = await DocumentRepository(session).list_for_startup(startup_id)
+    return [document.storage_key for document in documents if _is_auditable(document)]
+
+
+async def load_auditable_documents(
+    session: AsyncSession, startup_id: uuid.UUID
+) -> tuple[list[DocumentPayload], list[str]]:
+    """Fetch every readable document on a startup. Returns payloads and failures.
+
+    **No ownership check, deliberately**, for the same reason
+    `workers.tasks._snapshot_for` has none: there is no caller to authorise. The
+    AuditRun row already named this startup and was written by a service call
+    that did check. Inventing a `CurrentUser` here is how a background job ends
+    up running as an implicit superuser.
+
+    A document whose object has gone missing, or is too large to hold, is
+    **skipped and named** rather than failing the audit. The founder's other
+    documents are still evidence, and an audit that dies because one upload was
+    deleted is worse than one that says which upload it could not read -- the
+    second list is what `unreadable` reports back to them.
+    """
+    documents = await DocumentRepository(session).list_for_startup(startup_id)
+
+    payloads: list[DocumentPayload] = []
+    unreadable: list[str] = []
+    for document in documents:
+        if not _is_auditable(document):
+            continue
+        try:
+            content = get_object(document.storage_key)
+        except ObjectTooLargeError:
+            logger.warning(
+                "document too large for the audit to read",
+                extra={"context": {"document_id": str(document.id)}},
+            )
+            unreadable.append(str(document.id))
+            continue
+        if content is None:
+            logger.warning(
+                "document row has no object behind it",
+                extra={"context": {"document_id": str(document.id)}},
+            )
+            unreadable.append(str(document.id))
+            continue
+        payloads.append(
+            DocumentPayload(
+                document_id=str(document.id),
+                filename=document.filename,
+                # Never `None`: `complete_upload` writes what R2 reported. A row
+                # without one predates validation and has nothing to dispatch on.
+                content_type=document.content_type or "application/octet-stream",
+                content=content,
+            )
+        )
+
+    return payloads, unreadable
+
+
 async def request_download(
     session: AsyncSession, actor: CurrentUser, document_id: uuid.UUID
 ) -> str:
@@ -365,8 +507,13 @@ def _rejection_reason(stored: StoredObject) -> str | None:
     return None
 
 
-def _safe_filename(filename: str) -> str:
+def safe_filename(filename: str) -> str:
     """The founder's filename, reduced to something safe to store and echo.
+
+    **Public because evidence upload (T3.5) needs the identical treatment.** A
+    founder attaching a screenshot has the same filename risks as one attaching
+    a deck, and a second copy of this reduction is a second place for one of the
+    three rules below to be forgotten.
 
     It is never a path component -- the storage key is built from UUIDs -- but
     it *is* returned in responses and set as `Content-Disposition` on download,

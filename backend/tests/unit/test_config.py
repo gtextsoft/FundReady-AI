@@ -23,6 +23,11 @@ PRODUCTION_ENV = {
     "R2_BUCKET_EVIDENCE": "fundready-evidence",
     "REDIS_URL": "redis://:redispassword1@host:6379",
     "ANTHROPIC_API_KEY": "anthropic-key-value",
+    "RESEND_API_KEY": "resend-key-value",
+    "EMAIL_FROM_ADDRESS": "no-reply@fundready.test",
+    # Kept in the fixture though production no longer requires them: they are
+    # still real settings, and the tests below assert that *removing* them does
+    # not block a boot.
     "STRIPE_SECRET_KEY": "stripe-key-value",
     "STRIPE_WEBHOOK_SECRET": "webhook-secret-value",
 }
@@ -208,8 +213,8 @@ class TestProductionGuards:
             "R2_BUCKET_EVIDENCE",
             "REDIS_URL",
             "ANTHROPIC_API_KEY",
-            "STRIPE_SECRET_KEY",
-            "STRIPE_WEBHOOK_SECRET",
+            "RESEND_API_KEY",
+            "EMAIL_FROM_ADDRESS",
         ],
     )
     def test_missing_required_setting_fails_startup(
@@ -223,18 +228,54 @@ class TestProductionGuards:
 
         assert missing in str(exc_info.value)
 
+    @pytest.mark.parametrize("unread", ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"])
+    def test_a_setting_no_code_reads_yet_does_not_block_production(
+        self, monkeypatch: pytest.MonkeyPatch, unread: str
+    ) -> None:
+        """Requiring Stripe made `APP_ENV=production` impossible to satisfy.
+
+        Nothing reads these until T3.3, so the only ways past the check were to
+        stay on staging or to put a value that looks real into a secret manager
+        and is not. A check that cannot be satisfied honestly teaches an
+        operator to satisfy it dishonestly. They come back in the change that
+        makes `commerce` read them.
+        """
+        env = _production()
+        env.pop(unread)
+
+        settings = _load(monkeypatch, env)
+
+        assert settings.is_production
+
+    def test_email_is_required_because_without_it_nobody_can_log_in(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The silent, total failure this check exists to catch.
+
+        Registration succeeds, the account sits at `pending_verification`, the
+        verification email never sends, and the founder can never authenticate
+        -- with no error anywhere and a deploy that looks healthy.
+        """
+        env = _production()
+        env.pop("RESEND_API_KEY")
+
+        with pytest.raises(SettingsError) as exc_info:
+            _load(monkeypatch, env)
+
+        assert "RESEND_API_KEY" in str(exc_info.value)
+
     def test_failure_message_names_settings_but_never_values(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """A startup failure is printed to logs -- it must not carry secrets."""
         env = _production()
-        env.pop("STRIPE_SECRET_KEY")
+        env.pop("RESEND_API_KEY")
 
         with pytest.raises(SettingsError) as exc_info:
             _load(monkeypatch, env)
 
         message = str(exc_info.value)
-        assert "STRIPE_SECRET_KEY" in message
+        assert "RESEND_API_KEY" in message
         for value in PRODUCTION_ENV.values():
             if value != "production":
                 assert value not in message

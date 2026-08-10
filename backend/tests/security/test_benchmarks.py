@@ -68,7 +68,11 @@ async def actor_with_role(session: AsyncSession, role: Role) -> CurrentUser:
     user.email_verified_at = datetime.now(UTC)
     await session.flush()
     return CurrentUser(
-        id=user.id, role=role, status=AccountStatus.ACTIVE, email_verified=True
+        id=user.id,
+        role=role,
+        status=AccountStatus.ACTIVE,
+        email_verified=True,
+        mfa_enabled=(role is Role.ADMIN),
     )
 
 

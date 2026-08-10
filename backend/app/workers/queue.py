@@ -19,19 +19,31 @@ lands at the point of enqueue with a message that names the cause.
 """
 
 import logging
+import os
 import uuid
 from typing import Final
 
 from redis import Redis
-from rq import Queue, Worker
+from rq import Queue, SimpleWorker, Worker
+from rq.worker import BaseWorker
 
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["AUDIT_JOB_TIMEOUT", "RUN_AUDIT_JOB", "enqueue_audit", "get_queue", "main"]
+__all__ = [
+    "ASSESS_EVIDENCE_JOB",
+    "ASSESSMENT_JOB_TIMEOUT",
+    "AUDIT_JOB_TIMEOUT",
+    "RUN_AUDIT_JOB",
+    "enqueue_assessment",
+    "enqueue_audit",
+    "get_queue",
+    "main",
+]
 
 RUN_AUDIT_JOB: Final = "app.workers.tasks.run_audit"
+ASSESS_EVIDENCE_JOB: Final = "app.workers.tasks.assess_evidence"
 """Dotted path RQ resolves in the worker. See the module docstring."""
 
 AUDIT_JOB_TIMEOUT: Final = 900
@@ -48,20 +60,73 @@ class QueueUnavailableError(RuntimeError):
     """`REDIS_URL` is not configured, so no job can be dispatched."""
 
 
-def get_queue() -> Queue:
-    """The work queue, resolved from settings on each call.
+_connection: Redis | None = None
+"""The one client, built on first use rather than at import.
 
-    Not cached: `get_settings` already is, and holding a module-level connection
-    would be built at import time -- before `configure_logging`, and in every
-    process that merely imports this module for the constants above.
+**Cached deliberately, and the earlier version was wrong to rebuild it.**
+`Redis.from_url` constructs a *new connection pool* every call, and `get_queue`
+is reached once per enqueue -- so a busy web process created a pool per request
+and leaked connections until garbage collection caught up. Against a managed
+Redis that caps concurrent connections (Upstash does) that surfaces as
+intermittent enqueue failures under load, which is the worst possible shape for
+a bug: it looks like the queue is flaky rather than like the client is wrong.
+
+The original reasoning -- "do not hold a connection built at import time" -- was
+right and is preserved. This is built lazily on first call, so importing the
+module for `RUN_AUDIT_JOB` still costs nothing and `configure_logging` has
+already run by the time a socket is opened.
+"""
+
+
+_connection_url: str | None = None
+"""Which URL `_connection` was built for.
+
+Keyed rather than a bare singleton so a changed `REDIS_URL` rebuilds the client
+instead of being silently ignored. Mostly this matters to tests, which point the
+queue at different URLs within one process -- but it is also what stops a
+settings reload in production from leaving the old endpoint in place, which
+would be invisible until someone wondered why jobs went to the wrong Redis.
+"""
+
+
+def _client(url: str) -> Redis:
+    global _connection, _connection_url
+    if _connection is None or _connection_url != url:
+        _connection_url = url
+        _connection = Redis.from_url(
+            url,
+            # Managed Redis closes idle connections, and RQ's worker sits in a
+            # blocking read for minutes at a time. Without a health check the
+            # worker discovers the drop as a `ConnectionError` mid-job; with it,
+            # redis-py revalidates and reconnects transparently. 30s is well
+            # inside the idle timeouts these services use.
+            health_check_interval=30,
+            socket_keepalive=True,
+            # Fail fast rather than hanging a request thread on a queue that is
+            # unreachable. The founder gets an error they can retry, which is
+            # better than a request that never returns.
+            socket_connect_timeout=10,
+            retry_on_timeout=True,
+        )
+    return _connection
+
+
+def get_queue() -> Queue:
+    """The work queue, over a lazily-built shared connection.
+
+    `rediss://` (TLS) works unchanged -- `Redis.from_url` reads the scheme, so
+    an Upstash URL needs no special handling here. **Use the Redis-protocol
+    connection string, not the REST endpoint**: RQ speaks the wire protocol and
+    the REST URL will not connect.
     """
     settings = get_settings()
     if settings.redis_url is None or not settings.redis_url.get_secret_value().strip():
         raise QueueUnavailableError(
             "REDIS_URL is not set, so background jobs cannot be dispatched."
         )
-    connection = Redis.from_url(settings.redis_url.get_secret_value())
-    return Queue(settings.queue_name, connection=connection)
+    return Queue(
+        settings.queue_name, connection=_client(settings.redis_url.get_secret_value())
+    )
 
 
 def enqueue_audit(run_id: uuid.UUID) -> None:
@@ -85,6 +150,77 @@ def enqueue_audit(run_id: uuid.UUID) -> None:
     )
 
 
+ASSESSMENT_JOB_TIMEOUT: Final = 300
+"""Seconds one evidence grading may take before RQ reclaims it.
+
+A third of the audit's, because grading is one call over one task's submissions
+rather than a multi-stage pipeline over a whole profile. Long enough that a slow
+provider is not mistaken for a dead worker; short enough that a genuinely stuck
+job does not hold a founder on `submitted` for a quarter of an hour.
+"""
+
+
+def enqueue_assessment(task_id: uuid.UUID) -> None:
+    """Dispatch one task's outstanding evidence for grading.
+
+    **Keyed by task, not by evidence**, because grading is per task: a founder
+    proving one action may attach a screenshot and the invoice that dates it,
+    and the grader reads them together. Enqueuing per file would grade each in
+    isolation, fail both for being incomplete alone, and bill twice for it.
+
+    That also makes the `job_id` do useful work here. A founder uploading three
+    files in quick succession completes three uploads, and RQ refuses the second
+    and third dispatches while the first is still queued -- so one grading covers
+    the set. It is a convenience rather than a guarantee: the id is released the
+    moment the job runs, and `list_gradable` returning nothing is what actually
+    makes a redelivery harmless.
+
+    **The separator is a dash, not a colon.** RQ validates job ids against
+    letters, numbers, underscores and dashes and raises `ValueError` on anything
+    else -- so `assess:{task_id}` was a `500` on the *completion* endpoint, after
+    the founder's file had already reached the bucket. It survived every test in
+    the suite because they all patch this function out; only a real dispatch
+    against a real Redis reaches the validator.
+    """
+    get_queue().enqueue(
+        ASSESS_EVIDENCE_JOB,
+        str(task_id),
+        job_id=f"assess-{task_id}",
+        job_timeout=ASSESSMENT_JOB_TIMEOUT,
+    )
+
+
+def _worker_class() -> type[BaseWorker]:
+    """`Worker` where the platform can fork, `SimpleWorker` where it cannot.
+
+    **RQ's default worker forks a work horse per job, and `os.fork` does not
+    exist on Windows.** The worker starts, claims the first job, and dies with
+    `AttributeError: module 'os' has no attribute 'fork'` -- which is why no
+    audit had ever been run through the queue on a development machine here,
+    and why the transport stayed the untested inch for so long.
+
+    Forking is the right default in production and is kept there: each job runs
+    in its own process, so a crash, a leak, or a job that wedges takes the work
+    horse with it and leaves the worker listening. `SimpleWorker` runs the job
+    in-process and has neither property -- it is a development affordance, not
+    a deployment choice.
+
+    Render runs Linux, so production is unaffected by this branch. If that ever
+    stops being true, the fix is a container, not this function.
+    """
+    # A capability check rather than `sys.platform == "win32"`: it says what
+    # actually matters, and it does not make the other branch dead code to a
+    # type checker that has already decided which platform this is.
+    if not hasattr(os, "fork"):
+        logger.warning(
+            "using SimpleWorker: this platform cannot fork, so jobs run "
+            "in-process without the isolation a forking worker gives",
+            extra={"context": {"platform": os.name}},
+        )
+        return SimpleWorker
+    return Worker
+
+
 def main() -> None:
     """Run a worker until it is stopped. The container's start command."""
     from app.core.logging import configure_logging
@@ -104,7 +240,7 @@ def main() -> None:
             }
         },
     )
-    Worker([queue], connection=queue.connection).work(with_scheduler=False)
+    _worker_class()([queue], connection=queue.connection).work(with_scheduler=False)
 
 
 if __name__ == "__main__":  # pragma: no cover - process entry point

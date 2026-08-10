@@ -100,6 +100,7 @@ class Unavailable(StrEnum):
     NO_ACQUISITION_COST = "no_acquisition_cost"
     NO_CONTRIBUTION = "no_contribution"
     NO_TRAILING_REVENUE = "no_trailing_revenue"
+    NO_PRIOR_PERIOD = "no_prior_period"
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,6 +148,8 @@ class FinancialInputs:
     cash_on_hand_minor: int | None = None
     cost_of_revenue_minor: int | None = None
     last_12m_revenue_minor: int | None = None
+    monthly_revenue_3m_ago_minor: int | None = None
+    monthly_costs_3m_ago_minor: int | None = None
 
     customer_acquisition_cost_minor: int | None = None
     average_revenue_per_customer_minor: int | None = None
@@ -172,6 +175,8 @@ class FinancialSummary:
     cac_payback_months: Metric
     annual_run_rate_minor: Metric
     run_rate_vs_trailing_percent: Metric
+    revenue_change_3m_percent: Metric
+    costs_change_3m_percent: Metric
 
     is_profitable: bool | None
     """`True` when the latest month's revenue covered its costs, `None` when
@@ -218,6 +223,8 @@ def compute(inputs: FinancialInputs) -> FinancialSummary:
         cac_payback_months=_cac_payback_months(inputs, gross_margin),
         annual_run_rate_minor=_annual_run_rate_minor(inputs),
         run_rate_vs_trailing_percent=_run_rate_vs_trailing_percent(inputs),
+        revenue_change_3m_percent=_revenue_change_3m_percent(inputs),
+        costs_change_3m_percent=_costs_change_3m_percent(inputs),
         is_profitable=_is_profitable(inputs),
     )
 
@@ -355,8 +362,7 @@ def _run_rate_vs_trailing_percent(inputs: FinancialInputs) -> Metric:
     latest month annualises above the last year's actual, which is suggestive of
     growth without measuring it.
 
-    A real growth rate needs monthly history, which is a field-set change
-    (`intake/fields.py`), not a calculation.
+    A real growth rate over a named period is `revenue_change_3m_percent`.
     """
     revenue = inputs.monthly_revenue_minor
     trailing = inputs.last_12m_revenue_minor
@@ -366,6 +372,48 @@ def _run_rate_vs_trailing_percent(inputs: FinancialInputs) -> Metric:
         return Metric.unknown(Unavailable.NO_TRAILING_REVENUE)
     change = (Decimal(revenue * 12) - Decimal(trailing)) / Decimal(trailing) * 100
     return Metric.of(_round(change, _PERCENT_PLACES))
+
+
+def _period_change_percent(
+    current: int | None, prior: int | None
+) -> Metric:
+    """`(current - prior) / prior` as a percentage, or an explicit absence.
+
+    Shared by the revenue and costs three-month trends so the two cannot
+    drift. Zero prior is `NO_PRIOR_PERIOD` rather than a wildly large ratio:
+    a business that had no revenue three months ago and has some now did not
+    grow by infinity, it started.
+    """
+    if current is None or prior is None:
+        return Metric.unknown(Unavailable.MISSING_INPUT)
+    if prior <= 0:
+        return Metric.unknown(Unavailable.NO_PRIOR_PERIOD)
+    change = (Decimal(current) - Decimal(prior)) / Decimal(prior) * 100
+    return Metric.of(_round(change, _PERCENT_PLACES))
+
+
+def _revenue_change_3m_percent(inputs: FinancialInputs) -> Metric:
+    """Latest month's revenue against revenue three months ago, as a percentage.
+
+    Positive means growing. This is the figure that lets the rubric tell a
+    business growing 20% a month from one shrinking at the same rate — which
+    `run_rate_vs_trailing_percent` cannot, because it only has one frozen month
+    and a trailing total.
+    """
+    return _period_change_percent(
+        inputs.monthly_revenue_minor, inputs.monthly_revenue_3m_ago_minor
+    )
+
+
+def _costs_change_3m_percent(inputs: FinancialInputs) -> Metric:
+    """Latest month's costs against costs three months ago, as a percentage.
+
+    Positive means costs are rising. The direction the rubric wants depends on
+    whether revenue rose faster; the figure itself is just the trend.
+    """
+    return _period_change_percent(
+        inputs.monthly_costs_minor, inputs.monthly_costs_3m_ago_minor
+    )
 
 
 def _is_profitable(inputs: FinancialInputs) -> bool | None:

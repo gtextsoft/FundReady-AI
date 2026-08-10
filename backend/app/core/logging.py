@@ -129,7 +129,14 @@ class JsonFormatter(logging.Formatter):
         if record.exc_info:
             # Server-side only. The traceback must never reach a response body
             # (see `core.errors.unhandled_exception_handler`).
-            payload["exception"] = self.formatException(record.exc_info)
+            #
+            # **Redacted here, because `RedactionFilter` cannot reach it.** That
+            # filter scrubs `msg` and `context`; a traceback is built in this
+            # method out of `exc_info` and never passes through it. The two
+            # secrets most likely to be in one are exactly the two this project
+            # holds: a psycopg error carries the Neon DSN with inline
+            # credentials, and an Anthropic error echoes `sk-ant-...`.
+            payload["exception"] = redact(self.formatException(record.exc_info))
 
         return json.dumps(payload, default=str)
 

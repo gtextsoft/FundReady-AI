@@ -28,6 +28,7 @@ a model must not produce them. A value here is a reading, not a derivation.
 import base64
 import csv
 import io
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -38,7 +39,7 @@ from pydantic import Field, field_validator
 
 from app.ai.caching import cached_system
 from app.ai.client import AiCallRecord, AiClient, AiResult, AiUsage, ModelTier
-from app.ai.guards import UNTRUSTED_RULE, fence
+from app.ai.guards import UNTRUSTED_RULE, UntrustedContent, fence
 from app.ai.prompts import PromptVersion, register
 from app.ai.schemas import Citation, StructuredOutput
 from app.modules.intake.fields import (
@@ -53,7 +54,9 @@ __all__ = [
     "ExtractedField",
     "ExtractionResult",
     "SourceDocument",
+    "document_blocks",
     "extract_fields",
+    "fenced_documents",
     "merge_into_profile",
     "missing_required_fields",
 ]
@@ -277,7 +280,7 @@ def _bare_type(content_type: str) -> str:
     return content_type.split(";")[0].strip().lower()
 
 
-def _document_blocks(
+def document_blocks(
     documents: Sequence[SourceDocument],
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Turn documents into message content blocks.
@@ -285,6 +288,12 @@ def _document_blocks(
     Returns the blocks and the ids of documents nothing could be read from --
     reported rather than dropped, so a founder learns which upload was wasted
     instead of wondering why a field stayed empty.
+
+    **Public because evidence assessment (T3.5) needs the identical decision.**
+    A founder's evidence is the same problem as a founder's deck: a PDF or a
+    photograph must go to the API as a native block rather than through a text
+    extractor, and an Office file must not. Re-deriving that per module is how
+    the two drift and a format silently stops being readable in one of them.
     """
     blocks: list[dict[str, Any]] = []
     unreadable: list[str] = []
@@ -341,6 +350,57 @@ def _document_blocks(
     return blocks, unreadable
 
 
+def fenced_documents(
+    documents: Sequence[SourceDocument],
+) -> tuple[list[UntrustedContent], list[str]]:
+    """The same documents as fenced text, for the stages that only take text.
+
+    Returns the fenced spans and the ids of documents that have no text form.
+
+    **This is a narrower view than extraction gets, and deliberately so.**
+    `document_blocks` hands a PDF or a photograph to the API as a native
+    `document`/`image` block, which is how a scanned deck gets read at all
+    (T2.4). `consistency.find_contradictions` and `rubric.v1.score` both inline
+    `UntrustedContent.text` into a message, so neither can receive a native
+    block without changing its signature -- and a PDF has no text form here,
+    because the project deliberately added no PDF text extractor (a deck is a
+    design artefact; an extractor returns the speaker notes and misses the chart
+    carrying the number).
+
+    A PDF's content therefore reaches scoring the way it is *meant* to: through
+    the fields extraction read out of it, merged into the profile and rendered
+    by `pipeline.render_profile_facts` with `[source: document]` and a citation.
+    What it does **not** reach is the semantic contradiction pass, which
+    compares raw sources against each other. So a deck that contradicts a
+    spreadsheet is caught only where the disagreement shows up in an extracted
+    field. That gap is real, it is recorded in `TASKS.md`, and closing it means
+    teaching those two callers to carry native blocks -- not converting a PDF to
+    text here, which would be the lossy version of the same thing.
+    """
+    fenced: list[UntrustedContent] = []
+    text_free: list[str] = []
+
+    for document in documents:
+        bare = _bare_type(document.content_type)
+        parser = _PARSERS.get(bare)
+        if parser is None:
+            text_free.append(document.document_id)
+            continue
+        try:
+            text = parser(document.content)
+        except Exception:  # noqa: BLE001 -- a corrupt upload is data, not a bug
+            text_free.append(document.document_id)
+            continue
+        text = text.strip()[:_MAX_TEXT_CHARACTERS]
+        if not text:
+            text_free.append(document.document_id)
+            continue
+        label = f"{document.filename} (document_id: {document.document_id})"
+        fenced.append(fence(text, label=label))
+
+    return fenced, text_free
+
+
 # ---------------------------------------------------------------------------
 # Extraction
 # ---------------------------------------------------------------------------
@@ -365,7 +425,7 @@ async def extract_fields(
     sit in the cached prefix; this startup's facts and its documents come after
     the breakpoint, documents last.
     """
-    blocks, unreadable = _document_blocks(documents)
+    blocks, unreadable = document_blocks(documents)
 
     if not blocks:
         # Nothing readable. Returning empty beats spending an audit-tier call to
@@ -489,6 +549,17 @@ def _coerce(spec: FieldSpec, raw: str) -> Any:
             return True
         if lowered in {"false", "no", "n"}:
             return False
+        return None
+
+    if spec.kind is FieldKind.YEAR:
+        # Certificates state dates ("12 March 2019", "2019-03-12"), not bare
+        # years. Pull the first four-digit year in the 1800-2100 window that
+        # `value_error` also accepts; anything else is unreadable rather than
+        # a coerced invent.
+        for match in re.finditer(r"(?<!\d)(\d{4})(?!\d)", text):
+            year = int(match.group(1))
+            if 1800 <= year <= 2100:
+                return year
         return None
 
     cleaned = text.replace(",", "").replace("%", "").strip()

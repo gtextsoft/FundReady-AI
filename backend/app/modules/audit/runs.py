@@ -9,10 +9,45 @@ enums for the same reason.
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from typing import Any
+from typing import Any, Final
 
-__all__ = ["AuditStatus", "input_fingerprint"]
+__all__ = [
+    "LEASE_SECONDS",
+    "AuditStatus",
+    "input_fingerprint",
+    "lease_cutoff",
+]
+
+LEASE_SECONDS: Final = 1800
+"""How long a worker's claim on a run is honoured before another may take it.
+
+**Twice `workers.queue.AUDIT_JOB_TIMEOUT` (900s), and the margin is the point.**
+RQ kills the job at its own timeout and releases the `job_id`, but nothing
+writes to the row -- so a run whose worker was killed, or whose container was
+redeployed mid-call, stays `RUNNING` with `completed_at` NULL forever. Every
+resubmission then returns it with `200` and queues nothing, and `CLIENTS.md`
+section 5a tells the client `running` means keep polling, so the mobile app
+polls for ever.
+
+A lease shorter than the job timeout would be worse than none: it would let a
+second worker claim a run whose first worker is still mid-call, and bill the
+platform's most expensive request twice for one verdict. The cost of being
+generous here is a founder waiting up to half an hour for a stranded run to
+become retryable; the cost of being tight is a double charge.
+"""
+
+
+def lease_cutoff(now: datetime | None = None) -> datetime:
+    """The `started_at` before which a `RUNNING` claim is considered abandoned.
+
+    A function of the clock rather than a stored expiry column: an expiry
+    written at claim time would need a migration and would still be wrong after
+    any change to `LEASE_SECONDS`, because the rows already written would carry
+    the old one.
+    """
+    return (now or datetime.now(UTC)) - timedelta(seconds=LEASE_SECONDS)
 
 
 class AuditStatus(StrEnum):

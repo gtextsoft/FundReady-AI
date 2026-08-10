@@ -27,10 +27,30 @@ import sys
 import uvicorn
 
 
+def _default_host() -> str:
+    """Loopback locally, all interfaces on a platform that routes to us.
+
+    Render requires a web service to bind `0.0.0.0` ("Every Render web service
+    must bind to a port on host 0.0.0.0") and kills the deploy after a five
+    minute port scan if it does not. Defaulting to `0.0.0.0` everywhere would
+    put a development server on every interface of the machine it runs on,
+    which is a worse default for the case that runs a hundred times a day.
+
+    `RENDER` is set to "true" on every Render service, which is exactly the
+    "am I in a container that routes traffic to me" signal needed here. An
+    explicit `HOST` still wins, so nothing that sets it today changes.
+    """
+    if host := os.environ.get("HOST"):
+        return host
+    return "0.0.0.0" if os.environ.get("RENDER") else "127.0.0.1"  # noqa: S104
+
+
 def main() -> None:
     config = uvicorn.Config(
         "app.main:app",
-        host=os.environ.get("HOST", "127.0.0.1"),
+        host=_default_host(),
+        # Render's default is 10000 and it is supplied in the environment; the
+        # 8000 fallback is for a local run, where nothing sets PORT.
         port=int(os.environ.get("PORT", "8000")),
         log_config=None,  # the app installs its own JSON logging
     )

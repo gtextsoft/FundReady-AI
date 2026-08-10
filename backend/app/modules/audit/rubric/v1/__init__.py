@@ -111,7 +111,14 @@ class DimensionSpec:
 
     scope: Scope
     weight: int
-    """Relative contribution within its scope. Synthesis (T2.7) applies these."""
+    """Relative contribution within its scope.
+
+    Applied by `synthesis._weighted_score`, normalised over the dimensions
+    actually evidenced rather than over the scope's full weight. The numbers are
+    relative within a scope and are not required to sum to anything: fundability
+    totals 115 and saleability 150, because the two share seven core dimensions
+    and add different ones on top.
+    """
 
 
 CORE: Final[tuple[DimensionSpec, ...]] = (

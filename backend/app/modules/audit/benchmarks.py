@@ -62,6 +62,8 @@ class BenchmarkMetric(StrEnum):
     LTV_CAC_RATIO = "ltv_cac_ratio"
     CAC_PAYBACK_MONTHS = "cac_payback_months"
     RUN_RATE_VS_TRAILING_PERCENT = "run_rate_vs_trailing_percent"
+    REVENUE_CHANGE_3M_PERCENT = "revenue_change_3m_percent"
+    COSTS_CHANGE_3M_PERCENT = "costs_change_3m_percent"
 
 
 # Which direction is good. A property of the metric, not of any stored row, so
@@ -71,9 +73,12 @@ _HIGHER_IS_BETTER: Final[dict[BenchmarkMetric, bool]] = {
     BenchmarkMetric.GROSS_MARGIN_PERCENT: True,
     BenchmarkMetric.RUNWAY_MONTHS: True,
     BenchmarkMetric.LTV_CAC_RATIO: True,
-    # The only one where less is better: months to earn back acquisition cost.
+    # The only ones where less is better: months to earn back acquisition cost,
+    # and rising operating costs over three months.
     BenchmarkMetric.CAC_PAYBACK_MONTHS: False,
     BenchmarkMetric.RUN_RATE_VS_TRAILING_PERCENT: True,
+    BenchmarkMetric.REVENUE_CHANGE_3M_PERCENT: True,
+    BenchmarkMetric.COSTS_CHANGE_3M_PERCENT: False,
 }
 
 

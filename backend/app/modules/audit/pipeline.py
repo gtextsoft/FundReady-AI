@@ -62,6 +62,7 @@ from app.modules.audit.consistency import (
     Finding,
     FindingCode,
     Severity,
+    check_entity,
     check_scale,
     check_team,
     data_integrity_score,
@@ -198,6 +199,12 @@ def financial_inputs(snapshot: ProfileSnapshot) -> FinancialInputs:
         cash_on_hand_minor=_int(snapshot.fields, "cash_on_hand_minor"),
         cost_of_revenue_minor=_int(snapshot.fields, "cost_of_revenue_minor"),
         last_12m_revenue_minor=_int(snapshot.fields, "last_12m_revenue_minor"),
+        monthly_revenue_3m_ago_minor=_int(
+            snapshot.fields, "monthly_revenue_3m_ago_minor"
+        ),
+        monthly_costs_3m_ago_minor=_int(
+            snapshot.fields, "monthly_costs_3m_ago_minor"
+        ),
         customer_acquisition_cost_minor=_int(
             snapshot.fields, "customer_acquisition_cost_minor"
         ),
@@ -230,6 +237,8 @@ _FIGURE_RENDERING: Final[tuple[tuple[str, str], ...]] = (
     ("cac_payback_months", "months"),
     ("annual_run_rate_minor", "money"),
     ("run_rate_vs_trailing_percent", "percent"),
+    ("revenue_change_3m_percent", "percent"),
+    ("costs_change_3m_percent", "percent"),
 )
 
 
@@ -529,6 +538,10 @@ async def run_pipeline(
             team_size=_int(snapshot.fields, "team_size"),
             founder_count=_int(snapshot.fields, "founder_count"),
             founders_full_time=_int(snapshot.fields, "founders_full_time"),
+        ),
+        *check_entity(
+            founded_year=_int(snapshot.fields, "founded_year"),
+            incorporation_year=_int(snapshot.fields, "incorporation_year"),
         ),
     ]
 

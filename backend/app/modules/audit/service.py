@@ -18,19 +18,18 @@ import logging
 import uuid
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any
+from typing import Any, Final
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import (
     ConflictError,
-    ForbiddenError,
     InvalidRequestError,
     NotFoundError,
 )
 from app.core.ownership import owned_or_404
-from app.core.security import CurrentUser, Role
+from app.core.security import CurrentUser, assert_admin
 from app.modules.audit.benchmarks import (
     ANY_SECTOR,
     GLOBAL_REGION,
@@ -41,10 +40,11 @@ from app.modules.audit.benchmarks import (
 from app.modules.audit.models import AuditRun, Benchmark
 from app.modules.audit.repository import AuditRunRepository, BenchmarkRepository
 from app.modules.audit.rubric import v1
-from app.modules.audit.runs import AuditStatus, input_fingerprint
+from app.modules.audit.runs import AuditStatus, input_fingerprint, lease_cutoff
 from app.modules.identity import service as identity
 from app.modules.identity.models import AuditAction
 from app.modules.intake import service as intake
+from app.modules.readiness import service as readiness
 from app.workers.queue import enqueue_audit
 
 logger = logging.getLogger(__name__)
@@ -72,9 +72,8 @@ _KEY_FIELDS: frozenset[str] = frozenset({"sector", "stage", "metric", "region"})
 
 
 def _require_admin(actor: CurrentUser) -> None:
-    """Only SACI writes benchmarks (`AUTH.md` section 5)."""
-    if actor.role is not Role.ADMIN:
-        raise ForbiddenError
+    """Only SACI writes benchmarks (`AUTH.md` section 5), and only with MFA."""
+    assert_admin(actor)
 
 
 def _normalise_sector(sector: str) -> str:
@@ -342,6 +341,27 @@ async def get_benchmark(
 # (`AUTH.md` section 6).
 _RUN_DENIED = "No such audit run."
 
+# How many times a worker may claim one run before resubmitting stops re-queuing
+# it. Counted in `AuditRun.attempts`, which only a worker increments, so this
+# caps *billed* passes rather than button presses: a submission that never
+# reaches a worker costs nothing and does not consume one.
+MAX_AUDIT_ATTEMPTS: Final = 3
+
+_RETRIES_EXHAUSTED_CODE: Final = "audit_retries_exhausted"
+_REQUEUE_FAILED_CODE: Final = "audit_requeue_failed"
+
+# Founder-facing, like every `error_message`: read back over the API, so it says
+# what to do next and nothing an operator would want (`CLAUDE.md` section 4).
+_EXHAUSTED_MESSAGE: Final = (
+    "This audit has failed several times, so it will not be retried "
+    "automatically. Please contact support, or change your profile and submit "
+    "again to start a new audit."
+)
+_REQUEUE_FAILED_MESSAGE: Final = (
+    "The audit could not be re-queued. Nothing is wrong with your submission -- "
+    "please try again shortly, and contact support if it keeps happening."
+)
+
 
 async def request_audit(
     session: AsyncSession, actor: CurrentUser, startup_id: uuid.UUID
@@ -386,11 +406,25 @@ async def request_audit(
 
     fingerprint = input_fingerprint(
         profile_fields=profile.fields or {},
-        # Empty until T2.4a wires storage: the pipeline does not read documents
-        # yet, so hashing their keys now would create a second run whose verdict
-        # is identical to the first. It becomes non-empty in the same change
-        # that makes an upload capable of changing the answer.
-        document_keys=(),
+        # Non-empty since T2.4a: the pipeline reads documents now, so an upload
+        # changes the answer and must therefore change the hash. Without this a
+        # founder who uploads the financials the first run said were missing
+        # gets handed the pre-upload verdict back -- a regression that looks
+        # exactly like the idempotency cache working correctly.
+        #
+        # **Passed evidence is folded in for the identical reason (T3.6).** It
+        # is what makes a re-audit mean anything: a founder who worked through
+        # their action plan and had the proof graded has changed the evidence
+        # the audit reasons over, so the hash has to move or `find_by_fingerprint`
+        # hands them back the verdict from before they did the work. The keys
+        # are sorted so the order two queries return rows in cannot mint a
+        # second run for identical inputs.
+        document_keys=sorted(
+            [
+                *await intake.auditable_storage_keys(session, profile.id),
+                *await readiness.passed_evidence_keys(session, profile.id),
+            ]
+        ),
         rubric_version=v1.RUBRIC_VERSION,
     )
 
@@ -401,7 +435,7 @@ async def request_audit(
         rubric_version=v1.RUBRIC_VERSION,
     )
     if existing is not None:
-        _redispatch_if_stranded(existing)
+        await _requeue_if_retryable(session, existing)
         return existing, False
 
     try:
@@ -437,7 +471,7 @@ async def request_audit(
         )
         if raced is None:  # pragma: no cover - unreachable under READ COMMITTED
             raise
-        _redispatch_if_stranded(raced)
+        await _requeue_if_retryable(session, raced)
         return raced, False
 
     # **Committed before the job is dispatched, deliberately.** The request's
@@ -456,18 +490,133 @@ async def request_audit(
     return run, True
 
 
-def _redispatch_if_stranded(run: AuditRun) -> None:
-    """Re-queue a run that was committed but never picked up.
+def _is_stranded(run: AuditRun) -> bool:
+    """Whether this run is waiting on a worker that is never coming.
 
-    The window is small and real: the row commits, then `enqueue_audit` raises
-    -- Redis down, or `REDIS_URL` unset -- and the run sits in `queued` forever
-    while every resubmission finds it and returns it unchanged. Since `attempts`
-    is only incremented by a worker claiming the run, `queued` with zero
-    attempts means no worker has ever seen it.
+    Two shapes, one cause -- a job that no longer exists behind a row that says
+    it is in flight:
 
-    Safe to call on a healthy run too: RQ refuses a second job for a `job_id`
-    already in flight, and a worker that has started has `attempts >= 1`.
+    * `RUNNING` with a claim older than the lease. RQ killed the worker at its
+      own timeout, or the container was redeployed, and neither writes to the
+      row.
+    * `QUEUED` with `attempts > 0` and a `started_at` older than the lease. The
+      `failed -> queued` reset committed and the dispatch was then lost.
+
+    `QUEUED` with `attempts == 0` is **not** stranded and is handled separately:
+    no worker has ever claimed it, so there is no lease to have expired and
+    `started_at` is NULL.
     """
+    if run.started_at is None:
+        return False
+    if run.status not in (AuditStatus.RUNNING, AuditStatus.QUEUED):
+        return False
+    return run.started_at < lease_cutoff()
+
+
+async def _requeue_if_retryable(session: AsyncSession, run: AuditRun) -> None:
+    """Re-dispatch a run that no worker will otherwise pick up.
+
+    Two states qualify, for different reasons.
+
+    **`queued` with zero attempts** -- the row committed and then
+    `enqueue_audit` raised (Redis down, or `REDIS_URL` unset), so the run sits
+    in `queued` forever while every resubmission finds it and returns it
+    unchanged. `attempts` is only ever incremented by a worker claiming the run,
+    so zero means no worker has seen it. A failure to enqueue *here* needs no
+    repair: the row is left exactly as it was, so the next submission tries
+    again.
+
+    **`failed`** -- the founder resubmitting is the retry path, and three
+    separate places already promise it works: `AuditStatus.FAILED`, the
+    founder-facing failure message, and `CLIENTS.md` section 5a. The run keeps
+    its id and returns to `queued`.
+
+    **Capped at `MAX_AUDIT_ATTEMPTS`.** An audit is the most expensive call the
+    platform makes (D16), and an uncapped retry is a founder holding down submit
+    against a provider outage, billed a full `claude-opus-5` pass each time --
+    the double-spend D14 exists to prevent. At the cap the run stays `failed`
+    with a code that says so, rather than accepting a submission that silently
+    does nothing.
+
+    **`running` or `queued` past its lease** -- the two stranded states, now
+    closed. A `running` run whose worker was killed or redeployed mid-call keeps
+    `completed_at` NULL for ever: RQ releases the `job_id` at its own timeout
+    and writes nothing to the row, so every resubmission returned it with `200`,
+    queued nothing, and `CLIENTS.md` section 5a told the client to keep polling.
+    A `queued` run with `attempts > 0` is the same shape from the other
+    direction -- the reset committed and the dispatch was lost.
+
+    The lease is what makes this safe, and it is deliberately **twice** the RQ
+    job timeout (`runs.LEASE_SECONDS`). This function still cannot tell a worker
+    that died from one that is mid-call; what it can tell is that no honest
+    worker is still holding a claim taken half an hour ago, because RQ would
+    have killed it at fifteen minutes. Re-dispatching sooner than that would
+    bill the platform's most expensive call twice for one verdict.
+
+    Re-dispatch does not re-claim: `repository.claim` is the only thing that
+    moves a run into `running`, and it applies the same lease. So a founder
+    resubmitting against a genuinely live worker changes nothing.
+
+    Not idempotent-by-transport: RQ does **not** refuse a second job for a
+    `job_id` already in flight -- `enqueue` overwrites the hash and re-pushes the
+    id -- so the state checks above are the only thing preventing a duplicate
+    dispatch. Do not relax them on the assumption that RQ will catch it.
+
+    **Residual window, not closed here.** The reset commits before the dispatch,
+    so an `enqueue_audit` that *raises* is caught below and the run is put back
+    to `failed`. A process that dies between the commit and the enqueue, or a
+    Redis that accepts the job and loses it, is not -- that leaves the row
+    `queued` with `attempts > 0`, which is exactly the stranded state the lease
+    branch below now repairs.
+    """
+    if _is_stranded(run):
+        # No state change here, deliberately: the row is already in a state a
+        # worker can claim, and `repository.claim` applies the same lease. All
+        # that is missing is a job, so all this does is put one back. Writing
+        # `queued` first would reset nothing useful and would lose the
+        # `running` evidence if the dispatch failed again.
+        logger.info(
+            "re-dispatching a stranded audit run",
+            extra={
+                "context": {
+                    "run_id": str(run.id),
+                    "status": run.status.value,
+                    "attempts": run.attempts,
+                }
+            },
+        )
+        enqueue_audit(run.id)
+        return
+
+    if run.status is AuditStatus.FAILED:
+        repository = AuditRunRepository(session)
+        if run.attempts >= MAX_AUDIT_ATTEMPTS:
+            if run.error_code != _RETRIES_EXHAUSTED_CODE:
+                await repository.mark_failed(
+                    run, code=_RETRIES_EXHAUSTED_CODE, message=_EXHAUSTED_MESSAGE
+                )
+                await session.commit()
+            return
+
+        await repository.mark_queued(run)
+        await session.commit()
+        try:
+            enqueue_audit(run.id)
+        except Exception:
+            # Committed as `queued` with `attempts > 0` and no job behind it --
+            # a state neither branch above can repair, so it would be stranded
+            # permanently by the very function that exists to prevent that. Put
+            # it back to `failed`, which is somewhere the founder can retry from.
+            logger.exception(
+                "could not re-queue a failed audit run",
+                extra={"context": {"run_id": str(run.id)}},
+            )
+            await repository.mark_failed(
+                run, code=_REQUEUE_FAILED_CODE, message=_REQUEUE_FAILED_MESSAGE
+            )
+            await session.commit()
+        return
+
     if run.status is AuditStatus.QUEUED and run.attempts == 0:
         enqueue_audit(run.id)
 
@@ -499,3 +648,36 @@ async def list_audit_runs(
     """This startup's runs, newest first. Ownership is checked on the profile."""
     profile = await intake.get_profile(session, actor, startup_id)
     return await AuditRunRepository(session).list_for_startup(profile.id)
+
+
+async def get_audit_report(
+    session: AsyncSession,
+    actor: CurrentUser,
+    startup_id: uuid.UUID,
+    run_id: uuid.UUID,
+) -> dict[str, Any]:
+    """The stored report document for one run, for its owner or an admin.
+
+    Returns the **whole** stored document. Tier filtering is the router's
+    serializer choice (`audit.reports`), not this function's job -- keeping the
+    two apart is what lets one service method serve the founder endpoint and the
+    SACI reveal without either of them re-deriving ownership.
+
+    Ownership is delegated to `get_audit_run`, so the `startup_id` in the path
+    is checked against the row and a run belonging to another founder is `404`
+    rather than `403` -- see that function for why.
+
+    A run that has not succeeded has no report. That is `404` and not an empty
+    body: the report genuinely does not exist yet, and a `200` carrying nulls
+    would have clients rendering an empty verdict as a real one. The message
+    points at the status endpoint rather than explaining the lifecycle here.
+    """
+    run = await get_audit_run(session, actor, startup_id, run_id)
+
+    if run.status is not AuditStatus.SUCCEEDED or run.report is None:
+        raise NotFoundError(
+            "This audit has no report yet. Poll the audit run until its status "
+            "is `succeeded`."
+        )
+
+    return run.report

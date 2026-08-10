@@ -22,6 +22,7 @@ from app.modules.audit.consistency import (
     Contradiction,
     FindingCode,
     Severity,
+    check_entity,
     check_scale,
     check_team,
     data_integrity_score,
@@ -78,6 +79,28 @@ def test_more_founders_than_staff_is_certain_not_a_guess() -> None:
 
     assert findings[0].code is FindingCode.MORE_FOUNDERS_THAN_TEAM
     assert findings[0].severity is Severity.CERTAIN
+
+
+def test_incorporating_after_trading_is_flagged_as_likely() -> None:
+    """Likely, not certain: sole traders who later incorporate are common."""
+    findings = check_entity(founded_year=2019, incorporation_year=2023)
+
+    assert findings[0].code is FindingCode.INCORPORATED_AFTER_TRADING
+    assert findings[0].severity is Severity.LIKELY
+
+
+def test_incorporating_in_the_same_year_as_trading_is_fine() -> None:
+    assert check_entity(founded_year=2020, incorporation_year=2020) == []
+
+
+def test_trading_after_incorporation_is_fine() -> None:
+    """The normal case: form the company, then start trading."""
+    assert check_entity(founded_year=2021, incorporation_year=2020) == []
+
+
+def test_a_half_known_entity_is_not_flagged() -> None:
+    assert check_entity(founded_year=2019) == []
+    assert check_entity(incorporation_year=2023) == []
 
 
 # ---------------------------------------------------------------------------

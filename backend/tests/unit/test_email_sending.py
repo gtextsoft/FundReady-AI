@@ -20,7 +20,9 @@ from app.modules.notifications.templates import (
 )
 
 RECIPIENT = "founder@example.test"
-LINK = "https://api.fundready.test/v1/auth/verify-email?token=abc123"
+LINK = "https://app.fundready.test/reset-password?token=abc123"
+CODE = "418305"
+TTL_MINUTES = 15
 
 
 @pytest.fixture
@@ -50,7 +52,7 @@ class TestSending:
         requests: list[httpx.Request] = []
         async with responder(capture=requests) as client:
             sent = await service.send_email(
-                RECIPIENT, verification_email(LINK), client=client
+                RECIPIENT, verification_email(CODE, TTL_MINUTES), client=client
             )
 
         assert sent is True
@@ -60,13 +62,15 @@ class TestSending:
     async def test_sends_the_expected_payload(self, configured: None) -> None:
         requests: list[httpx.Request] = []
         async with responder(capture=requests) as client:
-            await service.send_email(RECIPIENT, verification_email(LINK), client=client)
+            await service.send_email(
+                RECIPIENT, verification_email(CODE, TTL_MINUTES), client=client
+            )
 
         body = json.loads(requests[0].content)
         assert body["to"] == [RECIPIENT]
         assert body["from"] == "no-reply@fundready.test"
-        assert LINK in body["html"]
-        assert LINK in body["text"], "plain text is not optional"
+        assert CODE in body["html"]
+        assert CODE in body["text"], "plain text is not optional"
         assert requests[0].headers["authorization"] == "Bearer re_test_key_value"
 
 
@@ -78,7 +82,7 @@ class TestFailuresAreContained:
         """A caller must never fail because email is down."""
         async with responder(status=status) as client:
             sent = await service.send_email(
-                RECIPIENT, verification_email(LINK), client=client
+                RECIPIENT, verification_email(CODE, TTL_MINUTES), client=client
             )
 
         assert sent is False
@@ -89,7 +93,7 @@ class TestFailuresAreContained:
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(explode)) as client:
             sent = await service.send_email(
-                RECIPIENT, verification_email(LINK), client=client
+                RECIPIENT, verification_email(CODE, TTL_MINUTES), client=client
             )
 
         assert sent is False
@@ -102,7 +106,7 @@ class TestFailuresAreContained:
 
         async with responder(capture=requests) as client:
             sent = await service.send_email(
-                RECIPIENT, verification_email(LINK), client=client
+                RECIPIENT, verification_email(CODE, TTL_MINUTES), client=client
             )
 
         assert sent is False
@@ -118,7 +122,7 @@ class TestNoRecipientInLogs:
         with caplog.at_level(logging.DEBUG):
             async with responder(status=422) as client:
                 await service.send_email(
-                    RECIPIENT, verification_email(LINK), client=client
+                    RECIPIENT, verification_email(CODE, TTL_MINUTES), client=client
                 )
 
         assert RECIPIENT not in caplog.text
@@ -135,7 +139,7 @@ class TestNoRecipientInLogs:
                 transport=httpx.MockTransport(explode)
             ) as client:
                 await service.send_email(
-                    RECIPIENT, verification_email(LINK), client=client
+                    RECIPIENT, verification_email(CODE, TTL_MINUTES), client=client
                 )
 
         assert RECIPIENT not in caplog.text
@@ -146,7 +150,7 @@ class TestNoRecipientInLogs:
         with caplog.at_level(logging.DEBUG):
             async with responder() as client:
                 await service.send_email(
-                    RECIPIENT, verification_email(LINK), client=client
+                    RECIPIENT, verification_email(CODE, TTL_MINUTES), client=client
                 )
 
         assert RECIPIENT not in caplog.text
@@ -154,31 +158,54 @@ class TestNoRecipientInLogs:
     async def test_absent_when_unconfigured(
         self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Neither the address nor the link reaches the log.
+        """Neither the address nor the code reaches the log.
 
         An earlier version logged the body in development so local flows could
         be completed. `RedactionFilter` scrubbed the `token=` out of it -- which
-        was correct, because a verification token is a credential. The link is
+        was correct, because a verification secret is a credential. The body is
         no longer logged at all; `scripts/issue_dev_token.py` covers local use.
         """
         monkeypatch.setenv("APP_ENV", "development")
         get_settings.cache_clear()
 
         with caplog.at_level(logging.DEBUG):
-            await service.send_email(RECIPIENT, verification_email(LINK))
+            await service.send_email(RECIPIENT, verification_email(CODE, TTL_MINUTES))
 
         assert RECIPIENT not in caplog.text
-        assert LINK not in caplog.text
+        assert CODE not in caplog.text
         assert "not sending" in caplog.text
 
 
 class TestTemplates:
-    def test_verification_carries_the_link_in_both_parts(self) -> None:
-        content = verification_email(LINK)
+    def test_verification_carries_the_code_in_both_parts(self) -> None:
+        content = verification_email(CODE, TTL_MINUTES)
 
-        assert LINK in content.html
-        assert LINK in content.text
+        assert CODE in content.html
+        assert CODE in content.text
         assert content.subject
+
+    def test_verification_states_how_long_the_code_lasts(self) -> None:
+        content = verification_email(CODE, TTL_MINUTES)
+
+        assert f"{TTL_MINUTES} minutes" in content.text
+        assert f"{TTL_MINUTES} minutes" in content.html
+
+    def test_the_code_is_not_in_the_subject(self) -> None:
+        """`notifications.service` logs the subject of every message it sends.
+
+        A code in the subject line would put a live credential into our own
+        logs, and into every relay's, however good the preview would look on a
+        lock screen.
+        """
+        assert CODE not in verification_email(CODE, TTL_MINUTES).subject
+
+    def test_verification_offers_nothing_to_click(self) -> None:
+        """A code email with no link is a shape phishing cannot imitate."""
+        content = verification_email(CODE, TTL_MINUTES)
+
+        assert "http" not in content.html
+        assert "href" not in content.html
+        assert "http" not in content.text
 
     def test_reset_carries_the_link_in_both_parts(self) -> None:
         content = password_reset_email(LINK)
@@ -195,11 +222,11 @@ class TestTemplates:
 
     @pytest.mark.parametrize(
         "content",
-        [verification_email(LINK), password_reset_email(LINK)],
+        [verification_email(CODE, TTL_MINUTES), password_reset_email(LINK)],
         ids=["verification", "reset"],
     )
     def test_templates_never_embed_a_recipient(self, content: object) -> None:
-        """Templates take a link and nothing else, so they cannot leak identity."""
+        """Templates take one secret and nothing else, so they cannot leak identity."""
         rendered = f"{content}"
 
         assert RECIPIENT not in rendered

@@ -3,9 +3,13 @@
 `AUTH.md` section 9 makes MFA mandatory for admins -- the role that can reveal
 any full report -- so the properties tested here are: enrolment cannot be
 completed without proving the authenticator holds the secret, the secret is
-encrypted rather than stored plainly, a code cannot be replayed, a recovery code
-works exactly once, and **no admin capability is reachable without a second
-factor**.
+encrypted rather than stored plainly, a code cannot be replayed, and a recovery
+code works exactly once.
+
+That every admin *capability* also requires a second factor -- report reveal,
+admin-tier report, benchmarks, task reopen, and user management -- is covered
+in `tests/security/test_admin_mfa_required.py`. Enrolment alone does not prove
+the capabilities honour it.
 """
 
 import uuid

@@ -32,8 +32,10 @@ import httpx
 from app.core.config import Settings, get_settings
 from app.modules.notifications.templates import (
     EmailContent,
+    audit_report_email,
     password_reset_email,
     verification_email,
+    welcome_email,
 )
 
 logger = logging.getLogger(__name__)
@@ -126,10 +128,12 @@ async def send_email(
 
 
 async def send_verification_email(
-    to: str, verification_url: str, *, settings: Settings | None = None
+    to: str, code: str, *, ttl_minutes: int, settings: Settings | None = None
 ) -> bool:
-    """Ask a new user to confirm their address (T1.2b calls this)."""
-    return await send_email(to, verification_email(verification_url), settings=settings)
+    """Email a new user the code that confirms their address (T1.2b calls this)."""
+    return await send_email(
+        to, verification_email(code, ttl_minutes), settings=settings
+    )
 
 
 async def send_password_reset_email(
@@ -137,3 +141,20 @@ async def send_password_reset_email(
 ) -> bool:
     """Send a single-use password reset link (T1.2b calls this)."""
     return await send_email(to, password_reset_email(reset_url), settings=settings)
+
+
+async def send_welcome_email(to: str, *, settings: Settings | None = None) -> bool:
+    """Greet an account whose address has just been confirmed."""
+    return await send_email(to, welcome_email(), settings=settings)
+
+
+async def send_audit_report_email(
+    to: str, report: Any, app_url: str, *, settings: Settings | None = None
+) -> bool:
+    """Email a finished audit to the founder it belongs to.
+
+    `report` is the assembled founder-tier report. It is untyped here because
+    `notifications` sits below `audit` in the layer order and must not import
+    from it -- see the note on `audit_report_email`.
+    """
+    return await send_email(to, audit_report_email(report, app_url), settings=settings)
