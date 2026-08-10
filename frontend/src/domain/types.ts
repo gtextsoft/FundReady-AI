@@ -64,6 +64,16 @@ export type RevModel = 'MRR' | 'ARR';
 export type YesNo = '' | 'Yes' | 'No';
 
 /**
+ * Direction of the cost to serve one more customer.
+ *
+ * Three choices rather than a free-text box, even though the server stores it
+ * as text: the direction is the whole signal, and a fixed set is something an
+ * audit can compare across submissions.
+ */
+export const COST_TRENDS = ['Falling', 'Flat', 'Rising'] as const;
+export type CostTrend = '' | (typeof COST_TRENDS)[number];
+
+/**
  * The founder onboarding form. Every field is a string because these are raw
  * text inputs — scoring parses them. An empty string means "not answered yet".
  *
@@ -88,6 +98,30 @@ export type FounderProfile = {
   businessModel: string;
   website: string;
 
+  // -- Registration --------------------------------------------------------
+  // Collected on the company-verification screen rather than in the
+  // assessment, because that screen already asks most of it. They live on the
+  // profile because that is where the server stores them.
+  /** Registered legal name, exactly as on the certificate. */
+  legalName: string;
+  registrationNumber: string;
+  /** The body it is registered with — CAC, Companies House, and so on. */
+  registrar: string;
+  /** Year of incorporation, which can differ from when trading started. */
+  incorporationYear: string;
+  /** Licences the model requires, and whether they are held. */
+  regulatoryLicences: string;
+
+  // -- Market and plan -----------------------------------------------------
+  /** The reachable market, and how the founder arrived at it. */
+  marketSize: string;
+  /** Who else solves this for their customers today. */
+  competition: string;
+  /** The one thing holding growth back right now. */
+  growthConstraint: string;
+  /** What new capital buys, mapped to the constraint above. */
+  useOfFunds: string;
+
   // -- Money ---------------------------------------------------------------
   /** Whether `revenue` is stated monthly or annually. A unit, not a figure. */
   revModel: RevModel;
@@ -100,6 +134,8 @@ export type FounderProfile = {
   cash: string;
   totalRaised: string;
   raiseTarget: string;
+  /** Monthly sales and marketing spend, salaries included. */
+  marketingSpend: string;
 
   // -- Customers -----------------------------------------------------------
   customers: string;
@@ -108,6 +144,18 @@ export type FounderProfile = {
   /** Monthly churn, as a percentage. The other half. */
   churn: string;
   cac: string;
+  /** Monthly active users, for businesses that count them separately. */
+  activeUsers: string;
+  /** Signed pilots or letters of intent that are not paying yet. */
+  pilots: string;
+  /** Share of revenue from the biggest customer — concentration risk. */
+  customerConcentration: string;
+  /**
+   * Whether the cost to serve one more customer is falling, flat or rising.
+   * Free text on the server, but asked as three choices: the direction is what
+   * matters, and a fixed set produces data an audit can actually compare.
+   */
+  deliveryCostTrend: CostTrend;
 
   // -- Team and ownership --------------------------------------------------
   founders: string;
@@ -120,12 +168,32 @@ export type FounderProfile = {
   contractsTransferable: YesNo;
   /** What only the founder can currently do. */
   keyPersonDependency: string;
+  /** Prior experience of the founders, specific enough to check. */
+  founderExperience: string;
+  /** Who owns what, in summary. */
+  capTable: string;
 
   /** Filename of the uploaded deck, or '' when nothing is on file. */
   deck: string;
 };
 
 export const EMPTY_PROFILE: FounderProfile = {
+  legalName: '',
+  registrationNumber: '',
+  registrar: '',
+  incorporationYear: '',
+  regulatoryLicences: '',
+  marketSize: '',
+  competition: '',
+  growthConstraint: '',
+  useOfFunds: '',
+  marketingSpend: '',
+  activeUsers: '',
+  pilots: '',
+  customerConcentration: '',
+  deliveryCostTrend: '',
+  founderExperience: '',
+  capTable: '',
   company: '',
   sector: '',
   location: '',

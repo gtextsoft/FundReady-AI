@@ -18,7 +18,7 @@ const POLL_TIMEOUT_MS = 5 * 60_000;
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export type Step = 1 | 2 | 3 | 4;
+export type Step = 1 | 2 | 3 | 4 | 5;
 
 type FounderState = {
   profile: FounderProfile;
@@ -101,7 +101,12 @@ const REQUIRED: Record<Step, (keyof FounderProfile)[]> = {
   1: ['company', 'sector', 'location', 'year', 'description', 'businessModel'],
   2: ['stage', 'revenue', 'costs', 'cash'],
   3: [],
-  4: ['founders', 'teamSize'],
+  // Market and plan is entirely optional to the server, so it does not gate.
+  // These are the questions that most improve a verdict and the ones founders
+  // are least able to answer on the spot; blocking on them would cost more
+  // completed assessments than it would gain in evidence.
+  4: [],
+  5: ['founders', 'teamSize'],
 };
 
 export function isStepValid(profile: FounderProfile, step: Step): boolean {
@@ -116,7 +121,7 @@ export function isStepValid(profile: FounderProfile, step: Step): boolean {
  * it still has a profile worth scoring provisionally.
  */
 export function isAssessmentComplete(profile: FounderProfile): boolean {
-  return ([1, 2, 3, 4] as Step[]).every((step) => isStepValid(profile, step));
+  return ([1, 2, 3, 4, 5] as Step[]).every((step) => isStepValid(profile, step));
 }
 
 /** The slice of the store the audit helpers below write to. */

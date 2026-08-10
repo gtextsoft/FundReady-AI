@@ -168,6 +168,25 @@ describe('toWireProfile', () => {
       ipOwned: 'Yes',
       contractsTransferable: 'Yes',
       keyPersonDependency: 'Enterprise pricing decisions.',
+      // Registration, collected on the verification screen.
+      legalName: 'Northwind Labs Limited',
+      registrationNumber: 'RC 1234567',
+      registrar: 'CAC',
+      incorporationYear: '2023',
+      regulatoryLicences: 'None needed for reconciliation software.',
+      // Market and plan.
+      marketSize: 'About 400 processors already on our rails.',
+      competition: 'Spreadsheets, and one incumbent add-on.',
+      growthConstraint: 'Manual integration caps us at six onboardings a month.',
+      useOfFunds: 'Two integration engineers.',
+      // Operations, traction and ownership.
+      founderExperience: 'Led payments integrations at Interswitch for four years.',
+      deliveryCostTrend: 'Falling',
+      capTable: 'Founders 70%, angels 12%, ESOP 18%',
+      marketingSpend: '40000',
+      activeUsers: '2400',
+      pilots: '3',
+      customerConcentration: '35',
     });
 
     expect(unmapped).toEqual([]);
@@ -293,5 +312,99 @@ describe('fromWireProfile', () => {
       fields: {},
     };
     expect(fromWireProfile(empty)).toEqual(EMPTY_PROFILE);
+  });
+});
+
+
+describe('the fields added in August 2026', () => {
+  const answered = {
+    ...form({}),
+    location: 'Lagos, Nigeria',
+    legalName: 'Northwind Labs Limited',
+    registrationNumber: 'RC 1234567',
+    registrar: 'CAC',
+    incorporationYear: '2023',
+    regulatoryLicences: 'None needed.',
+    marketSize: 'About 400 processors.',
+    competition: 'Spreadsheets.',
+    growthConstraint: 'Manual integration.',
+    useOfFunds: 'Two engineers.',
+    founderExperience: 'Four years at Interswitch.',
+    deliveryCostTrend: 'Falling' as const,
+    capTable: 'Founders 70%.',
+    marketingSpend: '40000',
+    activeUsers: '2400',
+    pilots: '3',
+    customerConcentration: '35',
+  };
+
+  it('sends every one of them under the name the server uses', () => {
+    const { wire, unmapped } = toWireProfile(answered);
+    const f = wire.fields ?? {};
+
+    expect(f.legal_name?.value).toBe('Northwind Labs Limited');
+    expect(f.registration_number?.value).toBe('RC 1234567');
+    expect(f.registrar?.value).toBe('CAC');
+    expect(f.incorporation_year?.value).toBe(2023);
+    expect(f.regulatory_licences?.value).toBe('None needed.');
+    expect(f.market_size_note?.value).toBe('About 400 processors.');
+    expect(f.competition_note?.value).toBe('Spreadsheets.');
+    expect(f.growth_constraint?.value).toBe('Manual integration.');
+    expect(f.use_of_funds?.value).toBe('Two engineers.');
+    expect(f.founder_experience?.value).toBe('Four years at Interswitch.');
+    expect(f.delivery_cost_trend?.value).toBe('Falling');
+    expect(f.cap_table_summary?.value).toBe('Founders 70%.');
+    expect(f.monthly_active_users?.value).toBe(2400);
+    expect(f.pilot_or_lou_count?.value).toBe(3);
+    expect(f.largest_customer_revenue_share_percent?.value).toBe(35);
+    // Money, so minor units — 40,000 naira is 4,000,000 kobo.
+    expect(f.monthly_marketing_spend_minor?.value).toBe(4_000_000);
+
+    expect(unmapped).toEqual([]);
+  });
+
+  it('round-trips them back into the form', () => {
+    const { wire } = toWireProfile(answered);
+    const back = fromWireProfile({
+      id: 'p1',
+      owner_id: 'u1',
+      name: null,
+      sector: null,
+      stage: null,
+      country: 'NG',
+      currency: 'NGN',
+      fields: wire.fields ?? {},
+      missing_fields: [],
+      created_at: '2026-08-10T00:00:00Z',
+      updated_at: '2026-08-10T00:00:00Z',
+    });
+
+    expect(back.legalName).toBe(answered.legalName);
+    expect(back.incorporationYear).toBe('2023');
+    expect(back.marketSize).toBe(answered.marketSize);
+    expect(back.useOfFunds).toBe(answered.useOfFunds);
+    expect(back.deliveryCostTrend).toBe('Falling');
+    expect(back.marketingSpend).toBe('40000');
+    expect(back.pilots).toBe('3');
+    expect(back.customerConcentration).toBe('35');
+  });
+
+  it('refuses a cost trend that is not one of the three offered', () => {
+    // Anything else came from outside this app and would not fit the control,
+    // so it is dropped rather than shown as a selected option that is not there.
+    const back = fromWireProfile({
+      id: 'p1',
+      owner_id: 'u1',
+      name: null,
+      sector: null,
+      stage: null,
+      country: 'NG',
+      currency: 'NGN',
+      fields: { delivery_cost_trend: { value: 'going up a bit', source: 'founder' } },
+      missing_fields: [],
+      created_at: '2026-08-10T00:00:00Z',
+      updated_at: '2026-08-10T00:00:00Z',
+    });
+    expect(back.deliveryCostTrend).toBe('');
   });
 });

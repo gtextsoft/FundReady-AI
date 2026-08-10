@@ -1,4 +1,10 @@
-import type { FounderProfile, RevModel, YesNo } from '@/domain/types';
+import {
+  COST_TRENDS,
+  type CostTrend,
+  type FounderProfile,
+  type RevModel,
+  type YesNo,
+} from '@/domain/types';
 
 /**
  * Translating the onboarding form into the server's Startup Profile.
@@ -249,6 +255,28 @@ export function toWireProfile(profile: FounderProfile): ProfileMapping {
     fields.key_person_dependency = founderField(profile.keyPersonDependency.trim());
   }
 
+  // The narrative answers. All optional to the server, and all worth more to
+  // the audit than another number: they are what it cites when it explains a
+  // verdict rather than just scoring one.
+  for (const [key, source] of [
+    ['market_size_note', profile.marketSize],
+    ['competition_note', profile.competition],
+    ['growth_constraint', profile.growthConstraint],
+    ['use_of_funds', profile.useOfFunds],
+    ['founder_experience', profile.founderExperience],
+    ['cap_table_summary', profile.capTable],
+    ['delivery_cost_trend', profile.deliveryCostTrend],
+    ['legal_name', profile.legalName],
+    ['registration_number', profile.registrationNumber],
+    ['registrar', profile.registrar],
+    ['regulatory_licences', profile.regulatoryLicences],
+  ] as const) {
+    if (source.trim()) fields[key] = founderField(source.trim());
+  }
+
+  const incorporated = num(profile.incorporationYear);
+  if (incorporated !== null) fields.incorporation_year = founderField(Math.round(incorporated));
+
   const year = num(profile.year);
   if (year !== null) fields.founded_year = founderField(Math.round(year));
 
@@ -258,6 +286,8 @@ export function toWireProfile(profile: FounderProfile): ProfileMapping {
     ['founders_full_time', profile.foundersFullTime],
     ['team_size', profile.teamSize],
     ['active_customers', profile.customers],
+    ['monthly_active_users', profile.activeUsers],
+    ['pilot_or_lou_count', profile.pilots],
   ] as const) {
     const value = num(source);
     if (value !== null) fields[key] = founderField(Math.round(value));
@@ -265,6 +295,11 @@ export function toWireProfile(profile: FounderProfile): ProfileMapping {
 
   const churn = num(profile.churn);
   if (churn !== null) fields.monthly_churn_percent = founderField(churn);
+
+  const concentration = num(profile.customerConcentration);
+  if (concentration !== null) {
+    fields.largest_customer_revenue_share_percent = founderField(concentration);
+  }
 
   // Yes/No maps to a real boolean; unanswered stays absent rather than false,
   // because "we did not ask yet" and "no" are different findings.
@@ -291,6 +326,7 @@ export function toWireProfile(profile: FounderProfile): ProfileMapping {
       ['total_raised_minor', profile.totalRaised],
       ['current_raise_target_minor', profile.raiseTarget],
       ['average_revenue_per_customer_minor', profile.arpu],
+      ['monthly_marketing_spend_minor', profile.marketingSpend],
     ] as const) {
       const value = num(source);
       if (value !== null) fields[key] = founderField(toMinorUnits(value, currency));
@@ -305,6 +341,7 @@ export function toWireProfile(profile: FounderProfile): ProfileMapping {
       'totalRaised',
       'raiseTarget',
       'arpu',
+      'marketingSpend',
     ] as const) {
       if (profile[field].trim()) {
         unmapped.push({
@@ -383,6 +420,17 @@ export function fromWireProfile(response: WireProfileResponse): FounderProfile {
     businessModel: fieldText(fields, 'business_model'),
     website: fieldText(fields, 'website'),
 
+    legalName: fieldText(fields, 'legal_name'),
+    registrationNumber: fieldText(fields, 'registration_number'),
+    registrar: fieldText(fields, 'registrar'),
+    incorporationYear: count('incorporation_year'),
+    regulatoryLicences: fieldText(fields, 'regulatory_licences'),
+
+    marketSize: fieldText(fields, 'market_size_note'),
+    competition: fieldText(fields, 'competition_note'),
+    growthConstraint: fieldText(fields, 'growth_constraint'),
+    useOfFunds: fieldText(fields, 'use_of_funds'),
+
     // Always read back as monthly: that is how it is stored, whatever unit the
     // founder originally typed it in.
     revModel: 'MRR',
@@ -392,10 +440,21 @@ export function fromWireProfile(response: WireProfileResponse): FounderProfile {
     cash: money('cash_on_hand_minor'),
     totalRaised: money('total_raised_minor'),
     raiseTarget: money('current_raise_target_minor'),
+    marketingSpend: money('monthly_marketing_spend_minor'),
 
     customers: count('active_customers'),
     arpu: money('average_revenue_per_customer_minor'),
     churn: count('monthly_churn_percent'),
+    activeUsers: count('monthly_active_users'),
+    pilots: count('pilot_or_lou_count'),
+    customerConcentration: count('largest_customer_revenue_share_percent'),
+    // Only adopted when it is one of the three the form offers; anything else
+    // came from somewhere other than this app and would not fit the control.
+    deliveryCostTrend: (COST_TRENDS as readonly string[]).includes(
+      fieldText(fields, 'delivery_cost_trend'),
+    )
+      ? (fieldText(fields, 'delivery_cost_trend') as CostTrend)
+      : '',
     cac: money('customer_acquisition_cost_minor'),
 
     founders: count('founder_count'),
@@ -404,6 +463,8 @@ export function fromWireProfile(response: WireProfileResponse): FounderProfile {
     ipOwned: yesNo('ip_owned'),
     contractsTransferable: yesNo('contracts_transferable'),
     keyPersonDependency: fieldText(fields, 'key_person_dependency'),
+    founderExperience: fieldText(fields, 'founder_experience'),
+    capTable: fieldText(fields, 'cap_table_summary'),
 
     deck: '',
   };

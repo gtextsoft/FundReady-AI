@@ -13,7 +13,7 @@ import { Eyebrow, FieldLabel, Mono, Txt, TxtMed, TxtSemi } from '@/components/ui
 import { C } from '@/theme/tokens';
 import { companyNameFromEmail } from '@/domain/email';
 import { ltvCacRatio } from '@/domain/scoring';
-import { FOUNDER_STAGES, ONBOARDING_SECTORS, type RevModel } from '@/domain/types';
+import { COST_TRENDS, FOUNDER_STAGES, ONBOARDING_SECTORS, type RevModel } from '@/domain/types';
 import { FOUNDER_HOME, route } from '@/lib/routes';
 import { isStepValid, useFounder, type Step } from '@/store/founder';
 import { useSession } from '@/store/session';
@@ -38,7 +38,7 @@ export default function Onboarding() {
 
   const email = useSession((s) => s.session?.email ?? '');
 
-  // Resume where they stopped. Onboarding is four screens of typing and it is
+  // Resume where they stopped. Onboarding is five screens of typing and it is
   // routinely abandoned halfway; without this, reopening the app starts from
   // an empty form even though the answers are on the server.
   useEffect(() => {
@@ -66,7 +66,7 @@ export default function Onboarding() {
       markTouched();
       return;
     }
-    if (step < 4) setStep((step + 1) as Step);
+    if (step < 5) setStep((step + 1) as Step);
     // `replace`, not `push`: once the assessment is submitted the form must
     // not still be sitting underneath it. Going back into a half-edited copy
     // of answers that have already been sent is how someone ends up
@@ -114,14 +114,14 @@ export default function Onboarding() {
             <Txt className="text-[19px] text-ink">←</Txt>
           </Pressable>
           <Mono className="text-[11px] text-ink-muted" style={{ letterSpacing: 0.6 }}>
-            STEP {step} OF 4
+            STEP {step} OF 5
           </Mono>
           <Pressable accessibilityRole="button" onPress={() => router.replace(FOUNDER_HOME)} hitSlop={10}>
             <Txt className="text-[12px] text-ink-dim">Save &amp; exit</Txt>
           </Pressable>
         </View>
         <View className="mt-[10px] flex-row gap-1">
-          {[1, 2, 3, 4].map((i) => (
+          {[1, 2, 3, 4, 5].map((i) => (
             <View
               key={i}
               className="h-[3px] flex-1 rounded-[3px]"
@@ -296,6 +296,16 @@ export default function Onboarding() {
                     />
                   </View>
                 </View>
+                <Field
+                  label="Monthly sales &amp; marketing spend"
+                  prefix="$"
+                  placeholder="40000"
+                  value={profile.marketingSpend}
+                  onChangeText={(v) => setField('marketingSpend', v)}
+                  keyboardType="number-pad"
+                  mono
+                  hint="Everything spent winning customers, including the salaries of the people doing it."
+                />
               </View>
             </View>
           ) : null}
@@ -353,12 +363,93 @@ export default function Onboarding() {
                   mono
                   hint="Include the sales and marketing effort actually used, not just ad spend."
                 />
+                <View className="flex-row gap-[10px]">
+                  <View className="flex-1">
+                    <Field
+                      label="Monthly active users"
+                      placeholder="2400"
+                      value={profile.activeUsers}
+                      onChangeText={(v) => setField('activeUsers', v)}
+                      keyboardType="number-pad"
+                      mono
+                      hint="Leave blank if you only count paying customers."
+                    />
+                  </View>
+                  <View className="flex-1">
+                    <Field
+                      label="Pilots or LOIs"
+                      placeholder="3"
+                      value={profile.pilots}
+                      onChangeText={(v) => setField('pilots', v)}
+                      keyboardType="number-pad"
+                      mono
+                      hint="Signed, but not paying yet."
+                    />
+                  </View>
+                </View>
+                <Field
+                  label="Revenue share from your biggest customer"
+                  suffix="%"
+                  placeholder="35"
+                  value={profile.customerConcentration}
+                  onChangeText={(v) => setField('customerConcentration', v)}
+                  keyboardType="number-pad"
+                  mono
+                  hint="Concentration is a risk an acquirer will price."
+                />
                 <RatioRow />
               </View>
             </View>
           ) : null}
 
           {step === 4 ? (
+            <View>
+              <Eyebrow>MARKET &amp; PLAN</Eyebrow>
+              <TxtSemi className="mb-1 mt-2 text-[23px]" style={{ letterSpacing: -0.7 }}>
+                What is the opportunity?
+              </TxtSemi>
+              <Txt className="mb-[22px] text-[13px] text-ink-dim" style={{ lineHeight: 20 }}>
+                All optional, and all worth answering. These are what the audit quotes back when it
+                explains a verdict — numbers alone only ever produce a score.
+              </Txt>
+              <View className="gap-4">
+                <Field
+                  label="How big is the market you can serve today?"
+                  placeholder="~18,000 licensed processors in Nigeria; we can serve the 400 already on our rails."
+                  value={profile.marketSize}
+                  onChangeText={(v) => setField('marketSize', v)}
+                  multiline
+                  hint="Not the global figure — the slice you could realistically reach, and how you worked it out."
+                />
+                <Field
+                  label="Who else solves this for your customers?"
+                  placeholder="Mostly spreadsheets, and one incumbent's reconciliation add-on."
+                  value={profile.competition}
+                  onChangeText={(v) => setField('competition', v)}
+                  multiline
+                  hint="Including &quot;they do it by hand&quot; — that is a competitor."
+                />
+                <Field
+                  label="What is limiting growth right now?"
+                  placeholder="We can only onboard 6 processors a month — integration is manual."
+                  value={profile.growthConstraint}
+                  onChangeText={(v) => setField('growthConstraint', v)}
+                  multiline
+                  hint="The one thing that would move the number most if it were fixed."
+                />
+                <Field
+                  label="What would new capital buy?"
+                  placeholder="Two integration engineers, to cut onboarding from 3 weeks to 3 days."
+                  value={profile.useOfFunds}
+                  onChangeText={(v) => setField('useOfFunds', v)}
+                  multiline
+                  hint="Map it to the constraint above. Vague answers score badly because they cannot be checked."
+                />
+              </View>
+            </View>
+          ) : null}
+
+          {step === 5 ? (
             <View>
               <Eyebrow>TEAM &amp; OWNERSHIP</Eyebrow>
               <TxtSemi className="mb-1 mt-2 text-[23px]" style={{ letterSpacing: -0.7 }}>
@@ -429,6 +520,38 @@ export default function Onboarding() {
                   hint="Optional, and honest answers score better than empty ones."
                 />
 
+                <Field
+                  label="What have the founders done before?"
+                  placeholder="Led payments integrations at Interswitch for 4 years."
+                  value={profile.founderExperience}
+                  onChangeText={(v) => setField('founderExperience', v)}
+                  multiline
+                  hint="Specific and checkable beats &quot;deep fintech experience&quot;."
+                />
+
+                <View className="gap-[7px]">
+                  <FieldLabel>Is it getting cheaper to serve each customer?</FieldLabel>
+                  <OptionGrid
+                    options={COST_TRENDS}
+                    value={profile.deliveryCostTrend}
+                    onChange={(v) => setField('deliveryCostTrend', v)}
+                    columns={3}
+                  />
+                  <Txt className="text-[11px] text-ink-faint">
+                    The direction matters more than the number — it separates a business that scales
+                    from one that only grows.
+                  </Txt>
+                </View>
+
+                <Field
+                  label="Who owns what"
+                  placeholder="Founders 70%, angels 12%, ESOP 18%"
+                  value={profile.capTable}
+                  onChangeText={(v) => setField('capTable', v)}
+                  multiline
+                  hint="A summary line is enough."
+                />
+
                 <View className="gap-[9px]">
                   <FieldLabel>Pitch deck / financial model</FieldLabel>
 
@@ -489,7 +612,7 @@ export default function Onboarding() {
 
       {/* footer */}
       <View className="border-t border-line-soft bg-ground px-5 pt-[14px]" style={{ paddingBottom: insets.bottom + 16 }}>
-        <Button label={step === 4 ? 'Run AI assessment' : 'Continue'} height={50} onPress={next} />
+        <Button label={step === 5 ? 'Run AI assessment' : 'Continue'} height={50} onPress={next} />
       </View>
     </KeyboardAvoidingView>
   );
