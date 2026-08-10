@@ -723,7 +723,8 @@ async def verify_email(
     user.email_verified_at = now
     # Only lift a *pending* account. Verifying an address must never quietly
     # un-suspend someone an admin has suspended.
-    if user.status is AccountStatus.PENDING_VERIFICATION:
+    activated = user.status is AccountStatus.PENDING_VERIFICATION
+    if activated:
         user.status = AccountStatus.ACTIVE
 
     await record_action(
@@ -734,6 +735,22 @@ async def verify_email(
         target_id=user.id,
     )
     await session.flush()
+
+    # Welcome them, once, at the moment the account actually becomes usable.
+    #
+    # **Only for an account that was pending.** The status check above is what
+    # makes this send-once: a second call with a fresh code cannot reach here
+    # (the token is spent), but a verified account that is re-verified some
+    # other way must not be greeted twice, and a suspended account must not be
+    # greeted at all.
+    #
+    # A send failure is logged inside `notifications` and deliberately not
+    # raised: the address is confirmed either way, and failing the request over
+    # a greeting would leave the account unusable because the marketing email
+    # bounced.
+    if activated:
+        await notifications.send_welcome_email(user.email, settings=settings)
+
     return user
 
 

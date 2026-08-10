@@ -47,12 +47,15 @@ from app.modules.audit.pipeline import (
     render_profile_facts,
     run_pipeline,
 )
+from app.modules.audit.reports import founder_report
 from app.modules.audit.repository import AuditRunRepository
 from app.modules.audit.schemas import report_to_storage
 from app.modules.audit.synthesis import AuditReport
+from app.modules.identity.repository import UserRepository
 from app.modules.intake import service as intake
 from app.modules.intake.documents import DocumentPayload
 from app.modules.intake.repository import StartupProfileRepository
+from app.modules.notifications import service as notifications
 from app.modules.readiness import service as readiness
 from app.modules.readiness.assessment import assess_evidence as assess_submissions
 from app.modules.readiness.evidence import MAX_ASSESSMENT_ATTEMPTS
@@ -66,6 +69,11 @@ if TYPE_CHECKING:
     from app.modules.readiness.assessment import EvidenceAssessment
 
 logger = logging.getLogger(__name__)
+
+# Used when `APP_LINK_BASE_URL` is unset. A report email with a dead link is
+# still worth sending -- the report is in the body -- but the link should not
+# render as an empty href.
+PRODUCT_URL_FALLBACK = "https://fundready.app"
 
 __all__ = [
     "assess_evidence",
@@ -246,7 +254,50 @@ async def run_audit_async(run_id: uuid.UUID) -> None:
         run_id, startup_id=startup_id, owner_id=owner_id, report=report
     )
 
+    # Last, and for the same reason task generation is late and best-effort:
+    # everything from `mark_succeeded` down is outside the `try`, so a raise
+    # here would land the job on RQ's failed queue and buy a second billed
+    # `claude-opus-5` pass over evidence that has already been scored.
+    await _email_report(run_id, owner_id=owner_id, report=report)
+
     logger.info("audit complete", extra={"context": {"run_id": str(run_id)}})
+
+
+async def _email_report(
+    run_id: uuid.UUID, *, owner_id: uuid.UUID, report: AuditReport
+) -> None:
+    """Send the finished report to the founder, and never fail the job doing it.
+
+    The address is looked up here rather than carried down from the top: it is
+    read once, at the moment it is needed, so the job holds no PII across the
+    minutes of model latency in between.
+
+    What a failure costs: the founder has their report in the app and no email
+    about it. That is a strictly better outcome than re-running the audit, which
+    is what letting this raise would do.
+    """
+    try:
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            owner = await UserRepository(session).get_by_id(owner_id)
+            if owner is None:  # pragma: no cover - deleted mid-flight
+                return
+            address = owner.email
+
+        settings = get_settings()
+        await notifications.send_audit_report_email(
+            address,
+            founder_report(report_to_storage(report)),
+            settings.app_link_base_url.rstrip("/") or PRODUCT_URL_FALLBACK,
+            settings=settings,
+        )
+    except Exception:
+        # Deliberately broad, exactly like `_record_failure` and task
+        # generation. The address is never logged -- `CLAUDE.md` section 4.
+        logger.exception(
+            "could not email the audit report",
+            extra={"context": {"run_id": str(run_id)}},
+        )
 
 
 async def _generate_readiness_tasks(
