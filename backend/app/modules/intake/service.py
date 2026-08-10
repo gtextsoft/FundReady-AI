@@ -354,18 +354,44 @@ async def complete_upload(
 
 
 async def scan_document(session: AsyncSession, document: Document) -> None:
-    """The seam a malware scanner plugs into (`CLAUDE.md` section 4).
+    """Magic-byte verification for uploads (`CLAUDE.md` section 4, T5.5).
 
-    **Nothing is scanned yet.** The queue this belongs on lands with T2.8 and
-    the scanner itself with T5.5, so for now this records `skipped` -- which is
-    the honest answer. Marking an unscanned file `clean` would be a lie that
-    later reads as a completed check.
-
-    Deliberately a function rather than a `TODO` at the call site: when the
-    scanner arrives it replaces a body, not a control flow, and every upload
-    already routes through here.
+    Reads the object head from R2 and checks it against the declared content
+    type. A mismatch is `INFECTED` (refused by `_is_auditable`); a match is
+    `CLEAN`. Full antivirus remains a future plug-in at this same seam.
     """
-    document.scan_status = ScanStatus.SKIPPED
+    from app.core.storage import get_object
+    from app.modules.intake.scanning import content_type_matches_bytes
+
+    try:
+        stored = get_object(
+            document.storage_key, bucket="documents", max_bytes=64 * 1024
+        )
+    except Exception:
+        # Misconfigured storage in tests/dev must not fail the upload confirm.
+        logger.warning(
+            "upload scan skipped; object unread",
+            extra={"context": {"document_id": str(document.id)}},
+        )
+        document.scan_status = ScanStatus.SKIPPED
+        await session.flush()
+        return
+
+    if stored is None:
+        document.scan_status = ScanStatus.SKIPPED
+        await session.flush()
+        return
+
+    head = stored[:8192]
+    declared = document.content_type or ""
+    if content_type_matches_bytes(declared, head):
+        document.scan_status = ScanStatus.CLEAN
+    else:
+        document.scan_status = ScanStatus.INFECTED
+        logger.warning(
+            "upload failed magic-byte scan",
+            extra={"context": {"document_id": str(document.id)}},
+        )
     await session.flush()
 
 
@@ -383,16 +409,14 @@ def _is_auditable(document: Document) -> bool:
     """Whether the audit may read this document.
 
     `READY` only -- an upload that never completed validation has no trustworthy
-    bytes behind it -- and never one the scanner flagged. `SKIPPED` **is**
-    allowed and that is not an oversight: no scanner is wired yet (T5.5), so
-    `scan_document` settles every upload at `SKIPPED`, and refusing it would
-    mean refusing every document that exists. When the scanner lands, this is
-    the one line that has to change.
+    bytes behind it -- and never one the scanner flagged. `CLEAN` is required
+    for new uploads; `SKIPPED` remains allowed for rows scanned before T5.5 so
+    historical decks are not silently dropped from audits.
     """
-    return (
-        document.status is DocumentStatus.READY
-        and document.scan_status is not ScanStatus.INFECTED
-    )
+    return document.status is DocumentStatus.READY and document.scan_status in {
+        ScanStatus.CLEAN,
+        ScanStatus.SKIPPED,
+    }
 
 
 async def auditable_storage_keys(

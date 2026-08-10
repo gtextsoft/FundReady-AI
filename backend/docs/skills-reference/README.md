@@ -1,13 +1,31 @@
 # Skills reference
 
-Design input for the audit engine. **Nothing here is imported, executed, or
-shipped** — these are documents that informed how the rubric and prompts were
-written, kept in the repo so a future reader can see where a criterion came
-from rather than guessing.
+Design input for the audit engine and mentor posture. **Nothing here is
+imported, executed, or shipped at runtime** — these are documents that informed
+how the rubric, prompts, and mentor system text were written, kept in the repo
+so a future reader can see where a criterion came from rather than guessing.
 
 Source: the `claude-skills` collection, MIT licensed — see `LICENSE`.
 Copyright (c) 2025 Alireza Rezvani, plus the individual skill authors credited
 in each `SKILL.md`.
+
+## Placement rule (do not reverse quietly)
+
+| Path | Role |
+| --- | --- |
+| Repo-root `skills/` | Claude/Cursor **agent tooling** library (~188 packs). Stays at the monorepo root. |
+| `backend/docs/skills-reference/` | **Curated, MIT-attributed subset** used as design reference only (ruff-excluded). |
+| `backend/app/` | Runtime code. **Never** vendors or imports `SKILL.md` files. |
+
+**Do not move the full root `skills/` tree into `backend/` or `app/`.** Shipping
+advisor personas, investment-advisor scripts, or a conversational loop into
+FastAPI would fight the audit design (schema-validated JSON out, no persona
+loop) and risk DECISIONS.md D9 if financial formulas leak into prompts.
+
+Mentor chat (T3.7) retrieves **live DB data** — the caller's `FounderReport`,
+tasks, and profile facts — not these markdown files. Expand this folder only
+with short substance notes (e.g. `mentor-grounding.md`); never with scripts or
+full plugin trees.
 
 ## Why these eight, and not the other 180
 
@@ -28,6 +46,7 @@ and what evidence they insist on — not the prose.
 | `deep-research` | "Every source saved" — why web validation must be persisted |
 | `dossier` | Hypothesis-tested company research: state the claim, then verify it |
 | `market-research` | `market_opportunity` — top-down **and** bottom-up, never one unsourced number |
+| `mentor-grounding.md` | Founder mentor posture: answer only from retrieved evidence (T3.7) |
 
 ## What was deliberately excluded
 

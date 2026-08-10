@@ -11,11 +11,13 @@ import asyncio
 import logging
 import sys
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
 
 from app import __version__
 from app.core import health
@@ -28,13 +30,16 @@ from app.core.logging import (
     configure_logging,
 )
 from app.core.monitoring import init_sentry
+from app.core.rate_limit import enforce_rate_limit
 from app.core.security import CurrentUser, set_user_loader
 from app.modules.audit import router as audit_router
 from app.modules.brokerage import router as brokerage_router
+from app.modules.commerce import router as commerce_router
 from app.modules.identity import router as identity_router
 from app.modules.identity import service as identity_service
 from app.modules.intake import router as intake_router
 from app.modules.investor import router as investor_router
+from app.modules.mentor import router as mentor_router
 from app.modules.readiness import router as readiness_router
 
 API_V1_PREFIX = "/v1"
@@ -85,6 +90,11 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await dispose_engine()
 
 
+_settings = get_settings()
+# Hide the interactive docs and OpenAPI document in production — they advertise
+# the full surface area to unauthenticated callers (T5.5).
+_docs_enabled = not _settings.is_production
+
 app = FastAPI(
     title="FundReady API",
     version=__version__,
@@ -99,13 +109,11 @@ app = FastAPI(
         f"Every response carries an `{REQUEST_ID_HEADER}` header. Quote it in a "
         "support report and we can find the exact log line."
     ),
-    openapi_url="/openapi.json",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    openapi_url="/openapi.json" if _docs_enabled else None,
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
     lifespan=lifespan,
 )
-
-_settings = get_settings()
 
 # Restricted to configured origins; empty configuration means no cross-origin
 # access at all, which is the correct default for a mobile-only client
@@ -120,12 +128,41 @@ app.add_middleware(
 )
 app.add_middleware(RequestContextMiddleware)
 
+
+@app.middleware("http")
+async def rate_limit_middleware(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    await enforce_rate_limit(request)
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def security_headers_middleware(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault(
+        "Permissions-Policy", "camera=(), microphone=(), geolocation=()"
+    )
+    if _settings.is_production:
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+        )
+    return response
+
+
 register_exception_handlers(app)
 
 app.include_router(health.router, prefix=API_V1_PREFIX)
 app.include_router(identity_router.router, prefix=API_V1_PREFIX)
 app.include_router(intake_router.router, prefix=API_V1_PREFIX)
 app.include_router(audit_router.router, prefix=API_V1_PREFIX)
+app.include_router(mentor_router.router, prefix=API_V1_PREFIX)
 app.include_router(readiness_router.router, prefix=API_V1_PREFIX)
 app.include_router(investor_router.router, prefix=API_V1_PREFIX)
 app.include_router(brokerage_router.router, prefix=API_V1_PREFIX)
+app.include_router(commerce_router.router, prefix=API_V1_PREFIX)

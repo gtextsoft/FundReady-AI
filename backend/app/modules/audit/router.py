@@ -11,12 +11,14 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Response, status
+from fastapi.responses import Response as RawResponse
 
-from app.core.deps import CurrentAdmin, CurrentUserDep, SessionDep
+from app.core.deps import CurrentAdmin, CurrentUserDep, FounderWithAccess, SessionDep
 from app.core.errors import error_responses
 from app.core.security import assert_admin
 from app.modules.audit import service
 from app.modules.audit.benchmarks import BenchmarkMetric, Stage
+from app.modules.audit.pdf import render_founder_report_pdf
 from app.modules.audit.reports import (
     AdminReport,
     FounderReport,
@@ -29,6 +31,7 @@ from app.modules.audit.schemas import (
     BenchmarkResponse,
     BenchmarkUpdate,
 )
+from app.modules.intake import service as intake
 
 router = APIRouter(tags=["audit"])
 
@@ -214,7 +217,7 @@ AUDIT_NOTE = (
 )
 async def request_audit(
     startup_id: uuid.UUID,
-    actor: CurrentUserDep,
+    actor: FounderWithAccess,
     session: SessionDep,
     response: Response,
 ) -> AuditRunResponse:
@@ -297,6 +300,49 @@ async def read_audit_report(
 ) -> FounderReport:
     stored = await service.get_audit_report(session, actor, startup_id, run_id)
     return founder_report(stored)
+
+
+@router.get(
+    "/startups/{startup_id}/audits/{run_id}/report.pdf",
+    summary="Download your audit report as PDF",
+    description=(
+        "The same founder-tier content as `GET .../report`, rendered as a PDF "
+        "via ReportLab. Auth and ownership match the JSON endpoint: another "
+        "founder's run is `404`, and a run that has not succeeded is `404`.\n\n"
+        "The PDF is built from `founder_report(...)` so tier rules cannot drift "
+        "from the JSON API."
+    ),
+    responses={
+        **error_responses(401, 403, 404, 422),
+        200: {
+            "content": {"application/pdf": {}},
+            "description": "PDF bytes of the founder audit report.",
+        },
+    },
+    response_class=RawResponse,
+)
+async def download_audit_report_pdf(
+    startup_id: uuid.UUID,
+    run_id: uuid.UUID,
+    actor: CurrentUserDep,
+    session: SessionDep,
+) -> RawResponse:
+    stored = await service.get_audit_report(session, actor, startup_id, run_id)
+    report = founder_report(stored)
+    profile = await intake.get_profile(session, actor, startup_id)
+    pdf_bytes = render_founder_report_pdf(
+        report,
+        company_name=profile.name,
+        run_id=str(run_id),
+    )
+    filename = f"fundready-audit-{run_id}.pdf"
+    return RawResponse(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
 
 
 @router.get(

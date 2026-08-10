@@ -36,14 +36,17 @@ __all__ = [
     "ASSESSMENT_JOB_TIMEOUT",
     "AUDIT_JOB_TIMEOUT",
     "RUN_AUDIT_JOB",
+    "SEND_EMAIL_JOB",
     "enqueue_assessment",
     "enqueue_audit",
+    "enqueue_email",
     "get_queue",
     "main",
 ]
 
 RUN_AUDIT_JOB: Final = "app.workers.tasks.run_audit"
 ASSESS_EVIDENCE_JOB: Final = "app.workers.tasks.assess_evidence"
+SEND_EMAIL_JOB: Final = "app.workers.tasks.send_email"
 """Dotted path RQ resolves in the worker. See the module docstring."""
 
 AUDIT_JOB_TIMEOUT: Final = 900
@@ -158,6 +161,18 @@ rather than a multi-stage pipeline over a whole profile. Long enough that a slow
 provider is not mistaken for a dead worker; short enough that a genuinely stuck
 job does not hold a founder on `submitted` for a quarter of an hour.
 """
+
+
+def enqueue_email(to: str, subject: str, html: str, text: str) -> None:
+    """Dispatch one transactional email. Body only — never log `to` here."""
+    get_queue().enqueue(
+        SEND_EMAIL_JOB,
+        to,
+        subject,
+        html,
+        text,
+        job_timeout=60,
+    )
 
 
 def enqueue_assessment(task_id: uuid.UUID) -> None:

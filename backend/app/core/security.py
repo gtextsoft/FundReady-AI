@@ -103,6 +103,9 @@ class CurrentUser:
     email_verified: bool = False
     mfa_enabled: bool = False
     session_valid_after: datetime | None = None
+    # Founder entitlement inputs (DECISIONS.md D21). Investors leave defaults.
+    subscription_status: SubscriptionStatus = SubscriptionStatus.NONE
+    created_at: datetime | None = None
 
 
 def assert_admin(actor: CurrentUser, *, message: str | None = None) -> None:

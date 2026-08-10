@@ -321,7 +321,22 @@ class ProfileConflict(BaseModel):
 class RegistryEntry(BaseModel):
     """One jurisdiction's company register, for the registration form."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    "country": "NG",
+                    "country_name": "Nigeria",
+                    "registrar": "Corporate Affairs Commission",
+                    "short_name": "CAC",
+                    "document_name": "Certificate of Incorporation",
+                    "number_label": "RC Number",
+                    "number_example": "RC 1234567",
+                }
+            ]
+        },
+    )
 
     country: str = Field(description="ISO 3166-1 alpha-2, e.g. `NG`.")
     country_name: str
@@ -350,7 +365,26 @@ class RegistriesResponse(BaseModel):
     `registration_certificate`. Missing a map entry is not a refusal.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    "registries": [
+                        {
+                            "country": "NG",
+                            "country_name": "Nigeria",
+                            "registrar": "Corporate Affairs Commission",
+                            "short_name": "CAC",
+                            "document_name": "Certificate of Incorporation",
+                            "number_label": "RC Number",
+                            "number_example": "RC 1234567",
+                        }
+                    ]
+                }
+            ]
+        },
+    )
 
     registries: list[RegistryEntry]
 

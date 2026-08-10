@@ -9,6 +9,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Breaking: password reset is a six-digit code, not a link.**
+  - `POST /v1/auth/password-reset/request` emails a code (15 minutes, five
+    attempts, one live code per account) instead of a deep-link token.
+  - `POST /v1/auth/password-reset/confirm` now takes `{ email, code, password }`
+    — the previous `{ token, password }` body is rejected. Same anti-enumeration
+    rules as email verification: wrong / expired / spent / unknown address are
+    one message.
+
 ### Added
 - **Company registration intake (T1.6).** Founders can now answer legal-entity
   questions and upload a country-specific certificate of incorporation; the

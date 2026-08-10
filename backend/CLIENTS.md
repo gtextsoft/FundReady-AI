@@ -210,17 +210,20 @@ per endpoint (`tasks` is priority-first, `audits` is newest-first).
 | `POST /v1/auth/logout` | Revokes the family |
 | `POST /v1/auth/verify-email` | `email` + the 6-digit code from the email |
 | `POST /v1/auth/verify-email/resend` | Always 202. New code, previous one dies |
-| `POST /v1/auth/password-reset/request` | Always 202, even for unknown addresses |
-| `POST /v1/auth/password-reset/confirm` | Completing this **logs out every session** |
+| `POST /v1/auth/password-reset/request` | Always 202. Emails a 6-digit code |
+| `POST /v1/auth/password-reset/confirm` | `email` + code + new password. **Logs out every session** |
 | `POST /v1/auth/mfa/verify` | Completes an `mfa_required` login |
 | `GET /v1/health` | Liveness |
+| `GET /v1/ready` | Readiness (Postgres + Redis). `503` when a dependency is down |
+| `POST /v1/billing/webhooks/stripe` | Stripe webhook receiver (signature-verified; no bearer token) |
 
 ### Any signed-in user
 
 | | |
 |---|---|
-| `GET /v1/users/me` | The caller's own account, never another's |
+| `GET /v1/users/me` | The caller's own account, never another's. Includes server `trial_ends_at` and `has_access` |
 | `POST /v1/auth/mfa/enroll` · `POST /v1/auth/mfa/confirm` | Enrol a second factor |
+| `GET /v1/registries` | Company-register labels by country (for registration forms) |
 
 ### Founder (mobile)
 
@@ -234,16 +237,21 @@ per endpoint (`tasks` is priority-first, `audits` is newest-first).
 | `GET /v1/startups/{id}/documents` | List |
 | `GET /v1/documents/{id}/download` | Expiring signed URL |
 | `POST /v1/startups/{id}/publish` · `POST /v1/startups/{id}/unpublish` | Opt in or out of investor discovery — see §5c |
-| `POST /v1/startups/{id}/audits` | Request an audit — see §5a |
+| `POST /v1/startups/{id}/audits` | Request an audit — see §5a. Requires trial or paid unlock |
 | `GET /v1/startups/{id}/audits` | This startup's runs, newest first |
 | `GET /v1/startups/{id}/audits/{run_id}` | Poll one run's status |
+| `GET /v1/startups/{id}/audits/{run_id}/report` | Founder-tier report JSON |
+| `GET /v1/startups/{id}/audits/{run_id}/report.pdf` | Founder-tier report PDF |
+| `POST /v1/startups/{id}/mentor/chat` | AI mentor over this startup's own audit (trial or paid) |
 | `GET /v1/startups/{id}/tasks` | Readiness tasks — see §5e |
 | `GET /v1/startups/{id}/tasks/summary` | Progress counts for a home screen |
 | `GET /v1/startups/{id}/tasks/{task_id}` | One task |
-| `POST /v1/tasks/{id}/evidence` | Start an evidence upload — see §5f |
+| `POST /v1/tasks/{id}/evidence` | Start an evidence upload — see §5f. Requires trial or paid unlock |
 | `POST /v1/evidence/{id}/complete` | Confirm it; queues grading |
 | `GET /v1/tasks/{id}/evidence` | Submissions for a task |
 | `GET /v1/evidence/{id}/download` | Expiring signed URL |
+| `POST /v1/billing/checkout` | Start Stripe Checkout for the one-off unlock; open `checkout_url` |
+| `GET /v1/billing/unlock` | Completed unlock receipt, if any |
 
 If you omit `name` on profile creation it is derived from your company email
 domain — `founder@acme.com` → `Acme`. That is a starting point, not a verified
@@ -324,7 +332,7 @@ with `details.reason`, so branch on that:
 
 The second one is stricter on purpose. Most throwaway inboxes are **publicly
 readable** — a mailinator address has no password — so an account on one hands
-its verification code, and every future password-reset link, to anyone who knows
+its verification code, and every future password-reset code, to anyone who knows
 the address. That is account takeover, not a weak identity signal, which is why
 it applies to investors too.
 
@@ -1074,7 +1082,7 @@ compatibility, not as an error — parse defensively.
 | `DocumentStatus` | `pending`, `ready`, `rejected` |
 | `ScanStatus` | `pending`, `clean`, `infected`, `skipped` |
 | `FieldSource` | `founder`, `document`, `inferred` |
-| `BenchmarkMetric` | `gross_margin_percent`, `runway_months`, `ltv_cac_ratio`, `cac_payback_months`, `run_rate_vs_trailing_percent` |
+| `BenchmarkMetric` | `gross_margin_percent`, `runway_months`, `ltv_cac_ratio`, `cac_payback_months`, `run_rate_vs_trailing_percent`, `revenue_change_3m_percent`, `costs_change_3m_percent` |
 | `AuditStatus` | `queued`, `running`, `succeeded`, `failed` |
 | `Requirement` | `required`, `recommended` |
 | `TaskStatus` | `open`, `submitted`, `passed`, `failed`, `needs_more`, `obsolete` |

@@ -171,7 +171,7 @@ async def read_me(user: AuthenticatedUserDep, session: SessionDep) -> UserRespon
     record = await UserRepository(session).get_by_id(user.id)
     if record is None:  # pragma: no cover - the token resolved a moment ago
         raise UnauthenticatedError
-    return UserResponse.model_validate(record)
+    return UserResponse.of(record)
 
 
 @router.post(
@@ -235,9 +235,14 @@ async def resend_verification_email(
     response_model=RegistrationAccepted,
     summary="Begin a password reset",
     description=(
-        "Sends a reset link if the address has an account.\n\n"
+        "Emails a six-digit reset code if the address has an account.\n\n"
         "**Always returns `202` with the same body**, whether or not the "
-        "address is registered, so this cannot be used to discover accounts."
+        "address is registered, so this cannot be used to discover accounts.\n\n"
+        f"**The code expires in {int(service.PASSWORD_RESET_TTL.total_seconds() // 60)} "
+        f"minutes and allows {service.MAX_VERIFICATION_ATTEMPTS} attempts.** "
+        "Requesting another code invalidates the previous one. A request within "
+        f"{int(service.VERIFICATION_RESEND_COOLDOWN.total_seconds())} seconds "
+        "of the last one is not sent — put a short countdown on the button."
     ),
     responses=error_responses(422),
 )
@@ -247,7 +252,7 @@ async def request_password_reset(
     await service.request_password_reset(session, payload.email)
     return RegistrationAccepted(
         status="pending_verification",
-        message="If that address has an account, a reset link is on its way.",
+        message="If that address has an account, a reset code is on its way.",
     )
 
 
@@ -256,17 +261,30 @@ async def request_password_reset(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Complete a password reset",
     description=(
-        "Sets the new password and **ends every existing session**: all refresh "
-        "tokens are revoked and every access token already issued stops "
-        "working. The user must log in again afterwards, on every device.\n\n"
-        "Any other reset link already sent to that address is invalidated too."
+        "Sets the new password with the emailed six-digit code and **ends every "
+        "existing session**: all refresh tokens are revoked and every access "
+        "token already issued stops working. The user must log in again "
+        "afterwards, on every device.\n\n"
+        "**Collect the code from the reset email together with the address it "
+        "was sent to** — both are required, because a six-digit code is only "
+        "checked against the one account it belongs to. Spaces and hyphens in "
+        "the code are ignored.\n\n"
+        "`422` covers a wrong code, an expired one, one already used, one "
+        "whose attempts are exhausted, and an address with no account at all "
+        "-- one message for every case.\n\n"
+        "Any other reset code already sent to that address is invalidated too."
     ),
     responses=error_responses(422),
 )
 async def confirm_password_reset(
     payload: PasswordResetConfirmRequest, session: SessionDep
 ) -> None:
-    await service.reset_password(session, payload.token, payload.password)
+    await service.reset_password(
+        session,
+        email=payload.email,
+        code=payload.code,
+        new_password=payload.password,
+    )
 
 
 @router.post(
@@ -376,7 +394,7 @@ async def provision_admin(
     admin = await service.provision_admin(
         session, actor, email=payload.email, password=payload.password
     )
-    return UserResponse.model_validate(admin)
+    return UserResponse.of(admin)
 
 
 @router.post(
@@ -395,9 +413,7 @@ async def provision_admin(
 async def suspend_user(
     user_id: uuid.UUID, actor: CurrentAdmin, session: SessionDep
 ) -> UserResponse:
-    return UserResponse.model_validate(
-        await service.suspend_user(session, actor, user_id)
-    )
+    return UserResponse.of(await service.suspend_user(session, actor, user_id))
 
 
 @router.post(
@@ -415,9 +431,7 @@ async def suspend_user(
 async def reactivate_user(
     user_id: uuid.UUID, actor: CurrentAdmin, session: SessionDep
 ) -> UserResponse:
-    return UserResponse.model_validate(
-        await service.reactivate_user(session, actor, user_id)
-    )
+    return UserResponse.of(await service.reactivate_user(session, actor, user_id))
 
 
 @router.patch(
@@ -441,6 +455,6 @@ async def change_user_role(
     actor: CurrentAdmin,
     session: SessionDep,
 ) -> UserResponse:
-    return UserResponse.model_validate(
+    return UserResponse.of(
         await service.change_user_role(session, actor, user_id, payload.role)
     )

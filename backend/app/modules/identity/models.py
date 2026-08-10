@@ -206,6 +206,8 @@ class User(Base):
         ),
         default=SubscriptionStatus.NONE,
     )
+    # Stripe Customer id for Checkout reuse. Trusted from Stripe only.
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(255), index=True)
 
     # Bumping this invalidates every access token issued before it, without
     # waiting for expiry (AUTH.md section 11).
@@ -294,11 +296,11 @@ class TokenPurpose(StrEnum):
 class AuthToken(Base):
     """A single-use, expiring secret sent by email (AUTH.md sections 12, 15).
 
-    Two shapes share this table. A **password reset** carries a 256-bit random
-    token in a link, stored as a bare SHA-256. **Email verification** carries a
-    six-digit code the recipient types back, stored as an HMAC keyed with the
-    server secret -- six digits behind an unkeyed hash would fall to a database
-    leak immediately (`core.security.hash_verification_code`).
+    Email verification and password reset both carry a **six-digit code** the
+    recipient types back. Stored as an HMAC keyed with the server secret over
+    the user id, purpose, and digits together -- six digits behind an unkeyed
+    hash would fall to a database leak immediately
+    (`core.security.hash_verification_code`).
 
     Consumed by setting `used_at` -- rows are kept rather than deleted so a
     replay can be told apart from a secret that never existed.
@@ -325,8 +327,7 @@ class AuthToken(Base):
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Wrong guesses against this row. A six-digit code is a million guesses,
     # which is nothing to a script, so the code is burned once this reaches
-    # `service.MAX_VERIFICATION_ATTEMPTS`. Meaningless for a link token, which
-    # is guessed by nobody, and left at zero there.
+    # `service.MAX_VERIFICATION_ATTEMPTS`.
     attempt_count: Mapped[int] = mapped_column(default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

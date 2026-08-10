@@ -1,14 +1,14 @@
-"""Mint a verification code or a password-reset link for local development.
+"""Mint a verification or password-reset code for local development.
 
     python scripts/issue_dev_token.py founder@example.test
     python scripts/issue_dev_token.py founder@example.test --purpose password_reset
 
 Why this exists: auth secrets are stored hashed, so once one is emailed it
 cannot be recovered from the database, and the application deliberately does not
-log it -- `core.logging.RedactionFilter` scrubs `token=` from every log line
-because a verification secret is a credential. Rather than carve an exception
-into that rule, local flows mint a fresh one here, outside the request path,
-where the value is printed once to a terminal and never enters a log.
+log it -- `core.logging.RedactionFilter` scrubs credentials from every log line.
+Rather than carve an exception into that rule, local flows mint a fresh one
+here, outside the request path, where the value is printed once to a terminal
+and never enters a log.
 
 Refuses to run against production.
 """
@@ -51,18 +51,16 @@ async def issue(email: str, purpose: TokenPurpose) -> int:
             )
             return 0
 
-        raw = await service.issue_auth_token(
-            session, user, purpose, service.PASSWORD_RESET_TTL
-        )
+        code = await service.issue_password_reset_code(session, user)
         await session.commit()
-
-    base = settings.app_link_base_url.rstrip("/") or "https://app.example"
-    print(f"{base}/reset-password?token={raw}")
-    print(
-        "\nPOST the token to /v1/auth/password-reset/confirm "
-        f"(expires in {service.PASSWORD_RESET_TTL})"
-    )
-    return 0
+        print(code)
+        print(
+            f"\nPOST {{'email': '{user.email}', 'code': '{code}', "
+            f"'password': '<new password>'}} to "
+            f"/v1/auth/password-reset/confirm "
+            f"(expires in {service.PASSWORD_RESET_TTL})"
+        )
+        return 0
 
 
 def main() -> int:

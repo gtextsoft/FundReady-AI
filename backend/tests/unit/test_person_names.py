@@ -142,6 +142,7 @@ def test_the_response_allows_null_names() -> None:
     import uuid
     from datetime import UTC, datetime
 
+    created = datetime.now(UTC)
     response = UserResponse.model_validate(
         {
             "id": uuid.uuid4(),
@@ -153,7 +154,9 @@ def test_the_response_allows_null_names() -> None:
             "email_verified": True,
             "kyc_status": "none",
             "subscription_status": "none",
-            "created_at": datetime.now(UTC),
+            "created_at": created,
+            "trial_ends_at": created,
+            "has_access": True,
         }
     )
 

@@ -12,7 +12,13 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, status
 
-from app.core.deps import CurrentAdmin, CurrentUserDep, SessionDep, SettingsDep
+from app.core.deps import (
+    CurrentAdmin,
+    CurrentUserDep,
+    FounderWithAccess,
+    SessionDep,
+    SettingsDep,
+)
 from app.core.errors import error_responses
 from app.modules.readiness import service
 from app.modules.readiness.evidence import MAX_UPLOAD_BYTES
@@ -173,7 +179,7 @@ EVIDENCE_FLOW = (
 async def start_evidence_upload(
     task_id: uuid.UUID,
     payload: EvidenceUploadRequest,
-    actor: CurrentUserDep,
+    actor: FounderWithAccess,
     session: SessionDep,
     settings: SettingsDep,
 ) -> EvidenceUploadTicket:
@@ -213,7 +219,7 @@ async def start_evidence_upload(
     responses=error_responses(401, 403, 404, 422),
 )
 async def complete_evidence_upload(
-    evidence_id: uuid.UUID, actor: CurrentUserDep, session: SessionDep
+    evidence_id: uuid.UUID, actor: FounderWithAccess, session: SessionDep
 ) -> EvidenceResponse:
     evidence = await service.complete_evidence_upload(session, actor, evidence_id)
     return EvidenceResponse.model_validate(evidence)

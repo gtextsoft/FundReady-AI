@@ -80,7 +80,18 @@ __all__ = [
     "assess_evidence_async",
     "run_audit",
     "run_audit_async",
+    "send_email",
 ]
+
+
+def send_email(to: str, subject: str, html: str, text: str) -> bool:
+    """RQ entry point for queued transactional email."""
+    from app.modules.notifications.service import send_email as send_inline
+    from app.modules.notifications.templates import EmailContent
+
+    return asyncio.run(
+        send_inline(to, EmailContent(subject=subject, html=html, text=text))
+    )
 
 if sys.platform == "win32":
     # Same reason as `app.main`: psycopg's async mode cannot run on Windows'

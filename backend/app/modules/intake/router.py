@@ -12,7 +12,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
 
-from app.core.deps import CurrentUserDep, SessionDep, SettingsDep, require_role
+from app.core.deps import CurrentUserDep, FounderWithAccess, SessionDep, SettingsDep, require_role
 from app.core.errors import error_responses
 from app.core.security import CurrentUser, Role
 from app.modules.intake import service
@@ -180,7 +180,7 @@ PUBLISH_NOTE = (
     responses=error_responses(401, 403, 404, 422),
 )
 async def publish_profile(
-    profile_id: uuid.UUID, actor: CurrentUserDep, session: SessionDep
+    profile_id: uuid.UUID, actor: FounderWithAccess, session: SessionDep
 ) -> ProfileResponse:
     profile = await service.set_discoverability(
         session, actor, profile_id, visible=True

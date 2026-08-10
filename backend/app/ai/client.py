@@ -47,10 +47,11 @@ model, so the repair turn is a `user` message. It reports field paths and error
 types only, never values -- model output can contain financial figures and PII,
 and `core.errors` already establishes that submitted values are not echoed.
 
-**Budgets are measured here, enforced in T5.5.** Every call returns an
+**Budgets are measured and enforced here (T5.5).** Every call returns an
 `AiCallRecord` carrying per-user attribution, a timestamp, and the full token
 split. `input_tokens` alone understates cost once caching works -- it counts
 only the uncached remainder -- so the cache figures are recorded beside it.
+Spend is checked before a call and recorded after, including on failures.
 
 Implemented in TASKS.md T2.1.
 """
@@ -68,6 +69,7 @@ from pydantic import ValidationError
 
 from app.ai.prompts import PromptVersion
 from app.ai.schemas import StructuredOutput
+from app.core.ai_budget import assert_within_budget, record_usage
 from app.core.config import Settings
 
 logger = logging.getLogger(__name__)
@@ -296,62 +298,71 @@ class AiClient:
         profile = self.profile_for(tier)
         attempt_messages = list(messages)
         usage = AiUsage(0, 0, 0, 0)
+        assert_within_budget(user_id, settings=self._settings)
 
-        for attempt in range(1, _MAX_ATTEMPTS + 1):
-            try:
-                text, call_usage = await self._call(
-                    profile=profile,
-                    schema=schema,
-                    system=system,
-                    messages=attempt_messages,
-                )
-            except AiError as error:
-                # `_call` only knows what its own request cost. Fold in what
-                # earlier attempts already spent, or a refusal on the retry
-                # would report half the bill.
-                error.usage = _accumulate(usage, error.usage or AiUsage(0, 0, 0, 0))
-                raise
-            usage = _accumulate(usage, call_usage)
+        try:
+            for attempt in range(1, _MAX_ATTEMPTS + 1):
+                try:
+                    text, call_usage = await self._call(
+                        profile=profile,
+                        schema=schema,
+                        system=system,
+                        messages=attempt_messages,
+                    )
+                except AiError as error:
+                    # `_call` only knows what its own request cost. Fold in what
+                    # earlier attempts already spent, or a refusal on the retry
+                    # would report half the bill.
+                    error.usage = _accumulate(
+                        usage, error.usage or AiUsage(0, 0, 0, 0)
+                    )
+                    raise
+                usage = _accumulate(usage, call_usage)
 
-            try:
-                output = schema.model_validate_json(text)
-            except ValidationError as error:
-                problems = _describe_without_values(error)
-                logger.warning(
-                    "ai output failed validation",
-                    extra={
-                        "context": {
-                            "tier": tier.value,
-                            "model": profile.model,
-                            "prompt": prompt.ref,
-                            "attempt": attempt,
-                            "problems": problems,
-                        }
-                    },
-                )
-                if attempt == _MAX_ATTEMPTS:
-                    raise AiInvalidOutputError(
-                        f"{prompt.ref} returned output that does not match "
-                        f"{schema.__name__} after {attempt} attempts: {problems}",
+                try:
+                    output = schema.model_validate_json(text)
+                except ValidationError as error:
+                    problems = _describe_without_values(error)
+                    logger.warning(
+                        "ai output failed validation",
+                        extra={
+                            "context": {
+                                "tier": tier.value,
+                                "model": profile.model,
+                                "prompt": prompt.ref,
+                                "attempt": attempt,
+                                "problems": problems,
+                            }
+                        },
+                    )
+                    if attempt == _MAX_ATTEMPTS:
+                        raise AiInvalidOutputError(
+                            f"{prompt.ref} returned output that does not match "
+                            f"{schema.__name__} after {attempt} attempts: "
+                            f"{problems}",
+                            usage=usage,
+                        ) from None
+                    attempt_messages = [*attempt_messages, _repair_turn(problems)]
+                    continue
+
+                return AiResult(
+                    output=output,
+                    record=AiCallRecord(
+                        tier=tier,
+                        model=profile.model,
+                        prompt_ref=prompt.ref,
+                        user_id=user_id,
+                        occurred_at=datetime.now(UTC),
                         usage=usage,
-                    ) from None
-                attempt_messages = [*attempt_messages, _repair_turn(problems)]
-                continue
+                        attempts=attempt,
+                    ),
+                )
 
-            return AiResult(
-                output=output,
-                record=AiCallRecord(
-                    tier=tier,
-                    model=profile.model,
-                    prompt_ref=prompt.ref,
-                    user_id=user_id,
-                    occurred_at=datetime.now(UTC),
-                    usage=usage,
-                    attempts=attempt,
-                ),
-            )
-
-        raise AssertionError("unreachable: the loop returns or raises")
+            raise AssertionError("unreachable: the loop returns or raises")
+        finally:
+            billed = usage.total_input_tokens + usage.output_tokens
+            if billed > 0:
+                record_usage(user_id, billed, settings=self._settings)
 
     async def _call(
         self,

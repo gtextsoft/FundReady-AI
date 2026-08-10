@@ -444,7 +444,9 @@
           "runway_months",
           "ltv_cac_ratio",
           "cac_payback_months",
-          "run_rate_vs_trailing_percent"
+          "run_rate_vs_trailing_percent",
+          "revenue_change_3m_percent",
+          "costs_change_3m_percent"
         ],
         "title": "BenchmarkMetric",
         "type": "string"
@@ -682,6 +684,77 @@
         "title": "ChangeRoleRequest",
         "type": "object"
       },
+      "ChatRole": {
+        "enum": [
+          "user",
+          "assistant"
+        ],
+        "title": "ChatRole",
+        "type": "string"
+      },
+      "ChatTurn": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "content": "What should I fix first?",
+            "role": "user"
+          }
+        ],
+        "properties": {
+          "content": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/ChatRole"
+          }
+        },
+        "required": [
+          "role",
+          "content"
+        ],
+        "title": "ChatTurn",
+        "type": "object"
+      },
+      "CheckoutSessionResponse": {
+        "description": "Hosted Stripe Checkout URL for the founder unlock (DECISIONS.md D21).",
+        "examples": [
+          {
+            "checkout_url": "https://checkout.stripe.com/c/pay/cs_test_a1b2c3",
+            "session_id": "cs_test_a1b2c3"
+          }
+        ],
+        "properties": {
+          "checkout_url": {
+            "description": "Open this URL to complete payment.",
+            "title": "Checkout Url",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Stripe Checkout Session id.",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checkout_url",
+          "session_id"
+        ],
+        "title": "CheckoutSessionResponse",
+        "type": "object"
+      },
+      "CitationKind": {
+        "enum": [
+          "finding",
+          "task",
+          "verdict",
+          "profile"
+        ],
+        "title": "CitationKind",
+        "type": "string"
+      },
       "Dimension": {
         "description": "The scored dimensions of rubric v1.\n\nStable identifiers: a stored AuditRun cites these, so a value is never\nrenamed in place. A new dimension means a new rubric version (D12).",
         "enum": [
@@ -741,11 +814,12 @@
         "type": "object"
       },
       "DocumentKind": {
-        "description": "What the founder says this file is.\n\nThe three named in `fundready-prd.md` \u00a74.1, plus an escape hatch. It steers\nextraction (T2.4) -- a cap table and a financial model are read for\ndifferent things -- so it is the founder's declaration, not a fact, and\nextraction must cope with being told the wrong one.",
+        "description": "What the founder says this file is.\n\nThe three named in `fundready-prd.md` \u00a74.1, a country-specific certificate\nof incorporation (T1.6), plus an escape hatch. It steers extraction\n(T2.4) -- a cap table and a financial model are read for different\nthings -- so it is the founder's declaration, not a fact, and extraction\nmust cope with being told the wrong one.\n\nA registration certificate is still self-reported evidence\n(`DECISIONS.md` D7): extraction reads legal name and registration number\noff it with a citation; nothing is labelled verified.",
         "enum": [
           "deck",
           "financials",
           "cap_table",
+          "registration_certificate",
           "other"
         ],
         "title": "DocumentKind",
@@ -1658,6 +1732,94 @@
         "title": "LogoutRequest",
         "type": "object"
       },
+      "MentorChatRequest": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "history": [],
+            "message": "Explain my top gap in plain language."
+          }
+        ],
+        "properties": {
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/ChatTurn"
+            },
+            "maxItems": 10,
+            "title": "History",
+            "type": "array"
+          },
+          "message": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "MentorChatRequest",
+        "type": "object"
+      },
+      "MentorChatResponse": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "citations": [
+              {
+                "kind": "finding",
+                "ref": "finding:runway"
+              }
+            ],
+            "reply": "Your biggest gap is runway evidence."
+          }
+        ],
+        "properties": {
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/MentorCitation"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "reply": {
+            "title": "Reply",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reply"
+        ],
+        "title": "MentorChatResponse",
+        "type": "object"
+      },
+      "MentorCitation": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "kind": "finding",
+            "ref": "finding:runway"
+          }
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/CitationKind"
+          },
+          "ref": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "ref"
+        ],
+        "title": "MentorCitation",
+        "type": "object"
+      },
       "MfaConfirmRequest": {
         "additionalProperties": false,
         "description": "Prove the authenticator holds the secret, then enable MFA.",
@@ -1775,29 +1937,43 @@
       },
       "PasswordResetConfirmRequest": {
         "additionalProperties": false,
-        "description": "Complete a reset with the token from the emailed link.",
+        "description": "Complete a reset with the emailed code and a new password.\n\nBoth the address and the code are required: the code is six digits, so it\nis checked against one account rather than looked up across all of them\n(AUTH.md section 12).",
         "examples": [
           {
-            "password": "a-different-passphrase-entirely",
-            "token": "aXNzdWVkLWJ5LWVtYWlsLW5vdC1hLXJlYWwtdG9rZW4"
+            "code": "418305",
+            "email": "founder@example.com",
+            "password": "a-different-passphrase-entirely"
           }
         ],
         "properties": {
+          "code": {
+            "description": "The six-digit code from the reset email. Spaces and hyphens are ignored, so a pasted `123 456` is accepted.",
+            "examples": [
+              "418305"
+            ],
+            "maxLength": 16,
+            "title": "Code",
+            "type": "string"
+          },
+          "email": {
+            "examples": [
+              "founder@example.com"
+            ],
+            "maxLength": 320,
+            "title": "Email",
+            "type": "string"
+          },
           "password": {
             "description": "The new password. At least 12 characters.",
             "maxLength": 256,
             "minLength": 12,
             "title": "Password",
             "type": "string"
-          },
-          "token": {
-            "maxLength": 512,
-            "title": "Token",
-            "type": "string"
           }
         },
         "required": [
-          "token",
+          "email",
+          "code",
           "password"
         ],
         "title": "PasswordResetConfirmRequest",
@@ -2086,6 +2262,47 @@
           "password"
         ],
         "title": "ProvisionAdminRequest",
+        "type": "object"
+      },
+      "ReadinessResponse": {
+        "description": "Dependency readiness.",
+        "examples": [
+          {
+            "database": true,
+            "redis": true,
+            "status": "ready",
+            "version": "0.1.0"
+          }
+        ],
+        "properties": {
+          "database": {
+            "title": "Database",
+            "type": "boolean"
+          },
+          "redis": {
+            "title": "Redis",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "ready",
+              "not_ready"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "version",
+          "database",
+          "redis"
+        ],
+        "title": "ReadinessResponse",
         "type": "object"
       },
       "ReadinessSummary": {
@@ -2420,6 +2637,101 @@
           }
         },
         "title": "RegistrationAccepted",
+        "type": "object"
+      },
+      "RegistriesResponse": {
+        "additionalProperties": false,
+        "description": "Every jurisdiction we know how to label a registration form for.\n\nCountries not in this map are still accepted: the founder fills legal name\nand registration number as free text, and uploads a\n`registration_certificate`. Missing a map entry is not a refusal.",
+        "examples": [
+          {
+            "registries": [
+              {
+                "country": "NG",
+                "country_name": "Nigeria",
+                "document_name": "Certificate of Incorporation",
+                "number_example": "RC 1234567",
+                "number_label": "RC Number",
+                "registrar": "Corporate Affairs Commission",
+                "short_name": "CAC"
+              }
+            ]
+          }
+        ],
+        "properties": {
+          "registries": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryEntry"
+            },
+            "title": "Registries",
+            "type": "array"
+          }
+        },
+        "required": [
+          "registries"
+        ],
+        "title": "RegistriesResponse",
+        "type": "object"
+      },
+      "RegistryEntry": {
+        "additionalProperties": false,
+        "description": "One jurisdiction's company register, for the registration form.",
+        "examples": [
+          {
+            "country": "NG",
+            "country_name": "Nigeria",
+            "document_name": "Certificate of Incorporation",
+            "number_example": "RC 1234567",
+            "number_label": "RC Number",
+            "registrar": "Corporate Affairs Commission",
+            "short_name": "CAC"
+          }
+        ],
+        "properties": {
+          "country": {
+            "description": "ISO 3166-1 alpha-2, e.g. `NG`.",
+            "title": "Country",
+            "type": "string"
+          },
+          "country_name": {
+            "title": "Country Name",
+            "type": "string"
+          },
+          "document_name": {
+            "description": "What the certificate of incorporation is called locally.",
+            "title": "Document Name",
+            "type": "string"
+          },
+          "number_example": {
+            "description": "Placeholder hint only. **Never validate a founder's number against this** \u2014 rejecting a real certificate over a format mismatch is worse than accepting an unusual one.",
+            "title": "Number Example",
+            "type": "string"
+          },
+          "number_label": {
+            "description": "What the registration-number field should be labelled.",
+            "title": "Number Label",
+            "type": "string"
+          },
+          "registrar": {
+            "description": "Full name of the registering body.",
+            "title": "Registrar",
+            "type": "string"
+          },
+          "short_name": {
+            "description": "Abbreviation the founder will recognise.",
+            "title": "Short Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "country",
+          "country_name",
+          "registrar",
+          "short_name",
+          "document_name",
+          "number_label",
+          "number_example"
+        ],
+        "title": "RegistryEntry",
         "type": "object"
       },
       "Requirement": {
@@ -2903,6 +3215,47 @@
         "title": "TokenPairResponse",
         "type": "object"
       },
+      "UnlockReceiptResponse": {
+        "description": "Completed unlock purchase, when one exists.",
+        "examples": [
+          {
+            "amount": 14900,
+            "currency": "USD",
+            "paid_at": "2026-08-10T12:00:00Z",
+            "reference": "3f2a1b0c-4d5e-6789-abcd-ef0123456789"
+          }
+        ],
+        "properties": {
+          "amount": {
+            "description": "Amount in minor units (e.g. cents).",
+            "title": "Amount",
+            "type": "integer"
+          },
+          "currency": {
+            "description": "ISO 4217 currency code.",
+            "title": "Currency",
+            "type": "string"
+          },
+          "paid_at": {
+            "format": "date-time",
+            "title": "Paid At",
+            "type": "string"
+          },
+          "reference": {
+            "description": "Our purchase id.",
+            "title": "Reference",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reference",
+          "amount",
+          "currency",
+          "paid_at"
+        ],
+        "title": "UnlockReceiptResponse",
+        "type": "object"
+      },
       "UploadRequest": {
         "additionalProperties": false,
         "description": "Ask for somewhere to put a file.\n\nDeclaring the type up front is what lets the server bake it into the\nsignature, so a mismatched upload is refused by storage rather than\ndiscovered afterwards.",
@@ -2989,12 +3342,14 @@
             "email": "founder@example.com",
             "email_verified": false,
             "first_name": "Amaka",
+            "has_access": true,
             "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
             "kyc_status": "none",
             "last_name": "Okonkwo",
             "role": "founder",
             "status": "pending_verification",
-            "subscription_status": "none"
+            "subscription_status": "none",
+            "trial_ends_at": "2026-08-12T09:15:00Z"
           }
         ],
         "properties": {
@@ -3021,6 +3376,10 @@
               }
             ],
             "title": "First Name"
+          },
+          "has_access": {
+            "title": "Has Access",
+            "type": "boolean"
           },
           "id": {
             "format": "uuid",
@@ -3049,6 +3408,11 @@
           },
           "subscription_status": {
             "$ref": "#/components/schemas/SubscriptionStatus"
+          },
+          "trial_ends_at": {
+            "format": "date-time",
+            "title": "Trial Ends At",
+            "type": "string"
           }
         },
         "required": [
@@ -3061,7 +3425,9 @@
           "email_verified",
           "kyc_status",
           "subscription_status",
-          "created_at"
+          "created_at",
+          "trial_ends_at",
+          "has_access"
         ],
         "title": "UserResponse",
         "type": "object"
@@ -4296,7 +4662,7 @@
     },
     "/v1/auth/password-reset/confirm": {
       "post": {
-        "description": "Sets the new password and **ends every existing session**: all refresh tokens are revoked and every access token already issued stops working. The user must log in again afterwards, on every device.\n\nAny other reset link already sent to that address is invalidated too.",
+        "description": "Sets the new password with the emailed six-digit code and **ends every existing session**: all refresh tokens are revoked and every access token already issued stops working. The user must log in again afterwards, on every device.\n\n**Collect the code from the reset email together with the address it was sent to** \u2014 both are required, because a six-digit code is only checked against the one account it belongs to. Spaces and hyphens in the code are ignored.\n\n`422` covers a wrong code, an expired one, one already used, one whose attempts are exhausted, and an address with no account at all -- one message for every case.\n\nAny other reset code already sent to that address is invalidated too.",
         "operationId": "confirm_password_reset_v1_auth_password_reset_confirm_post",
         "requestBody": {
           "content": {
@@ -4331,7 +4697,7 @@
     },
     "/v1/auth/password-reset/request": {
       "post": {
-        "description": "Sends a reset link if the address has an account.\n\n**Always returns `202` with the same body**, whether or not the address is registered, so this cannot be used to discover accounts.",
+        "description": "Emails a six-digit reset code if the address has an account.\n\n**Always returns `202` with the same body**, whether or not the address is registered, so this cannot be used to discover accounts.\n\n**The code expires in 15 minutes and allows 5 attempts.** Requesting another code invalidates the previous one. A request within 60 seconds of the last one is not sent \u2014 put a short countdown on the button.",
         "operationId": "request_password_reset_v1_auth_password_reset_request_post",
         "requestBody": {
           "content": {
@@ -5041,6 +5407,194 @@
         "summary": "Retire a benchmark band",
         "tags": [
           "audit"
+        ]
+      }
+    },
+    "/v1/billing/checkout": {
+      "post": {
+        "description": "Creates a Stripe Checkout Session for the one-off founder unlock (DECISIONS.md D21). Open `checkout_url` in a browser or system web view. Entitlement is granted only after Stripe delivers a verified `checkout.session.completed` webhook \u2014 do not treat opening the URL as payment.\n\n`422` with `already_unlocked` when `subscription_status` is already `active`.",
+        "operationId": "start_checkout_v1_billing_checkout_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckoutSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "internal_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Start founder unlock Checkout",
+        "tags": [
+          "commerce"
+        ]
+      }
+    },
+    "/v1/billing/unlock": {
+      "get": {
+        "description": "Returns the founder's completed unlock purchase, if any.",
+        "operationId": "read_unlock_v1_billing_unlock_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnlockReceiptResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Completed unlock receipt",
+        "tags": [
+          "commerce"
+        ]
+      }
+    },
+    "/v1/billing/webhooks/stripe": {
+      "post": {
+        "description": "Verifies the Stripe signature header and applies entitlement changes. Idempotent on `event.id`. Not authenticated with a bearer token \u2014 Stripe signs the body instead.",
+        "operationId": "stripe_webhook_v1_billing_webhooks_stripe_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Stripe-Signature",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stripe-Signature"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Stripe Webhook V1 Billing Webhooks Stripe Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "internal_error"
+          }
+        },
+        "summary": "Stripe webhook receiver",
+        "tags": [
+          "commerce"
         ]
       }
     },
@@ -5851,6 +6405,75 @@
         ]
       }
     },
+    "/v1/ready": {
+      "get": {
+        "description": "Probes Postgres and Redis. Returns HTTP `503` with this same body when either is unreachable so a load balancer can drain traffic. Unauthenticated on purpose \u2014 the response only names dependency health, never secrets or data. Branch on `status` / the status code.",
+        "operationId": "ready_v1_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            },
+            "description": "Dependencies are reachable."
+          }
+        },
+        "summary": "Readiness check",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/v1/registries": {
+      "get": {
+        "description": "Static reference data for the registration form: given an ISO 3166-1 alpha-2 country code, which body registers companies there, what the certificate is called, and how to label the registration number field.\n\n**Key on ISO codes, not display names.** `NG` maps to CAC; `\"Nigeria\"` is not a key. Countries not in this list are still accepted \u2014 the founder fills legal name and number as free text and uploads a `registration_certificate`.\n\nNothing here verifies a company exists (`DECISIONS.md` D7).",
+        "operationId": "list_registries_v1_registries_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistriesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "List company registries by country",
+        "tags": [
+          "intake"
+        ]
+      }
+    },
     "/v1/startups": {
       "post": {
         "description": "Creates the profile for the authenticated founder. **Every field is optional** -- start with what you know and fill the rest in later, or let document extraction do it. `missing_fields` on the response says what an audit will still need.\n\nThe owner is taken from your token, never from the request body.\n\n**If you omit `name`, it is filled in from your company email domain** -- `founder@acme.com` gives `Acme`. It is a starting point, not a verified company name: send `name` yourself to set it exactly, or correct it later with `PATCH /startups/{id}`. A name you do send is never overwritten.\n\nFounders (and SACI admins) only. `403` for an investor.\n\n`409` if you already have a profile: one per founder in v1.",
@@ -6657,6 +7280,91 @@
         ]
       }
     },
+    "/v1/startups/{startup_id}/audits/{run_id}/report.pdf": {
+      "get": {
+        "description": "The same founder-tier content as `GET .../report`, rendered as a PDF via ReportLab. Auth and ownership match the JSON endpoint: another founder's run is `404`, and a run that has not succeeded is `404`.\n\nThe PDF is built from `founder_report(...)` so tier rules cannot drift from the JSON API.",
+        "operationId": "download_audit_report_pdf_v1_startups__startup_id__audits__run_id__report_pdf_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "startup_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Startup Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/pdf": {}
+            },
+            "description": "PDF bytes of the founder audit report."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Download your audit report as PDF",
+        "tags": [
+          "audit"
+        ]
+      }
+    },
     "/v1/startups/{startup_id}/documents": {
       "get": {
         "description": "Newest first. Includes `pending` and `rejected` documents, so the client can show an upload that stalled or was refused.\n\nYou can only reach your own profile. Another founder's id returns `404`, not `403` -- deliberately, so the API does not confirm which ids exist. SACI admins can read any profile.",
@@ -6824,6 +7532,95 @@
         "summary": "Start a document upload",
         "tags": [
           "intake"
+        ]
+      }
+    },
+    "/v1/startups/{startup_id}/mentor/chat": {
+      "post": {
+        "description": "Answers questions using **only** this startup's latest succeeded audit report, readiness tasks, and profile facts. Cross-tenant data is never retrieved, even when the message asks for it.\n\nRequires a succeeded audit \u2014 otherwise `422`. Uses the chat-tier model (DECISIONS.md D16).",
+        "operationId": "mentor_chat_v1_startups__startup_id__mentor_chat_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "startup_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Startup Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MentorChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MentorChatResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Chat with the AI mentor about your audit",
+        "tags": [
+          "mentor"
         ]
       }
     },

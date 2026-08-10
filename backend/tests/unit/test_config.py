@@ -30,6 +30,7 @@ PRODUCTION_ENV = {
     # not block a boot.
     "STRIPE_SECRET_KEY": "stripe-key-value",
     "STRIPE_WEBHOOK_SECRET": "webhook-secret-value",
+    "STRIPE_PRICE_ID_UNLOCK": "price_test_unlock",
 }
 
 
@@ -67,9 +68,10 @@ def test_cors_origins_parsed_from_csv() -> None:
     assert settings.cors_origins == ["https://a.example", "https://b.example"]
 
 
-def test_cors_origins_empty_by_default() -> None:
-    """No configuration means no cross-origin access, not 'allow everything'."""
-    assert Settings().cors_origins == []
+def test_cors_origins_empty_defaults_to_local_expo_in_development() -> None:
+    """Local web preview needs CORS; production stays closed when unset."""
+    assert "http://localhost:8097" in Settings().cors_origins
+    assert Settings(app_env=Environment.PRODUCTION).cors_origins == []
 
 
 def test_secrets_are_not_exposed_by_repr() -> None:
@@ -215,6 +217,9 @@ class TestProductionGuards:
             "ANTHROPIC_API_KEY",
             "RESEND_API_KEY",
             "EMAIL_FROM_ADDRESS",
+            "STRIPE_SECRET_KEY",
+            "STRIPE_WEBHOOK_SECRET",
+            "STRIPE_PRICE_ID_UNLOCK",
         ],
     )
     def test_missing_required_setting_fails_startup(
@@ -227,25 +232,6 @@ class TestProductionGuards:
             _load(monkeypatch, env)
 
         assert missing in str(exc_info.value)
-
-    @pytest.mark.parametrize("unread", ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"])
-    def test_a_setting_no_code_reads_yet_does_not_block_production(
-        self, monkeypatch: pytest.MonkeyPatch, unread: str
-    ) -> None:
-        """Requiring Stripe made `APP_ENV=production` impossible to satisfy.
-
-        Nothing reads these until T3.3, so the only ways past the check were to
-        stay on staging or to put a value that looks real into a secret manager
-        and is not. A check that cannot be satisfied honestly teaches an
-        operator to satisfy it dishonestly. They come back in the change that
-        makes `commerce` read them.
-        """
-        env = _production()
-        env.pop(unread)
-
-        settings = _load(monkeypatch, env)
-
-        assert settings.is_production
 
     def test_email_is_required_because_without_it_nobody_can_log_in(
         self, monkeypatch: pytest.MonkeyPatch

@@ -8,7 +8,7 @@ courtesy: some clients render it by preference, and a security email that
 arrives as a blank body is a support incident.
 
 **Templates never take the recipient's address or name.** They render one
-secret -- a verification code or a reset link -- and nothing else, so a
+secret -- a verification or password-reset code -- and nothing else, so a
 template cannot accidentally place personal data somewhere it will be logged.
 The caller supplies the recipient separately.
 """
@@ -82,28 +82,37 @@ def verification_email(code: str, ttl_minutes: int) -> EmailContent:
     )
 
 
-def password_reset_email(reset_url: str) -> EmailContent:
-    """Reset a forgotten password.
+def password_reset_email(code: str, ttl_minutes: int) -> EmailContent:
+    """Reset a forgotten password with a six-digit code.
 
-    Says nothing that would confirm the account exists to someone who merely
-    guessed the address -- the message only makes sense to its owner, and the
-    request endpoint answers identically either way (AUTH.md section 12).
+    A code rather than a link, matching email verification: the person finishes
+    in the app they started in, and nothing in this message is clickable. Says
+    nothing that would confirm the account exists to someone who merely guessed
+    the address -- the message only makes sense to its owner, and the request
+    endpoint answers identically either way (AUTH.md section 12).
     """
     return EmailContent(
+        # Code stays out of the subject for the same reason as verification:
+        # subjects are logged and travel through more relays than the body.
         subject=f"Reset your {PRODUCT_NAME} password",
         html=_wrap(
             "Reset your password",
-            "<p>Use the link below to choose a new password.</p>"
-            f'<p><a href="{reset_url}">Reset password</a></p>'
-            "<p>The link expires in one hour and can be used once. If you did "
-            "not ask for this, no action is needed and your password is "
-            "unchanged.</p>",
+            f"<p>Enter this code in the {PRODUCT_NAME} app to choose a new "
+            "password.</p>"
+            '<p style="font-size:32px;font-weight:600;letter-spacing:6px;'
+            "margin:24px 0;font-family:ui-monospace,SFMono-Regular,Menlo,"
+            f'monospace">{code}</p>'
+            f"<p>The code expires in {ttl_minutes} minutes and can be used "
+            "once. If you did not ask for this, no action is needed and your "
+            "password is unchanged -- nobody can use the code without it.</p>",
         ),
         text=(
-            "Use the link below to choose a new password:\n\n"
-            f"{reset_url}\n\n"
-            "The link expires in one hour and can be used once. If you did not "
-            "ask for this, no action is needed and your password is unchanged."
+            f"Enter this code in the {PRODUCT_NAME} app to choose a new "
+            "password:\n\n"
+            f"{code}\n\n"
+            f"The code expires in {ttl_minutes} minutes and can be used once. "
+            "If you did not ask for this, no action is needed and your "
+            "password is unchanged -- nobody can use the code without it."
         ),
     )
 

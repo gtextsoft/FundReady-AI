@@ -240,7 +240,7 @@ Notes that matter:
 - **Minimum strength:** at least 12 characters; reject the obvious (email local-part, the word "fundready", common-password list). Length beats composition rules — no forced symbol classes.
 - **Breached-password check** via the HIBP range API (k-anonymity: only a 5-character SHA-1 prefix leaves our servers, never the password). Free, no key. **Fails open** — if the service is unreachable the signup proceeds and the failure is logged, because an outage at a third party must not stop registration.
 - **Email verification** required before sensitive actions. Verification codes are single-use, expiring (15 min), attempt-capped, and **stored keyed-hashed** (§3.2).
-- **Password reset:** single-use, expiring (1 h), hashed-at-rest token, delivered by email. Requesting a reset returns the **same response whether or not the account exists**. Completing a reset bumps `session_valid_after` and revokes every refresh token.
+- **Password reset:** a **six-digit code**, not a link — same constraints as email verification (§3.2): bound to one account, five attempts then burned, fifteen minutes, one live code per account, stored HMAC-SHA256 keyed with the server secret. Requesting a reset returns the **same response whether or not the account exists**. Completing a reset bumps `session_valid_after` and revokes every refresh token.
 - **Rate limiting and lockout** on login, registration, password-reset, refresh, and MFA verification — per-IP and per-account. Exponential backoff, then a temporary lock, to blunt credential stuffing. Backed by Redis (already in the stack); implementation lands in T5.5.
 
 ## 13. Security controls checklist
@@ -254,7 +254,7 @@ Notes that matter:
 - [ ] **Ownership checked in the service layer on every object access** (primary wall); other-tenant ids return 404.
 - [ ] RLS policies, where enabled, use `SET LOCAL` — verified not to leak across pooled connections. *(Deferred to T5.7 with the least-privilege role — `DECISIONS.md` D19. Nothing to verify until then: the current role bypasses RLS entirely.)*
 - [ ] Tier serializers applied to every response that carries report data.
-- [ ] KYC and subscription gates enforced server-side from Stripe only.
+- [x] Founder unlock gate enforced server-side from Stripe webhooks only (D21 one-off Checkout; `require_founder_access` / `require_active_subscription`). Investor KYC (T4.1) still open.
 - [ ] MFA required for admins; TOTP secrets encrypted at rest; recovery codes hashed.
 - [ ] Rate limiting + lockout on all auth endpoints; uniform responses that do not enumerate accounts.
 - [ ] CORS restricted to known origins; secure response headers set.
@@ -298,8 +298,8 @@ Notes that matter:
 `auth_tokens` (email verification and password reset):
 
 - `id` · `user_id` · `purpose` (`email_verification` | `password_reset`) · `token_hash` · `expires_at` · `used_at` · `attempt_count` · `created_at`
-- `token_hash` holds two different things by purpose: a **bare SHA-256** of the 256-bit reset token, and an **HMAC-SHA256 keyed with the server secret** for a verification code, over the user id, purpose, and digits together (§3.2).
-- `attempt_count` is wrong guesses against a verification code, committed as they happen. Always zero for a reset token — nobody guesses 256 bits.
+- Both purposes store a six-digit code as an **HMAC-SHA256 keyed with the server secret**, over the user id, purpose, and digits together (§3.2 / §12).
+- `attempt_count` is wrong guesses against the code, committed as they happen.
 
 `mfa_recovery_codes`:
 
@@ -345,7 +345,7 @@ Client responsibilities:
 
 - [ ] `core/security.py`: Argon2id hash/verify with rehash-on-login; JWT issue/verify with pinned algorithm and `typ` checking.
 - [ ] JWT verification dependency: verify → load user → check status and `session_valid_after`.
-- [ ] `require_role(*roles)`, `require_kyc_verified`, `require_active_subscription`, `get_current_founder/investor/admin` dependencies.
+- [x] `require_role(*roles)`, `require_active_subscription`, `require_founder_access`, `get_current_founder/investor/admin` dependencies. `require_kyc_verified` waits on T4.1.
 - [ ] Ownership helpers (e.g. `get_owned_startup`) returning 404 on mismatch.
 - [ ] `identity` module: register, login, refresh (with rotation + reuse detection), logout, email verification, password reset.
 - [ ] MFA: TOTP enrolment/verification, encrypted secrets, hashed recovery codes; enforced for admins.

@@ -20,8 +20,10 @@ enumeration oracle that registration is written to avoid (AUTH.md section 3.2).
 (CLAUDE.md section 4), so failures record the provider's status and error
 *type* -- never the response body, which typically echoes the address back.
 
-Delivery is synchronous for now. Moving it onto the queue belongs with T2.8/T5.3;
-the timeout below is what keeps that from being urgent.
+Delivery prefers the Redis/RQ queue so a slow Resend does not hold an HTTP
+request (T5.3). Tests and callers that inject an `httpx` client still send
+inline. When Redis is unavailable the send falls back to the request thread
+rather than dropping the message.
 """
 
 import logging
@@ -53,6 +55,39 @@ def _is_configured(settings: Settings) -> bool:
     )
 
 
+async def dispatch_email(
+    to: str,
+    content: EmailContent,
+    *,
+    settings: Settings | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> bool:
+    """Queue the message when possible; otherwise send inline.
+
+    An injected `client` always forces the inline path so unit tests keep
+    driving Resend with a mock transport.
+    """
+    if client is not None:
+        return await send_email(to, content, settings=settings, client=client)
+
+    settings = settings or get_settings()
+    try:
+        from app.workers.queue import QueueUnavailableError, enqueue_email
+
+        enqueue_email(to, content.subject, content.html, content.text)
+        return True
+    except Exception as error:
+        from app.workers.queue import QueueUnavailableError
+
+        if isinstance(error, QueueUnavailableError):
+            return await send_email(to, content, settings=settings)
+        logger.warning(
+            "email enqueue failed; sending inline",
+            extra={"context": {"reason": type(error).__name__}},
+        )
+        return await send_email(to, content, settings=settings)
+
+
 async def send_email(
     to: str,
     content: EmailContent,
@@ -60,11 +95,10 @@ async def send_email(
     settings: Settings | None = None,
     client: httpx.AsyncClient | None = None,
 ) -> bool:
-    """Send one message. Returns whether the provider accepted it.
+    """Send one message on the current thread. Returns provider acceptance.
 
     Never raises: a caller cannot be made to fail because email is down.
-    `client` is injectable so tests can drive this without a network, and so a
-    pooled client can be shared later.
+    Prefer `dispatch_email` from product code so delivery can leave the request.
     """
     settings = settings or get_settings()
 
@@ -131,21 +165,23 @@ async def send_verification_email(
     to: str, code: str, *, ttl_minutes: int, settings: Settings | None = None
 ) -> bool:
     """Email a new user the code that confirms their address (T1.2b calls this)."""
-    return await send_email(
+    return await dispatch_email(
         to, verification_email(code, ttl_minutes), settings=settings
     )
 
 
 async def send_password_reset_email(
-    to: str, reset_url: str, *, settings: Settings | None = None
+    to: str, code: str, *, ttl_minutes: int, settings: Settings | None = None
 ) -> bool:
-    """Send a single-use password reset link (T1.2b calls this)."""
-    return await send_email(to, password_reset_email(reset_url), settings=settings)
+    """Email a six-digit password-reset code (AUTH.md section 12)."""
+    return await dispatch_email(
+        to, password_reset_email(code, ttl_minutes), settings=settings
+    )
 
 
 async def send_welcome_email(to: str, *, settings: Settings | None = None) -> bool:
     """Greet an account whose address has just been confirmed."""
-    return await send_email(to, welcome_email(), settings=settings)
+    return await dispatch_email(to, welcome_email(), settings=settings)
 
 
 async def send_audit_report_email(
@@ -157,4 +193,6 @@ async def send_audit_report_email(
     `notifications` sits below `audit` in the layer order and must not import
     from it -- see the note on `audit_report_email`.
     """
-    return await send_email(to, audit_report_email(report, app_url), settings=settings)
+    return await dispatch_email(
+        to, audit_report_email(report, app_url), settings=settings
+    )

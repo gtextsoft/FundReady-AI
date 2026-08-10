@@ -166,12 +166,18 @@ class Settings(BaseSettings):
     ai_model_audit: BlankableStr = ""
     ai_model_chat: BlankableStr = ""
     ai_max_output_tokens: OptionalInt = None
-    ai_daily_budget_tokens_per_user: OptionalInt = None
+    # Enforced in `ai.client` (T5.5). Default caps spend when unset.
+    ai_daily_budget_tokens_per_user: OptionalInt = 500_000
 
     # -- Stripe -------------------------------------------------------------
     stripe_secret_key: SecretStr | None = None
     stripe_webhook_secret: SecretStr | None = None
     stripe_publishable_key: str = ""
+    # One-time Price for the founder unlock (DECISIONS.md D21).
+    stripe_price_id_unlock: BlankableStr = ""
+    # Optional overrides; blank falls back to APP_LINK_BASE_URL deep links.
+    stripe_checkout_success_url: BlankableStr = ""
+    stripe_checkout_cancel_url: BlankableStr = ""
 
     # -- Email --------------------------------------------------------------
     resend_api_key: SecretStr | None = None
@@ -186,27 +192,37 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins(self) -> list[str]:
-        """Allowed CORS origins. Empty means no cross-origin access."""
-        return [
+        """Allowed CORS origins.
+
+        Empty means no cross-origin access in staging/production (correct for a
+        mobile-only client). In development, an empty list falls back to the
+        local Expo web preview hosts so the browser can reach this API without
+        every machine needing a hand-edited `CORS_ALLOWED_ORIGINS`.
+        """
+        configured = [
             origin.strip()
             for origin in self.cors_allowed_origins.split(",")
             if origin.strip()
         ]
+        if configured:
+            return configured
+        if self.app_env is Environment.DEVELOPMENT:
+            return [
+                "http://localhost:8097",
+                "http://127.0.0.1:8097",
+                "http://localhost:8081",
+                "http://127.0.0.1:8081",
+                "http://localhost:19006",
+                "http://127.0.0.1:19006",
+            ]
+        return []
 
     def missing_production_settings(self) -> list[str]:
         """Names of required settings that are absent, for production only.
 
         **Required means "some code reads it", not "it exists as a field".**
-        This list previously demanded `STRIPE_SECRET_KEY` and
-        `STRIPE_WEBHOOK_SECRET`, which nothing reads until T3.3 -- so
-        `APP_ENV=production` could not boot at all, and the only ways past it
-        were to stay on staging or to invent a Stripe value that looks real in
-        a secret manager and is not. A check that cannot be satisfied honestly
-        teaches an operator to satisfy it dishonestly, which is worse than not
-        having it.
-
-        They return here in the change that makes `commerce` read them, where
-        the module that needs a setting is the thing that asserts it.
+        Stripe keys return here now that `commerce` creates Checkout sessions
+        and verifies webhooks (T3.3 / DECISIONS.md D21).
         """
         if not self.is_production:
             return []
@@ -236,6 +252,9 @@ class Settings(BaseSettings):
             # list, so `APP_ENV=production` booted happily into exactly that.
             "RESEND_API_KEY": self.resend_api_key,
             "EMAIL_FROM_ADDRESS": self.email_from_address,
+            "STRIPE_SECRET_KEY": self.stripe_secret_key,
+            "STRIPE_WEBHOOK_SECRET": self.stripe_webhook_secret,
+            "STRIPE_PRICE_ID_UNLOCK": self.stripe_price_id_unlock,
         }
         return sorted(name for name, value in required.items() if _is_blank(value))
 

@@ -59,6 +59,7 @@ class FakeStorage:
 
     def __init__(self) -> None:
         self.objects: dict[str, FakeObject] = {}
+        self.bodies: dict[str, bytes] = {}
         self.deleted: list[str] = []
         self.signed_uploads: list[tuple[str, str]] = []
         self.signed_downloads: list[tuple[str, str | None]] = []
@@ -74,13 +75,23 @@ class FakeStorage:
     def head(self, key: str) -> FakeObject | None:
         return self.objects.get(key)
 
+    def get(self, key: str, *, bucket: str = "documents", max_bytes: int = 0) -> bytes | None:
+        return self.bodies.get(key)
+
     def delete(self, key: str) -> None:
         self.deleted.append(key)
         self.objects.pop(key, None)
+        self.bodies.pop(key, None)
 
     def arrive(self, key: str, *, size: int = 2048, content_type: str = PDF) -> None:
         """Pretend the client's PUT succeeded."""
         self.objects[key] = FakeObject(size_bytes=size, content_type=content_type)
+        if content_type == PDF:
+            self.bodies[key] = b"%PDF-1.4 " + b"x" * max(0, size - 9)
+        elif content_type == "image/png":
+            self.bodies[key] = b"\x89PNG\r\n\x1a\n" + b"x" * max(0, size - 8)
+        else:
+            self.bodies[key] = b"\x00" * size
 
 
 @pytest.fixture
@@ -90,6 +101,7 @@ def storage(monkeypatch: pytest.MonkeyPatch) -> FakeStorage:
     monkeypatch.setattr(service, "signed_download_url", fake.download_url)
     monkeypatch.setattr(service, "head_object", fake.head)
     monkeypatch.setattr(service, "delete_object", fake.delete)
+    monkeypatch.setattr("app.core.storage.get_object", fake.get)
     return fake
 
 
@@ -505,18 +517,17 @@ class TestUploadLifecycle:
         assert again.status is DocumentStatus.READY
         assert storage.deleted == []
 
-    async def test_an_unscanned_file_is_never_recorded_clean(
+    async def test_a_matching_pdf_is_marked_clean(
         self, db_session: AsyncSession, storage: FakeStorage
     ) -> None:
-        """`skipped` is the honest answer until T5.5 wires a scanner."""
+        """Magic-byte scan (T5.5) marks allowlisted PDFs clean."""
         actor, startup = await founder_with_profile(db_session)
         document_id = await uploaded(db_session, storage, actor, startup)
 
         document = await DocumentRepository(db_session).get(document_id)
 
         assert document is not None
-        assert document.scan_status is ScanStatus.SKIPPED
-        assert document.scan_status is not ScanStatus.CLEAN
+        assert document.scan_status is ScanStatus.CLEAN
 
     async def test_documents_are_listed_for_their_own_startup_only(
         self, db_session: AsyncSession, storage: FakeStorage

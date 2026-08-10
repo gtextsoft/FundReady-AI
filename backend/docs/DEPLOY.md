@@ -228,10 +228,11 @@ near it, and send yourself one real verification email as part of §4 step 1.
 Same shape for `APP_LINK_BASE_URL`: it *is* required in production, but in
 staging a blank value produces emails whose links point nowhere.
 
-**CI does not deploy.** `.github/workflows/ci.yml` runs lint, types, tests, and
-a secret scan. Render deploys on push to the default branch independently of
-whether CI passed. If you want CI to gate deploys, turn off auto-deploy and use
-a deploy hook from the workflow.
+**CI gates deploys.** `render.yaml` sets `autoDeploy: false`. On a green `main`
+push, `.github/workflows/ci.yml` hits `RENDER_DEPLOY_HOOK_API` and
+`RENDER_DEPLOY_HOOK_WORKER` (repository secrets — copy each service's Deploy
+Hook URL from the Render dashboard). Without those secrets the deploy job
+no-ops rather than failing.
 
 **A green CI badge skips every database-backed test.** The runner has no
 `DATABASE_URL`, so all ten `requires_database` files skip — including tenant
@@ -262,13 +263,12 @@ admin-only path for SACI (T4.2, 2026-08-03).
 
 It does **not** get you:
 
-- **Document-driven audits.** Uploads are stored but not yet read by the audit
-  (T2.4a); a run scores the profile fields only.
-- Readiness tasks, evidence, Stripe, investor discovery, brokerage — Phases 3–5.
-- Rate limiting, per-user AI budget caps, RLS (T5.5, D19).
+- Full product catalogue (T3.2) and App Store / Play IAP (D21 — use web Checkout).
+- Investor KYC / Stripe Identity (T4.1).
+- Postgres RLS least-privilege role (D19 / D22).
+- Full antivirus (magic-byte scan is live; ClamAV-class scanning is not).
 
-The AI budget point deserves emphasis: `ai/client.py` **measures** spend and
-nothing **caps** it. A deployed, publicly reachable audit endpoint can be
-submitted to repeatedly. The idempotency constraint stops repeats of *identical*
-inputs; it does nothing about a caller who edits one field between submissions.
-Until T5.5 lands, keep registration closed or watch the Anthropic dashboard.
+**Before public traffic:** set `SENTRY_DSN`, Stripe unlock secrets
+(`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_UNLOCK`),
+point Stripe webhooks at `POST /v1/billing/webhooks/stripe`, and keep
+`AI_DAILY_BUDGET_TOKENS_PER_USER` at a sane cap (default 500000).

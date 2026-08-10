@@ -250,10 +250,10 @@ class AuthTokenRepository:
     ) -> AuthToken | None:
         """The newest unused, unexpired row for this user and purpose.
 
-        A verification code cannot be found by its hash the way a link token
-        can: the hash is keyed with the user id, so the caller has to be
-        resolved first, and a wrong guess would match nothing at all -- leaving
-        no row on which to count the attempt.
+        A six-digit code cannot be found by its hash alone: the hash is keyed
+        with the user id, so the caller has to be resolved first, and a wrong
+        guess would match nothing at all -- leaving no row on which to count
+        the attempt.
         """
         result: AuthToken | None = await self._session.scalar(
             select(AuthToken)
@@ -283,7 +283,7 @@ class AuthTokenRepository:
     ) -> int:
         """Burn every unused token of this purpose for this user.
 
-        A completed reset must invalidate any other reset links already sent --
+        A completed reset must invalidate any other reset codes already sent --
         otherwise an older email remains a live way in.
         """
         result = await self._session.execute(

@@ -4,10 +4,9 @@ The properties `AUTH.md` sections 3.2 and 12 treat as non-negotiable: a secret
 works once, expires, cannot be used for a purpose it was not issued for, and
 completing a reset evicts everyone already holding a session.
 
-Verification is a **six-digit code**, which brings its own obligations that a
-256-bit link never had: guesses are counted and the code dies after a handful,
-it is bound to one account, and what is stored cannot be reversed by anyone
-holding the database alone.
+Both flows use a **six-digit code**: guesses are counted and the code dies
+after a handful, it is bound to one account, and what is stored cannot be
+reversed by anyone holding the database alone.
 
 Every test runs inside a transaction that is rolled back.
 """
@@ -79,10 +78,8 @@ async def register(session: AsyncSession) -> tuple[User, str]:
     return user, await service.issue_verification_code(session, user)
 
 
-async def issue(session: AsyncSession, user: User, purpose: TokenPurpose) -> str:
-    return await service.issue_auth_token(
-        session, user, purpose, service.PASSWORD_RESET_TTL
-    )
+async def issue_reset_code(session: AsyncSession, user: User) -> str:
+    return await service.issue_password_reset_code(session, user)
 
 
 def wrong_code(code: str) -> str:
@@ -407,28 +404,34 @@ class TestPurposeIsolation:
         self, db_session: AsyncSession
     ) -> None:
         """Otherwise the weaker capability silently grants the stronger one."""
-        _, verification_code = await register(db_session)
+        user, verification_code = await register(db_session)
 
         with pytest.raises(InvalidRequestError):
-            await service.reset_password(db_session, verification_code, NEW_PASSWORD)
+            await service.reset_password(
+                db_session,
+                email=user.email,
+                code=verification_code,
+                new_password=NEW_PASSWORD,
+            )
 
-    async def test_a_reset_token_cannot_verify_an_email(
+    async def test_a_reset_code_cannot_verify_an_email(
         self, db_session: AsyncSession
     ) -> None:
         user, _ = await register(db_session)
-        await service.request_password_reset(db_session, user.email)
-        reset_token = await issue(db_session, user, TokenPurpose.PASSWORD_RESET)
+        reset_code = await issue_reset_code(db_session, user)
 
         with pytest.raises(InvalidRequestError):
-            await service.verify_email(db_session, email=user.email, code=reset_token)
+            await service.verify_email(db_session, email=user.email, code=reset_code)
 
 
 class TestPasswordReset:
     async def test_reset_changes_the_password(self, db_session: AsyncSession) -> None:
         user, _ = await register(db_session)
-        token = await issue(db_session, user, TokenPurpose.PASSWORD_RESET)
+        code = await issue_reset_code(db_session, user)
 
-        await service.reset_password(db_session, token, NEW_PASSWORD)
+        await service.reset_password(
+            db_session, email=user.email, code=code, new_password=NEW_PASSWORD
+        )
 
         await service.authenticate(db_session, email=user.email, password=NEW_PASSWORD)
         with pytest.raises(UnauthenticatedError):
@@ -438,9 +441,11 @@ class TestPasswordReset:
         """Someone resetting a password may be evicting an intruder."""
         user, _ = await register(db_session)
         pair = await service.issue_tokens(db_session, user)
-        token = await issue(db_session, user, TokenPurpose.PASSWORD_RESET)
+        code = await issue_reset_code(db_session, user)
 
-        await service.reset_password(db_session, token, NEW_PASSWORD)
+        await service.reset_password(
+            db_session, email=user.email, code=code, new_password=NEW_PASSWORD
+        )
 
         with pytest.raises(UnauthenticatedError):
             await service.refresh_tokens(db_session, pair.refresh_token)
@@ -448,27 +453,36 @@ class TestPasswordReset:
             "access tokens already issued must stop working too"
         )
 
-    async def test_reset_burns_other_outstanding_links(
+    async def test_reset_burns_other_outstanding_codes(
         self, db_session: AsyncSession
     ) -> None:
         """An older reset email must not stay a live way in."""
         user, _ = await register(db_session)
-        first = await issue(db_session, user, TokenPurpose.PASSWORD_RESET)
-        second = await issue(db_session, user, TokenPurpose.PASSWORD_RESET)
+        first = await issue_reset_code(db_session, user)
+        second = await issue_reset_code(db_session, user)
 
-        await service.reset_password(db_session, second, NEW_PASSWORD)
+        await service.reset_password(
+            db_session, email=user.email, code=second, new_password=NEW_PASSWORD
+        )
 
         with pytest.raises(InvalidRequestError):
-            await service.reset_password(db_session, first, "yet-another-passphrase")
+            await service.reset_password(
+                db_session,
+                email=user.email,
+                code=first,
+                new_password="yet-another-passphrase",
+            )
 
     async def test_reset_rejects_a_weak_new_password(
         self, db_session: AsyncSession
     ) -> None:
         user, _ = await register(db_session)
-        token = await issue(db_session, user, TokenPurpose.PASSWORD_RESET)
+        code = await issue_reset_code(db_session, user)
 
         with pytest.raises(InvalidRequestError):
-            await service.reset_password(db_session, token, "short")
+            await service.reset_password(
+                db_session, email=user.email, code=code, new_password="short"
+            )
 
     async def test_reset_clears_a_lockout(self, db_session: AsyncSession) -> None:
         """Locking out the real owner after a reset would be perverse."""
@@ -478,11 +492,33 @@ class TestPasswordReset:
                 await service.authenticate(
                     db_session, email=user.email, password="wrong"
                 )
-        token = await issue(db_session, user, TokenPurpose.PASSWORD_RESET)
+        code = await issue_reset_code(db_session, user)
 
-        await service.reset_password(db_session, token, NEW_PASSWORD)
+        await service.reset_password(
+            db_session, email=user.email, code=code, new_password=NEW_PASSWORD
+        )
 
         assert user.locked_until is None
+
+    async def test_five_wrong_guesses_burn_the_reset_code(
+        self, db_session: AsyncSession
+    ) -> None:
+        user, _ = await register(db_session)
+        code = await issue_reset_code(db_session, user)
+
+        for _ in range(service.MAX_VERIFICATION_ATTEMPTS):
+            with pytest.raises(InvalidRequestError):
+                await service.reset_password(
+                    db_session,
+                    email=user.email,
+                    code=wrong_code(code),
+                    new_password=NEW_PASSWORD,
+                )
+
+        with pytest.raises(InvalidRequestError):
+            await service.reset_password(
+                db_session, email=user.email, code=code, new_password=NEW_PASSWORD
+            )
 
 
 class TestNoEnumeration:

@@ -1,4 +1,5 @@
 """Commerce module.
 
-Stripe product catalogue, Checkout, Billing subscriptions, and webhooks.
+Stripe Checkout for the founder unlock, purchase ledger, and webhooks
+(DECISIONS.md D21). Catalogue programmes (D18) are additive later.
 """

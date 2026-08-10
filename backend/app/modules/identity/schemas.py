@@ -24,6 +24,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.core.entitlement import has_founder_access, trial_ends_at
 from app.core.security import (
     VERIFICATION_CODE_DIGITS,
     AccountStatus,
@@ -85,7 +86,6 @@ LAST_NAME = "Okonkwo"
 PASSWORD_EXAMPLE = "correct-horse-battery-staple"  # noqa: S105
 ACCESS_EXAMPLE = "eyJhbGciOiJIUzI1NiIsImtpZCI6ImsxIn0.eyJzdWIiOiI3Yzll.EXAMPLE"
 REFRESH_EXAMPLE = "N2Q4ZjFhYzQtM2I5ZS00ZjJhLTk4YzEtMGU3YjRkNmE5ZjEy"
-EMAIL_TOKEN_EXAMPLE = "aXNzdWVkLWJ5LWVtYWlsLW5vdC1hLXJlYWwtdG9rZW4"  # noqa: S105
 VERIFICATION_CODE_EXAMPLE = "418305"
 MFA_TOKEN_EXAMPLE = "eyJhbGciOiJIUzI1NiJ9.eyJ0eXAiOiJtZmFfY2hhbGxlbmdlIn0.EXAMPLE"  # noqa: S105
 REGISTRATION_MESSAGE = (
@@ -294,6 +294,8 @@ class UserResponse(BaseModel):
                     "kyc_status": "none",
                     "subscription_status": "none",
                     "created_at": "2026-07-29T09:15:00Z",
+                    "trial_ends_at": "2026-08-12T09:15:00Z",
+                    "has_access": True,
                 }
             ]
         },
@@ -313,6 +315,37 @@ class UserResponse(BaseModel):
     kyc_status: KycStatus
     subscription_status: SubscriptionStatus
     created_at: datetime
+    # Server-authoritative trial/entitlement (DECISIONS.md D21). Clients must
+    # not recompute these from `created_at` with a local clock.
+    trial_ends_at: datetime
+    has_access: bool
+
+    @classmethod
+    def of(cls, user: Any) -> "UserResponse":
+        """Build from a `User` ORM row, computing trial fields."""
+        ends = trial_ends_at(user.created_at)
+        access = (
+            has_founder_access(
+                subscription_status=user.subscription_status,
+                created_at=user.created_at,
+            )
+            if user.role is Role.FOUNDER
+            else True
+        )
+        return cls(
+            id=user.id,
+            email=user.email,
+            role=user.role,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            status=user.status,
+            email_verified=user.email_verified,
+            kyc_status=user.kyc_status,
+            subscription_status=user.subscription_status,
+            created_at=user.created_at,
+            trial_ends_at=ends,
+            has_access=access,
+        )
 
 
 class VerifyEmailRequest(_EmailMixin):
@@ -361,17 +394,43 @@ class PasswordResetRequest(_EmailMixin):
     model_config = examples({"email": EMAIL})
 
 
-class PasswordResetConfirmRequest(_Request):
-    """Complete a reset with the token from the emailed link."""
+class PasswordResetConfirmRequest(_EmailMixin):
+    """Complete a reset with the emailed code and a new password.
+
+    Both the address and the code are required: the code is six digits, so it
+    is checked against one account rather than looked up across all of them
+    (AUTH.md section 12).
+    """
 
     model_config = examples(
-        {"token": EMAIL_TOKEN_EXAMPLE, "password": "a-different-passphrase-entirely"}
+        {
+            "email": EMAIL,
+            "code": VERIFICATION_CODE_EXAMPLE,
+            "password": "a-different-passphrase-entirely",
+        }
     )
 
-    token: str = Field(max_length=512)
+    code: str = Field(
+        max_length=16,
+        description=(
+            "The six-digit code from the reset email. Spaces and hyphens are "
+            "ignored, so a pasted `123 456` is accepted."
+        ),
+        examples=[VERIFICATION_CODE_EXAMPLE],
+    )
     password: Password = Field(
         description="The new password. At least 12 characters.",
     )
+
+    @field_validator("code")
+    @classmethod
+    def _check_code(cls, value: str) -> str:
+        digits = "".join(character for character in value if character.isdigit())
+        if len(digits) != VERIFICATION_CODE_DIGITS:
+            raise ValueError(
+                f"the reset code is {VERIFICATION_CODE_DIGITS} digits"
+            )
+        return digits
 
 
 class MfaVerifyRequest(_Request):

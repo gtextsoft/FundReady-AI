@@ -21,6 +21,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.config import Settings, get_settings
 from app.core.db import AsyncSession, get_session
+from app.core.entitlement import has_founder_access, is_paid
 from app.core.errors import ForbiddenError, UnauthenticatedError
 from app.core.security import (
     AccountStatus,
@@ -109,16 +110,66 @@ CurrentFounder = Annotated[CurrentUser, Depends(require_role(Role.FOUNDER))]
 CurrentInvestor = Annotated[CurrentUser, Depends(require_role(Role.INVESTOR))]
 CurrentAdmin = Annotated[CurrentUser, Depends(require_role(Role.ADMIN))]
 
+
+async def require_active_subscription(user: CurrentFounder) -> CurrentUser:
+    """Founder with a Stripe-granted unlock (AUTH.md section 8, D21).
+
+    Trial access is *not* enough here — use `require_founder_access` for
+    capabilities that stay open during the trial window.
+    """
+    if not is_paid(user.subscription_status):
+        raise ForbiddenError(
+            "Unlock SACI FundMe to continue.",
+            {"reason": "payment_required"},
+        )
+    return user
+
+
+async def require_founder_access(user: CurrentUserDep) -> CurrentUser:
+    """Trial or paid unlock for founders; admins (MFA) pass through.
+
+    Used on expensive or marketplace-facing founder writes (audit, publish,
+    evidence). Investors are refused.
+    """
+    if user.role is Role.ADMIN:
+        if not user.mfa_enabled:
+            raise ForbiddenError(
+                "Admin accounts must enrol in two-factor authentication first."
+            )
+        return user
+    if user.role is not Role.FOUNDER:
+        raise ForbiddenError
+    if user.created_at is None or not has_founder_access(
+        subscription_status=user.subscription_status,
+        created_at=user.created_at,
+    ):
+        raise ForbiddenError(
+            "Your free trial has ended. Unlock SACI FundMe to continue.",
+            {"reason": "payment_required"},
+        )
+    return user
+
+
+FounderWithAccess = Annotated[CurrentUser, Depends(require_founder_access)]
+"""Founder with trial or paid unlock (admins with MFA also allowed)."""
+
+PaidFounder = Annotated[CurrentUser, Depends(require_active_subscription)]
+"""Founder with a completed Stripe unlock only."""
+
 __all__ = [
     "AuthenticatedUserDep",
     "CurrentAdmin",
     "CurrentFounder",
     "CurrentInvestor",
     "CurrentUserDep",
+    "FounderWithAccess",
+    "PaidFounder",
     "SessionDep",
     "SettingsDep",
     "bearer_scheme",
     "get_authenticated_user",
     "get_current_user",
+    "require_active_subscription",
+    "require_founder_access",
     "require_role",
 ]

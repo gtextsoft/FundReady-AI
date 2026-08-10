@@ -20,7 +20,6 @@ from app.modules.notifications.templates import (
 )
 
 RECIPIENT = "founder@example.test"
-LINK = "https://app.fundready.test/reset-password?token=abc123"
 CODE = "418305"
 TTL_MINUTES = 15
 
@@ -207,22 +206,33 @@ class TestTemplates:
         assert "href" not in content.html
         assert "http" not in content.text
 
-    def test_reset_carries_the_link_in_both_parts(self) -> None:
-        content = password_reset_email(LINK)
+    def test_reset_carries_the_code_in_both_parts(self) -> None:
+        content = password_reset_email(CODE, TTL_MINUTES)
 
-        assert LINK in content.html
-        assert LINK in content.text
+        assert CODE in content.html
+        assert CODE in content.text
+
+    def test_reset_offers_nothing_to_click(self) -> None:
+        """A code email with no link is a shape phishing cannot imitate."""
+        content = password_reset_email(CODE, TTL_MINUTES)
+
+        assert "http" not in content.html
+        assert "href" not in content.html
+        assert "http" not in content.text
+
+    def test_reset_keeps_the_code_out_of_the_subject(self) -> None:
+        assert CODE not in password_reset_email(CODE, TTL_MINUTES).subject
 
     def test_reset_states_the_no_action_case(self) -> None:
         """Someone who did not ask for this must be told to do nothing."""
-        content = password_reset_email(LINK)
+        content = password_reset_email(CODE, TTL_MINUTES)
 
         assert "did not ask" in content.text
         assert "unchanged" in content.text
 
     @pytest.mark.parametrize(
         "content",
-        [verification_email(CODE, TTL_MINUTES), password_reset_email(LINK)],
+        [verification_email(CODE, TTL_MINUTES), password_reset_email(CODE, TTL_MINUTES)],
         ids=["verification", "reset"],
     )
     def test_templates_never_embed_a_recipient(self, content: object) -> None:

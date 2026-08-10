@@ -137,3 +137,33 @@ Making it real needs a second Postgres role (`NOBYPASSRLS`, least privilege, not
 - The derived company name is a **prefill**. It is written only when the founder supplies no name, never overwrites one they did supply, and is `None` rather than a guess when nothing sensible can be read. Nothing downstream may treat it as a legal name.
 
 **The tradeoff, accepted knowingly:** this product's own vocabulary includes `Stage.IDEA` and `PRE_SEED` (`intake/fields.py`), and the PRD's premise is converting not-yet-ready startups. Idea-stage founders frequently have no company domain, and a hard block at registration turns them away at the one step where a rejected user simply leaves. The alternative considered was requiring the company address at **profile creation** instead, which preserves the funnel and still guarantees every profile has a verified company domain behind it. The owner chose the hard block at registration. **If signup conversion for early-stage founders disappoints, moving the check to profile creation is the first thing to try** — the rule is one call in `register_user` and the derivation is untouched by the move.
+
+### D21 — Founder access is a one-off unlock via Stripe Checkout, not a recurring Billing subscription
+*Recorded 2026-08-10. Resolves the frontend/backend product mismatch before T3.3.*
+
+**Why:** the mobile product sells a single **$149 once** unlock (14-day trial, then pay). Recurring Stripe Billing would contradict that UX and the paywall copy already shipped. Stripe Checkout `mode=payment` against a one-time Price is enough to take money and grant entitlement; catalogue programmes (D18 / T3.2) remain additive Checkout sessions later.
+
+**Constraint:**
+- Founder entitlement is granted only from a verified Stripe webhook (`checkout.session.completed` for the unlock Price). Never from a client-reported receipt.
+- Paid state is stored on `users.subscription_status = active` (existing column). The name is historical; v1 is a one-time unlock, not a renewing subscription. `past_due` / `canceled` stay available if Billing is adopted later under a new decision.
+- **App Store / Play IAP is out of this slice.** Hosted Checkout (or a web paywall) is the rail for web and sideloaded Android. Shipping the iOS app with an in-app card unlock will fail store review — that needs Apple/Google IAP and is a separate decision.
+- Stripe Connect remains out of scope (D5).
+
+### D22 — Post-launch: RLS least-privilege role and privacy export/erase
+*Recorded 2026-08-10. Scopes remaining launch-ops work; does not change D13/D19.*
+
+**Why:** app-layer ownership is the only tenant wall until a `NOBYPASSRLS` Neon role exists (D19). UK/EU production traffic also needs a documented path for data subject access and erasure once real users are onboarded.
+
+**Constraint:**
+- **Do not enable RLS on the owner role.** T5.7 provisions a least-privilege app role and the policies migration together.
+- Privacy: add authenticated export + erase endpoints (and a retention policy) before marketing to EU/UK as a primary market; until then suspend + support-led deletion remains the ops path.
+
+### D23 — Skills packs stay reference-only under `backend/docs/skills-reference/`
+*Recorded 2026-08-10.*
+
+**Why:** the monorepo root `skills/` tree is a large Claude agent library. Importing or vendoring it into FastAPI would fight the audit design (schema-validated JSON out, no persona loop) and risk D9 if investment-advisor scripts leak into prompts. FundReady already curated a MIT-attributed subset as design input for the rubric (T2.6).
+
+**Constraint:**
+- **Do not move root `skills/` into `backend/app/`.** Expand `backend/docs/skills-reference/` only with short substance notes.
+- Runtime mentor/audit code retrieves **database** context (reports, tasks, profile), never `SKILL.md` files.
+- See `docs/skills-reference/README.md`.

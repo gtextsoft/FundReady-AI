@@ -125,3 +125,31 @@ jobs:
       # onward; switch when the pinned version is next bumped.
       - name: Scan history for secrets
         run: gitleaks detect --source . --redact --no-banner --exit-code 1
+
+  # Render autoDeploy is off (see render.yaml). A green main branch deploys by
+  # hitting the deploy hooks so a red CI never reaches production.
+  deploy:
+    name: Deploy to Render (main)
+    needs: [quality, frontend, secret-scan]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render web deploy
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_API }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "RENDER_DEPLOY_HOOK_API not set; skipping web deploy"
+            exit 0
+          fi
+          curl -fsS -X POST "$HOOK"
+
+      - name: Trigger Render worker deploy
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_WORKER }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "RENDER_DEPLOY_HOOK_WORKER not set; skipping worker deploy"
+            exit 0
+          fi
+          curl -fsS -X POST "$HOOK"

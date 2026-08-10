@@ -53,6 +53,8 @@ dependencies = [
     "openpyxl>=3.1",  # xlsx
     "python-pptx>=1.0",  # pptx
     "python-docx>=1.1",  # docx
+    # Founder audit PDF export. Pure-Python; Render-friendly (no system libs).
+    "reportlab>=4.2",
 ]
 
 [project.optional-dependencies]

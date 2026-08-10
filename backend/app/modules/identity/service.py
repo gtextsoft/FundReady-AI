@@ -41,10 +41,8 @@ from app.core.security import (
     decrypt_mfa_secret,
     encrypt_mfa_secret,
     generate_mfa_secret,
-    generate_opaque_token,
     generate_refresh_token,
     generate_verification_code,
-    hash_opaque_token,
     hash_password,
     hash_refresh_token,
     hash_verification_code,
@@ -57,7 +55,6 @@ from app.core.security import (
 from app.modules.identity.models import (
     AuditAction,
     AuditLog,
-    AuthToken,
     RefreshToken,
     TokenPurpose,
     User,
@@ -182,7 +179,7 @@ async def register_user(
     # identity and D20 exempts investors from it; this one is about account
     # takeover and exempts nobody. Most throwaway inboxes are publicly readable
     # -- a mailinator address has no password -- so an account on one hands its
-    # verification code, and every future password-reset link, to anyone who
+    # verification code, and every future password-reset code, to anyone who
     # knows the address. An investor reading summary-tier startup data through a
     # public mailbox is the same breach as a founder doing it.
     if is_disposable_domain(normalised):
@@ -448,6 +445,8 @@ async def load_current_user(
         email_verified=user.email_verified,
         mfa_enabled=user.mfa_enabled,
         session_valid_after=user.session_valid_after,
+        subscription_status=user.subscription_status,
+        created_at=user.created_at,
     )
 
 
@@ -475,12 +474,11 @@ async def get_user_email(session: AsyncSession, user_id: uuid.UUID) -> str | Non
 # Email verification and password reset (AUTH.md sections 3.2, 12)
 # ---------------------------------------------------------------------------
 
-# Short, deliberately. A 24-hour window suited a 256-bit link that nobody was
-# going to guess; a six-digit code is a million combinations, so the window in
-# which those guesses are worth making is kept to the few minutes it takes
-# someone to read an email (AUTH.md section 3.2).
+# Short, deliberately. A six-digit code is a million combinations, so the
+# window in which those guesses are worth making is kept to the few minutes it
+# takes someone to read an email (AUTH.md sections 3.2 and 12).
 VERIFICATION_TTL: Final = timedelta(minutes=15)
-PASSWORD_RESET_TTL: Final = timedelta(hours=1)
+PASSWORD_RESET_TTL: Final = timedelta(minutes=15)
 
 # Five wrong guesses burn the code. With the code also expiring in 15 minutes
 # and being bound to one account, that caps an attacker at five of a million
@@ -497,73 +495,6 @@ VERIFICATION_RESEND_COOLDOWN: Final = timedelta(seconds=60)
 # user to draw the same six digits twice. Regenerating is cheaper than letting
 # that raise a unique-constraint violation on the one path a new account walks.
 _CODE_COLLISION_RETRIES: Final = 5
-
-
-def _link(path: str, token: str, settings: Settings) -> str:
-    """Build a link the *client* handles, not this API.
-
-    Mail security scanners prefetch every URL in a message. A GET endpoint here
-    would have its single-use token consumed before the recipient ever clicked,
-    so the link points at the app, which extracts the token and POSTs it back.
-    """
-    base = settings.app_link_base_url.rstrip("/")
-    return f"{base}/{path}?token={token}"
-
-
-async def issue_auth_token(
-    session: AsyncSession, user: User, purpose: TokenPurpose, ttl: timedelta
-) -> str:
-    """Create a single-use token and return its raw value.
-
-    Only the hash is persisted, so this return value is the only moment the
-    token exists in readable form -- hand it straight to the message that
-    carries it.
-    """
-    raw = generate_opaque_token()
-    await AuthTokenRepository(session).create(
-        user_id=user.id,
-        purpose=purpose,
-        token_hash=hash_opaque_token(raw),
-        expires_at=datetime.now(UTC) + ttl,
-    )
-    return raw
-
-
-def _invalid_link() -> InvalidRequestError:
-    """One message for absent, expired, already-used, and wrong-purpose.
-
-    Distinguishing them would tell a holder of a bad token which kind of bad it
-    is, and whether the account exists at all.
-    """
-    return InvalidRequestError("This link is invalid or has expired.")
-
-
-async def _consume(
-    session: AsyncSession, raw_token: str, purpose: TokenPurpose
-) -> tuple[AuthToken, User]:
-    """Validate a token and return it with its user, or raise."""
-    now = datetime.now(UTC)
-    tokens = AuthTokenRepository(session)
-
-    # Purpose is part of the lookup, so a verification token cannot be
-    # presented as a password reset.
-    stored = await tokens.get(token_hash=hash_opaque_token(raw_token), purpose=purpose)
-    if stored is None:
-        logger.info("auth token rejected", extra={"context": {"reason": "unknown"}})
-        raise _invalid_link()
-    if stored.used_at is not None:
-        logger.info(
-            "auth token rejected", extra={"context": {"reason": "already_used"}}
-        )
-        raise _invalid_link()
-    if stored.expires_at <= now:
-        logger.info("auth token rejected", extra={"context": {"reason": "expired"}})
-        raise _invalid_link()
-
-    user = await UserRepository(session).get_by_id(stored.user_id)
-    if user is None:
-        raise _invalid_link()
-    return stored, user
 
 
 def _invalid_code() -> InvalidRequestError:
@@ -754,6 +685,46 @@ async def verify_email(
     return user
 
 
+async def issue_password_reset_code(
+    session: AsyncSession, user: User, *, settings: Settings | None = None
+) -> str:
+    """Create a password-reset code and return it, for the email to carry.
+
+    Same shape as email verification (AUTH.md section 12): one live code per
+    account, keyed-hashed at rest, short-lived, attempt-capped on confirm.
+    """
+    settings = settings or get_settings()
+    tokens = AuthTokenRepository(session)
+    now = datetime.now(UTC)
+
+    await tokens.consume_outstanding(
+        user_id=user.id, purpose=TokenPurpose.PASSWORD_RESET, at=now
+    )
+
+    for _ in range(_CODE_COLLISION_RETRIES):
+        code = generate_verification_code()
+        code_hash = hash_verification_code(
+            code,
+            user_id=user.id,
+            purpose=TokenPurpose.PASSWORD_RESET.value,
+            settings=settings,
+        )
+        already_used = await tokens.get(
+            token_hash=code_hash, purpose=TokenPurpose.PASSWORD_RESET
+        )
+        if already_used is not None:
+            continue
+        await tokens.create(
+            user_id=user.id,
+            purpose=TokenPurpose.PASSWORD_RESET,
+            token_hash=code_hash,
+            expires_at=now + PASSWORD_RESET_TTL,
+        )
+        return code
+
+    raise ConfigurationError
+
+
 async def request_password_reset(
     session: AsyncSession, email: str, *, settings: Settings | None = None
 ) -> None:
@@ -761,33 +732,87 @@ async def request_password_reset(
 
     The caller responds identically either way (AUTH.md section 12) -- this
     endpoint must not become a way to test which addresses are registered.
+    A request inside the cooldown window is also silent, so the button cannot
+    become a mailbomb aimed at somebody else's inbox.
     """
     settings = settings or get_settings()
     user = await UserRepository(session).get_by_email(normalise_email(email))
     if user is None:
         return
 
-    raw = await issue_auth_token(
-        session, user, TokenPurpose.PASSWORD_RESET, PASSWORD_RESET_TTL
+    now = datetime.now(UTC)
+    live = await AuthTokenRepository(session).latest_live(
+        user_id=user.id, purpose=TokenPurpose.PASSWORD_RESET, now=now
     )
+    if live is not None and live.expires_at - PASSWORD_RESET_TTL > (
+        now - VERIFICATION_RESEND_COOLDOWN
+    ):
+        logger.info("password-reset request suppressed by cooldown")
+        return
+
+    code = await issue_password_reset_code(session, user, settings=settings)
     await notifications.send_password_reset_email(
-        user.email, _link("reset-password", raw, settings), settings=settings
+        user.email,
+        code,
+        ttl_minutes=int(PASSWORD_RESET_TTL.total_seconds() // 60),
+        settings=settings,
     )
 
 
 async def reset_password(
-    session: AsyncSession, raw_token: str, new_password: str
+    session: AsyncSession,
+    *,
+    email: str,
+    code: str,
+    new_password: str,
+    settings: Settings | None = None,
 ) -> User:
-    """Complete a reset and end every existing session.
+    """Complete a reset with the emailed code and end every existing session.
 
     A password reset is what someone does when they believe their account is
     compromised, so it has to evict whoever might already be in: every refresh
     token is revoked and `session_valid_after` is bumped, which also kills
     access tokens already issued (AUTH.md section 11).
+
+    The address is part of the request because the code is only six digits: it
+    is checked against one account rather than looked up globally
+    (AUTH.md section 12).
     """
-    stored, user = await _consume(session, raw_token, TokenPurpose.PASSWORD_RESET)
-    validate_password(new_password, user.email)
+    settings = settings or get_settings()
     now = datetime.now(UTC)
+
+    user = await UserRepository(session).get_by_email(normalise_email(email))
+    if user is None:
+        logger.info("password reset rejected", extra={"context": {"reason": "no_user"}})
+        raise _invalid_code()
+
+    tokens = AuthTokenRepository(session)
+    stored = await tokens.latest_live(
+        user_id=user.id, purpose=TokenPurpose.PASSWORD_RESET, now=now
+    )
+    if stored is None:
+        logger.info("password reset rejected", extra={"context": {"reason": "no_code"}})
+        raise _invalid_code()
+
+    candidate = hash_verification_code(
+        code,
+        user_id=user.id,
+        purpose=TokenPurpose.PASSWORD_RESET.value,
+        settings=settings,
+    )
+    if not verification_codes_match(candidate, stored.token_hash):
+        attempts = await tokens.record_failed_attempt(stored)
+        exhausted = attempts >= MAX_VERIFICATION_ATTEMPTS
+        if exhausted:
+            await tokens.mark_used(stored, at=now)
+        await session.commit()
+        logger.info(
+            "password reset rejected",
+            extra={"context": {"reason": "wrong_code", "exhausted": exhausted}},
+        )
+        raise _invalid_code()
+
+    validate_password(new_password, user.email)
 
     user.password_hash = hash_password(new_password)
     user.session_valid_after = now
@@ -795,9 +820,9 @@ async def reset_password(
     user.locked_until = None
 
     revoked = await RefreshTokenRepository(session).revoke_all_for_user(user.id, at=now)
-    await AuthTokenRepository(session).mark_used(stored, at=now)
-    # Any other reset link already in an inbox is now dead too.
-    await AuthTokenRepository(session).consume_outstanding(
+    await tokens.mark_used(stored, at=now)
+    # Any other reset code already in an inbox is now dead too.
+    await tokens.consume_outstanding(
         user_id=user.id, purpose=TokenPurpose.PASSWORD_RESET, at=now
     )
 

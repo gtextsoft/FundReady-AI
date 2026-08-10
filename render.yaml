@@ -30,6 +30,11 @@ services:
     # cross-region Redis is charged and slow.
     region: frankfurt
 
+    # Deploys are triggered from CI after quality+secrets jobs pass (see
+    # `.github/workflows/ci.yml` deploy job + RENDER_DEPLOY_HOOK_* secrets).
+    # Push-to-main no longer auto-deploys a red build.
+    autoDeploy: false
+
     # `-c backend/constraints.txt` -- resolved from `rootDir`, so `constraints.txt`
     # -- pins every version to what the suite is green against. Without it a
     # fresh build installs whatever was released this morning, because
@@ -72,6 +77,7 @@ services:
     rootDir: backend
     plan: starter
     region: frankfurt
+    autoDeploy: false
     buildCommand: pip install --upgrade pip && pip install -e . -c constraints.txt
     # No preDeployCommand: migrations are the web service's job.
     startCommand: python -m app.workers.queue
@@ -96,10 +102,8 @@ envVarGroups:
       #
       # **Staging, not production, for the first deploy.** `APP_ENV=production`
       # turns on `validate_settings`, which refuses to start unless every
-      # required secret is present -- including `STRIPE_SECRET_KEY` and
-      # `STRIPE_WEBHOOK_SECRET`, which nothing reads until T3.3. Flip this to
-      # `production` once they exist; flipping early gets a process that will
-      # not boot and an error naming settings rather than the cause.
+      # required secret is present -- including Stripe unlock Checkout keys
+      # (D21 / T3.3). Flip to `production` once those secrets exist.
       - key: APP_ENV
         value: staging
       - key: LOG_LEVEL
@@ -216,17 +220,24 @@ envVarGroups:
         value: ""
       - key: AI_MAX_OUTPUT_TOKENS
         value: ""
+      # Enforced in ai.client via Redis (T5.5). Override per environment if needed.
       - key: AI_DAILY_BUDGET_TOKENS_PER_USER
-        value: ""
+        value: "500000"
 
       # ---------------------------------------------------------------
-      # Stripe (no code reads these until T3.3)
+      # Stripe (founder unlock Checkout — DECISIONS.md D21)
       # ---------------------------------------------------------------
       - key: STRIPE_SECRET_KEY
         sync: false
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
       - key: STRIPE_PUBLISHABLE_KEY
+        sync: false
+      - key: STRIPE_PRICE_ID_UNLOCK
+        sync: false
+      - key: STRIPE_CHECKOUT_SUCCESS_URL
+        sync: false
+      - key: STRIPE_CHECKOUT_CANCEL_URL
         sync: false
 
       # ---------------------------------------------------------------
@@ -236,8 +247,7 @@ envVarGroups:
         sync: false
       - key: EMAIL_FROM_ADDRESS
         sync: false
-      # Optional. Blank means error reporting stays off and failures appear only
-      # in Render's log stream -- which is fine until the worker fails an audit
-      # at 3am and nobody is reading it.
+      # Set this before public traffic. Blank means failures appear only in
+      # Render's log stream — fine for private staging, not for production.
       - key: SENTRY_DSN
         sync: false
