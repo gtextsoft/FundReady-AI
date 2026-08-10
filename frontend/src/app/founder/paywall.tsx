@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Linking, Pressable, ScrollView, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -14,12 +14,10 @@ import { api, type PaymentReceipt } from '@/api';
 import { useSession } from '@/store/session';
 
 /**
- * One-off unlock.
+ * One-off unlock via Stripe Checkout (backend D21).
  *
- * Entitlement state, the trial countdown and the locked/unlocked copy are all
- * real, read from the account. Taking the payment is not built yet — Stripe
- * checkout is T3.3/T3.4 — so the button reports that rather than pretending to
- * charge anyone.
+ * The button opens hosted Checkout. Entitlement is granted only after the
+ * Stripe webhook fires — refresh the account when the founder returns.
  */
 export default function Paywall() {
   const insets = useSafeAreaInsets();
@@ -27,6 +25,7 @@ export default function Paywall() {
   const refreshAccount = useSession((s) => s.refreshAccount);
   const [busy, setBusy] = useState(false);
   const [receipt, setReceipt] = useState<PaymentReceipt | null>(null);
+  const [checkoutOpened, setCheckoutOpened] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
   if (!account) return <View className="flex-1 bg-ground" />;
@@ -39,8 +38,27 @@ export default function Paywall() {
     setBusy(true);
     setError(null);
     try {
-      setReceipt(await api.purchaseUnlock());
+      const session = await api.purchaseUnlock();
+      const opened = await Linking.openURL(session.checkoutUrl);
+      setCheckoutOpened(opened !== false);
+      // Webhook grants access asynchronously; refresh after the browser returns.
       await refreshAccount();
+      const paidReceipt = await api.getUnlockReceipt();
+      if (paidReceipt) setReceipt(paidReceipt);
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function refreshAfterCheckout() {
+    setBusy(true);
+    setError(null);
+    try {
+      await refreshAccount();
+      const paidReceipt = await api.getUnlockReceipt();
+      if (paidReceipt) setReceipt(paidReceipt);
     } catch (e) {
       setError(e);
     } finally {
@@ -97,7 +115,18 @@ export default function Paywall() {
           ))}
         </View>
 
-        {error ? <Unavailable title="Payments are not live" error={error} className="mt-6" /> : null}
+        {error ? <Unavailable title="Could not start checkout" error={error} className="mt-6" /> : null}
+
+        {checkoutOpened && !paid ? (
+          <View className="mt-6 rounded-[12px] border border-line p-[14px]">
+            <Mono className="text-[9px] text-ink-faint" style={{ letterSpacing: 1.2 }}>
+              CHECKOUT OPENED
+            </Mono>
+            <Txt className="mt-2 text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+              Complete payment in the browser, then tap below to refresh your access.
+            </Txt>
+          </View>
+        ) : null}
 
         {receipt ? (
           <View
@@ -107,7 +136,7 @@ export default function Paywall() {
               PAYMENT RECEIVED
             </Mono>
             <Txt className="mt-2 text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
-              Reference {receipt.reference}. A copy has been emailed to you.
+              Reference {receipt.reference}.
             </Txt>
           </View>
         ) : null}
@@ -123,6 +152,8 @@ export default function Paywall() {
       <View className="border-t border-line-soft bg-ground px-[18px] pt-3" style={{ paddingBottom: insets.bottom + 14 }}>
         {paid ? (
           <Button label="Back to dashboard" variant="secondary" height={48} onPress={() => router.back()} />
+        ) : checkoutOpened ? (
+          <Button label="I've paid — refresh access" height={48} loading={busy} onPress={refreshAfterCheckout} />
         ) : (
           <Button label={`Pay ${UNLOCK_PRICE.label} once`} height={48} loading={busy} onPress={pay} />
         )}

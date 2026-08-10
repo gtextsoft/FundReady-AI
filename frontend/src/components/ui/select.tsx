@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Keyboard, Pressable, View } from 'react-native';
 import { FieldLabel, Txt, TxtMed } from './text';
 import { Sheet } from './sheet';
-import { C } from '@/theme/tokens';
+import { useThemeColors } from '@/theme/use-theme-colors';
 
 /**
  * React Native has no <select>, so the picker is a field-shaped button that
@@ -14,14 +14,17 @@ export function Select<T extends string>({
   placeholder,
   options,
   onChange,
+  hint,
 }: {
   label: string;
   value: string;
   placeholder: string;
   options: readonly T[];
   onChange: (v: T) => void;
+  hint?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const colors = useThemeColors();
   return (
     <View className="gap-[7px]">
       <FieldLabel>{label}</FieldLabel>
@@ -41,9 +44,14 @@ export function Select<T extends string>({
         <Txt className={`text-[15px] ${value ? 'text-ink' : 'text-ink-faint'}`}>{value || placeholder}</Txt>
         <Txt className="text-[11px] text-ink-faint">▾</Txt>
       </Pressable>
+      {hint ? (
+        <Txt className="text-[11.5px] text-ink-faint" style={{ lineHeight: 16 }}>
+          {hint}
+        </Txt>
+      ) : null}
 
       <Sheet visible={open} onClose={() => setOpen(false)} title={label}>
-        <View className="gap-[1px] overflow-hidden rounded-[11px]" style={{ backgroundColor: C.surface4 }}>
+        <View className="gap-[1px] overflow-hidden rounded-[11px]" style={{ backgroundColor: colors.surface4 }}>
           {options.map((opt) => {
             const on = opt === value;
             return (

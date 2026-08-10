@@ -68,6 +68,8 @@ export type WireProfileResponse = {
   currency: string | null;
   fields: Record<string, WireField>;
   missing_fields: string[];
+  investor_visible?: boolean;
+  published_at?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -112,24 +114,38 @@ const WIRE_TO_STAGE: Record<ServerStage, string> = {
  * than guessed — a wrong country silently selects the wrong benchmark set, and
  * the founder is then scored against the wrong market with no sign of it.
  */
-const COUNTRIES: { names: string[]; code: string; currency: string }[] = [
-  { names: ['nigeria', 'ng'], code: 'NG', currency: 'NGN' },
-  { names: ['ghana', 'gh'], code: 'GH', currency: 'GHS' },
-  { names: ['kenya', 'ke'], code: 'KE', currency: 'KES' },
-  { names: ['south africa', 'za'], code: 'ZA', currency: 'ZAR' },
+const COUNTRIES: { names: string[]; code: string; currency: string; label: string }[] = [
+  { names: ['nigeria', 'ng'], code: 'NG', currency: 'NGN', label: 'Nigeria' },
+  { names: ['ghana', 'gh'], code: 'GH', currency: 'GHS', label: 'Ghana' },
+  { names: ['kenya', 'ke'], code: 'KE', currency: 'KES', label: 'Kenya' },
+  { names: ['south africa', 'za'], code: 'ZA', currency: 'ZAR', label: 'South Africa' },
   {
     names: ['united kingdom', 'uk', 'england', 'scotland', 'wales', 'gb'],
     code: 'GB',
     currency: 'GBP',
+    label: 'United Kingdom',
   },
-  { names: ['united states', 'usa', 'us', 'america'], code: 'US', currency: 'USD' },
-  { names: ['canada', 'ca'], code: 'CA', currency: 'CAD' },
-  { names: ['india', 'in'], code: 'IN', currency: 'INR' },
-  { names: ['singapore', 'sg'], code: 'SG', currency: 'SGD' },
-  { names: ['germany', 'de'], code: 'DE', currency: 'EUR' },
-  { names: ['netherlands', 'nl'], code: 'NL', currency: 'EUR' },
-  { names: ['united arab emirates', 'uae', 'ae', 'dubai'], code: 'AE', currency: 'AED' },
+  { names: ['united states', 'usa', 'us', 'america'], code: 'US', currency: 'USD', label: 'United States' },
+  { names: ['canada', 'ca'], code: 'CA', currency: 'CAD', label: 'Canada' },
+  { names: ['india', 'in'], code: 'IN', currency: 'INR', label: 'India' },
+  { names: ['singapore', 'sg'], code: 'SG', currency: 'SGD', label: 'Singapore' },
+  { names: ['germany', 'de'], code: 'DE', currency: 'EUR', label: 'Germany' },
+  { names: ['netherlands', 'nl'], code: 'NL', currency: 'EUR', label: 'Netherlands' },
+  {
+    names: ['united arab emirates', 'uae', 'ae', 'dubai'],
+    code: 'AE',
+    currency: 'AED',
+    label: 'United Arab Emirates',
+  },
 ];
+
+/** Labels for the onboarding country picker (canonical names that resolve). */
+export const COUNTRY_OPTIONS = COUNTRIES.map((c) => c.label);
+
+/** Currency for a resolved country label, or null when unknown. */
+export function currencyForCountryLabel(label: string): string | null {
+  return resolveCountry(label)?.currency ?? null;
+}
 
 /** Resolves "Lagos, Nigeria" to `NG`. Null when nothing matches. */
 export function resolveCountry(location: string): { code: string; currency: string } | null {
@@ -413,7 +429,7 @@ export function fromWireProfile(response: WireProfileResponse): FounderProfile {
     company: response.name ?? '',
     sector: response.sector ?? '',
     // The city is not stored, so this comes back as the country alone.
-    location: country ? country.names[0].replace(/\b\w/g, (m) => m.toUpperCase()) : '',
+    location: country ? country.label : '',
     year: foundedYear === null ? '' : String(foundedYear),
     stage: response.stage ? (WIRE_TO_STAGE[response.stage] ?? '') : '',
     description: fieldText(fields, 'description'),

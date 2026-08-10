@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -9,107 +9,117 @@ import { Mark } from '@/components/ui/mark';
 import { Mono, Txt, TxtSemi } from '@/components/ui/text';
 import { CompanyCard } from './company-card';
 import { FilterSheet } from './filter-sheet';
-import { C, Font } from '@/theme/tokens';
 import { Unavailable } from '@/components/unavailable';
-import { api, type CompanySummary } from '@/api';
-import type { SortKey } from '@/domain/types';
+import { api } from '@/api';
+import type { DiscoveredStartup } from '@/domain/discovery';
 import { route } from '@/lib/routes';
+import { storage } from '@/lib/storage';
 import { useInvestor } from '@/store/investor';
 import { useNotifications } from '@/store/notifications';
 import { useSession } from '@/store/session';
+import { useThemeColors } from '@/theme/use-theme-colors';
 
-const PAGE = 12;
+const ORIENT_KEY = 'fundready.investor.dealflow.orient';
 
-const SORTS: { value: SortKey; label: string }[] = [
-  { value: 'score', label: 'Top score' },
-  { value: 'new', label: 'Newest' },
-  { value: 'rev', label: 'Revenue' },
-];
+const PAGE = 20;
 
 /**
- * Shared by the Dealflow and Watchlist tabs — same data, same filters, the
- * watchlist just restricts the id set and changes the empty-state copy.
+ * Shared by the Dealflow and Watchlist tabs.
+ *
+ * Watchlist is local-only (device storage) until a sync endpoint exists —
+ * it filters the discovery page client-side against starred startup ids.
  */
 export function DealflowScreen({ mode }: { mode: 'deal' | 'watch' }) {
   const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [rows, setRows] = useState<CompanySummary[]>([]);
+  const [rows, setRows] = useState<DiscoveredStartup[]>([]);
   const [total, setTotal] = useState(0);
-  const [limit, setLimit] = useState(PAGE);
+  const [offset, setOffset] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [showOrient, setShowOrient] = useState(false);
   const session = useSession((s) => s.session);
 
-  const query = useInvestor((s) => s.query);
-  const minScore = useInvestor((s) => s.minScore);
-  const match = useInvestor((s) => s.match);
-  const sectors = useInvestor((s) => s.sectors);
-  const stages = useInvestor((s) => s.stages);
-  const sort = useInvestor((s) => s.sort);
+  const sector = useInvestor((s) => s.sector);
+  const stage = useInvestor((s) => s.stage);
+  const country = useInvestor((s) => s.country);
   const watchlist = useInvestor((s) => s.watchlist);
-  const setQuery = useInvestor((s) => s.setQuery);
-  const setSort = useInvestor((s) => s.setSort);
   const clearFilters = useInvestor((s) => s.clearFilters);
   const toggleWatch = useInvestor((s) => s.toggleWatch);
+  const loadWatchlist = useInvestor((s) => s.loadWatchlist);
+  const loadInterests = useInvestor((s) => s.loadInterests);
   const filterCount = useInvestor((s) => s.activeFilterCount());
   const unread = useNotifications((s) => s.unreadCount());
 
-  const request = useMemo(
-    () => ({
-      query,
-      minScore,
-      match,
-      sectors,
-      stages,
-      sort,
-      ids: mode === 'watch' ? watchlist : undefined,
-    }),
-    [query, minScore, match, sectors, stages, sort, mode, watchlist],
+  const fetchPage = useCallback(
+    async (nextOffset: number, replace: boolean) => {
+      try {
+        const page = await api.discoverStartups({
+          sector: sector ?? undefined,
+          stage: stage ?? undefined,
+          country: country ?? undefined,
+          limit: PAGE,
+          offset: nextOffset,
+        });
+        let items = page.items;
+        if (mode === 'watch') {
+          const watched = new Set(watchlist);
+          items = items.filter((s) => watched.has(s.startupId));
+        }
+        setRows((prev) => (replace ? items : [...prev, ...items]));
+        setTotal(mode === 'watch' ? items.length : page.total);
+        setOffset(nextOffset);
+        setError(null);
+      } catch (e: unknown) {
+        if (replace) {
+          setRows([]);
+          setTotal(0);
+        }
+        setError(e);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [sector, stage, country, mode, watchlist],
   );
 
   useEffect(() => {
-    let live = true;
-    // `limit` grows as the list is scrolled — one page request covers it all.
-    api
-      .listCompanies(request, 1, limit)
-      .then((page) => {
-        if (!live) return;
-        setRows(page.rows);
-        setTotal(page.total);
-        setError(null);
-      })
-      .catch((e: unknown) => {
-        if (!live) return;
-        setRows([]);
-        setTotal(0);
-        setError(e);
-      });
-    return () => {
-      live = false;
-    };
-  }, [request, limit]);
+    void loadWatchlist();
+    void loadInterests();
+  }, [loadWatchlist, loadInterests]);
 
-  // A changed filter should return the list to the top of its first page.
-  //
-  // The lint rule is right in general — a setState in an effect body costs a
-  // second render pass — and the idiomatic fix is to key this component on the
-  // filter so React remounts it instead. That is a change to how the screen is
-  // mounted by its parents, and there is no rendering test in this project to
-  // catch what it breaks (`jest.config.js` explains why), so it is left as is
-  // deliberately rather than refactored blind. Revisit with F0.5.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLimit(PAGE);
-  }, [query, minScore, match, sectors, stages, sort, mode]);
+    if (mode !== 'deal') return;
+    void storage.get(ORIENT_KEY).then((v) => {
+      if (!v) setShowOrient(true);
+    });
+  }, [mode]);
+
+  useEffect(() => {
+    setLoading(true);
+    setOffset(0);
+    void fetchPage(0, true);
+  }, [fetchPage]);
 
   const loadMore = useCallback(() => {
-    setLimit((n) => (n < total ? n + PAGE : n));
-  }, [total]);
+    if (mode === 'watch') return;
+    if (loading || error) return;
+    if (rows.length >= total) return;
+    void fetchPage(offset + PAGE, false);
+  }, [mode, loading, error, rows.length, total, offset, fetchPage]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    void fetchPage(0, true);
+  }, [fetchPage]);
 
   const title = mode === 'watch' ? 'Watchlist' : 'Dealflow';
 
   return (
     <View className="flex-1 bg-ground" style={{ paddingTop: insets.top + 4 }}>
-      {/* header */}
       <View className="px-[18px] pb-3">
         <View className="h-[34px] flex-row items-center justify-between">
           <View className="flex-row items-center gap-2">
@@ -128,7 +138,7 @@ export function DealflowScreen({ mode }: { mode: 'deal' | 'watch' }) {
               {unread > 0 ? (
                 <View
                   className="absolute -right-[3px] -top-[3px] h-[13px] min-w-[13px] items-center justify-center rounded-full px-[3px]"
-                  style={{ backgroundColor: C.blue }}>
+                  style={{ backgroundColor: colors.blue }}>
                   <Mono className="text-[8px] text-white">{unread > 9 ? '9+' : unread}</Mono>
                 </View>
               ) : null}
@@ -141,29 +151,36 @@ export function DealflowScreen({ mode }: { mode: 'deal' | 'watch' }) {
           </View>
         </View>
 
-        {/* search */}
-        <View className="mt-[10px] h-[38px] flex-row items-center gap-[9px] rounded-[9px] border border-line bg-surface-1 px-3">
-          <Txt className="text-[13px] text-ink-faint">⌕</Txt>
-          <TextInput
-            className="min-w-0 flex-1 text-[13.5px] text-ink"
-            placeholder="Search company, sector, founder"
-            placeholderTextColor={C.inkFaint}
-            value={query}
-            onChangeText={setQuery}
-            autoCapitalize="none"
-            style={{ fontFamily: Font.regular, padding: 0 }}
-          />
-        </View>
-
-        {/* filter + sort rail */}
-        <FlatList
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={{ marginTop: 10, flexGrow: 0 }}
-          contentContainerStyle={{ gap: 7, alignItems: 'center' }}
-          data={SORTS}
-          keyExtractor={(s) => s.value}
-          ListHeaderComponent={
+        {mode === 'watch' ? (
+          <Txt className="mt-[10px] text-[12px] text-ink-dim" style={{ lineHeight: 18 }}>
+            Stars are saved on this device only until watchlists sync across devices. Open a company to
+            express interest.
+          </Txt>
+        ) : (
+          <View className="mt-[10px] gap-2">
+            {showOrient ? (
+              <View className="rounded-[11px] border border-line bg-surface-1 p-3">
+                <TxtSemi className="text-[13px]">How dealflow works</TxtSemi>
+                <Txt className="mt-1 text-[12px] text-ink-muted" style={{ lineHeight: 18 }}>
+                  Browse summary scores, star companies to watch, then express interest. FundReady AI
+                  brokers every introduction — full diligence is not on this screen.
+                </Txt>
+                <View className="mt-2 self-start">
+                  <Button
+                    label="Got it"
+                    height={34}
+                    variant="secondary"
+                    onPress={() => {
+                      setShowOrient(false);
+                      void storage.set(ORIENT_KEY, '1');
+                    }}
+                  />
+                </View>
+              </View>
+            ) : null}
+            <Txt className="text-[11.5px] text-ink-faint" style={{ lineHeight: 16 }}>
+              Summary scores only — full diligence via FundReady AI.
+            </Txt>
             <View className="flex-row items-center gap-[7px]">
               <Chip
                 label="Filters"
@@ -171,68 +188,86 @@ export function DealflowScreen({ mode }: { mode: 'deal' | 'watch' }) {
                 onPress={() => setSheetOpen(true)}
                 badge={filterCount || undefined}
               />
-              <View className="h-[18px] w-[1px] bg-line" />
             </View>
-          }
-          renderItem={({ item }) => (
-            <Chip label={item.label} selected={sort === item.value} onPress={() => setSort(item.value)} />
-          )}
-        />
+          </View>
+        )}
       </View>
 
-      {/* list */}
-      <FlatList
-        data={rows}
-        keyExtractor={(c) => String(c.id)}
-        contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 12, gap: 9 }}
-        showsVerticalScrollIndicator={false}
-        onEndReached={loadMore}
-        onEndReachedThreshold={0.4}
-        renderItem={({ item }) => (
-          <CompanyCard
-            company={item}
-            watched={watchlist.includes(item.id)}
-            onPress={() => router.push(route(`/investor/company/${item.id}`))}
-            onToggleWatch={() => toggleWatch(item.id)}
-          />
-        )}
-        ListFooterComponent={
-          rows.length ? (
-            <Txt className="py-2 text-center text-[11.5px] text-ink-faint">
-              {`1–${rows.length} of ${total}`}
-            </Txt>
-          ) : null
-        }
-        ListEmptyComponent={
-          error ? (
-            <View className="px-1 py-6">
-              <Unavailable
-                title={mode === 'watch' ? 'The watchlist is not live' : 'Dealflow is not live'}
-                error={error}
-              />
-            </View>
-          ) : (
-            <View className="items-center justify-center gap-[11px] px-6 py-[70px]">
-              <View
-                className="h-[42px] w-[42px] items-center justify-center rounded-[11px]"
-                style={{ borderWidth: 1, borderStyle: 'dashed', borderColor: C.lineDash }}>
-                <Txt className="text-[16px] text-ink-ghost">⌕</Txt>
-              </View>
-              <TxtSemi className="text-center text-[14px]">
-                {mode === 'watch' ? 'Your watchlist is empty' : 'No companies match these filters'}
-              </TxtSemi>
-              <Txt className="text-center text-[12.5px] text-ink-dim" style={{ lineHeight: 19 }}>
-                {mode === 'watch'
-                  ? 'Star a company from the dealflow table and it will be tracked here with score-change alerts.'
-                  : 'Widen the score range or clear a sector to see more of the companies currently listed.'}
+      {loading && !rows.length ? (
+        <View className="flex-1 items-center justify-center py-16">
+          <ActivityIndicator color={colors.inkMuted} />
+        </View>
+      ) : (
+        <FlatList
+          data={rows}
+          keyExtractor={(c) => c.startupId}
+          contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 12, gap: 9 }}
+          showsVerticalScrollIndicator={false}
+          onEndReached={loadMore}
+          onEndReachedThreshold={0.4}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.inkMuted} />
+          }
+          renderItem={({ item }) => (
+            <CompanyCard
+              startup={item}
+              watched={watchlist.includes(item.startupId)}
+              onPress={() => router.push(route(`/investor/company/${item.startupId}`))}
+              onToggleWatch={() => toggleWatch(item.startupId)}
+            />
+          )}
+          ListFooterComponent={
+            rows.length && mode === 'deal' ? (
+              <Txt className="py-2 text-center text-[11.5px] text-ink-faint">
+                {`1–${rows.length} of ${total}`}
               </Txt>
-              <View className="mt-1 w-[160px]">
-                <Button label="Reset filters" height={36} onPress={clearFilters} />
+            ) : null
+          }
+          ListEmptyComponent={
+            error ? (
+              <View className="px-1 py-6">
+                <Unavailable
+                  title={mode === 'watch' ? 'Watchlist could not load' : 'Dealflow could not load'}
+                  error={error}
+                  onRetry={() => {
+                    setLoading(true);
+                    void fetchPage(0, true);
+                  }}
+                />
               </View>
-            </View>
-          )
-        }
-      />
+            ) : (
+              <View className="items-center justify-center gap-[11px] px-6 py-[70px]">
+                <View
+                  className="h-[42px] w-[42px] items-center justify-center rounded-[11px]"
+                  style={{ borderWidth: 1, borderStyle: 'dashed', borderColor: colors.lineDash }}>
+                  <Txt className="text-[16px] text-ink-ghost">⌕</Txt>
+                </View>
+                <TxtSemi className="text-center text-[14px]">
+                  {mode === 'watch' ? 'Your watchlist is empty' : 'No startups match these filters'}
+                </TxtSemi>
+                <Txt className="text-center text-[12.5px] text-ink-dim" style={{ lineHeight: 19 }}>
+                  {mode === 'watch'
+                    ? 'Star a startup from dealflow to track it here, then open it to express interest.'
+                    : 'Widen or reset filters, or check back once founders have published.'}
+                </Txt>
+                {mode === 'deal' ? (
+                  <View className="mt-1 w-[160px]">
+                    <Button label="Reset filters" height={36} onPress={clearFilters} />
+                  </View>
+                ) : (
+                  <View className="mt-1 w-[180px]">
+                    <Button
+                      label="Browse dealflow"
+                      height={36}
+                      onPress={() => router.push(route('/investor'))}
+                    />
+                  </View>
+                )}
+              </View>
+            )
+          }
+        />
+      )}
 
       <FilterSheet visible={sheetOpen} onClose={() => setSheetOpen(false)} resultCount={total} />
     </View>

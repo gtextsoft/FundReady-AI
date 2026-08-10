@@ -10,9 +10,11 @@ import { Eyebrow, Mono, Txt, TxtSemi } from '@/components/ui/text';
 import { C } from '@/theme/tokens';
 import { Unavailable } from '@/components/unavailable';
 import { AuditFailed, AuditPending, AuditReportView } from '@/components/founder/audit-report';
-import { api } from '@/api';
+import { api, ApiFailure } from '@/api';
+import { isReady } from '@/domain/audit';
 import type { Assessment, Insight } from '@/domain/types';
 import { FOUNDER_HOME, VERIFY_EMAIL } from '@/lib/routes';
+import { saveOrSharePdf } from '@/lib/download-pdf';
 import { useBackTo } from '@/lib/use-back-to';
 import { useFounder } from '@/store/founder';
 import { useSession } from '@/store/session';
@@ -55,6 +57,28 @@ export default function Results() {
 
   const [openStrengths, setOpenStrengths] = useState(true);
   const [openRisks, setOpenRisks] = useState(true);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+
+  async function downloadPdf() {
+    if (!run || !report || pdfBusy) return;
+    setPdfBusy(true);
+    setPdfError(null);
+    try {
+      const bytes = await api.getAuditReportPdf(run.id);
+      await saveOrSharePdf(bytes, `fundready-audit-${run.id.slice(0, 8)}.pdf`);
+    } catch (e) {
+      setPdfError(
+        e instanceof ApiFailure
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : 'Could not download the PDF.',
+      );
+    } finally {
+      setPdfBusy(false);
+    }
+  }
 
   return (
     <ScrollView
@@ -77,6 +101,18 @@ export default function Results() {
           below is a stand-in for the wait, not a second opinion. */}
       {run && !report && run.status !== 'failed' ? <AuditPending run={run} /> : null}
       {run?.status === 'failed' ? <AuditFailed run={run} /> : null}
+
+      {/* Download is the thing people look for after unboxing — show the slot
+          immediately, even while the audit is still running, so it is not a
+          surprise that only appears after a long scroll later. */}
+      {!report ? (
+        <View className="mb-4 opacity-50">
+          <Button label="Download full audit PDF" variant="secondary" disabled />
+          <Txt className="mt-2 text-center text-[11px] text-ink-faint">
+            Unlocks when the FundReady AI audit finishes.
+          </Txt>
+        </View>
+      ) : null}
       {/* Everything past registration is gated on a confirmed address — the
           server answers every audit, profile and discovery route with 403
           "Verify your email address to continue" until then. That is the
@@ -90,8 +126,8 @@ export default function Results() {
             CONFIRM YOUR EMAIL
           </Mono>
           <Txt className="mb-3 mt-[7px] text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
-            Your answers are saved, but nothing can be audited until you confirm your address. Open
-            the link we emailed you, then come back and run it again.
+            Your answers are saved, but nothing can be audited until you confirm your address. Enter
+            the six-digit code we emailed you, then come back and run it again.
           </Txt>
           <Button
             label="Confirm my email"
@@ -113,7 +149,7 @@ export default function Results() {
             PROVISIONAL ESTIMATE
           </Mono>
           <Txt className="mt-[7px] text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
-            Calculated on this device from what you entered. It is not a SACI audit — nothing here
+            Calculated on this device from what you entered. It is not a FundReady AI audit — nothing here
             has been verified against your documents, and no investor can see it.
           </Txt>
         </View>
@@ -148,7 +184,12 @@ export default function Results() {
           Two scores on one screen, one of which is not the audit, is exactly
           the ambiguity the provisional label exists to prevent. */}
       {report ? (
-        <AuditReportView report={report} />
+        <AuditReportView
+          report={report}
+          onDownloadPdf={() => void downloadPdf()}
+          pdfBusy={pdfBusy}
+          pdfError={pdfError}
+        />
       ) : (
         <>
           <View className="overflow-hidden rounded-[14px] border border-line">
@@ -187,7 +228,10 @@ export default function Results() {
 
       <Eyebrow className="mb-[10px] mt-7">YOUR RECOMMENDED PATH</Eyebrow>
 
-      {a.route === 'readiness' ? (
+      {/* Prefer the real audit once it lands — the heuristic route was only a
+          stand-in for the wait, and sending a "ready" founder into readiness
+          (or the reverse) is worse than a provisional label. */}
+      {(report ? !isReady(report.fundability) : a.route === 'readiness') ? (
         <ProgrammeCard
           badge="PRESCRIBED · 6 WEEKS"
           title="The Funding Readiness Challenge"
@@ -200,7 +244,7 @@ export default function Results() {
           accent={C.amb}
           borderColor="#3d2f14"
           gradient={['rgba(245,166,35,0.14)', 'rgba(245,166,35,0.02)']}
-          cta="Enrol in Funding Readiness"
+          cta="Enrol in Funding Readiness (coming soon)"
           variant="amber"
           programme="readiness"
         />
@@ -217,7 +261,7 @@ export default function Results() {
           accent={C.grn}
           borderColor="#14351f"
           gradient={['rgba(12,206,107,0.14)', 'rgba(12,206,107,0.02)']}
-          cta="Enrol in Wealth Creation"
+          cta="Enrol in Wealth Creation (coming soon)"
           variant="green"
           programme="wealth"
         />

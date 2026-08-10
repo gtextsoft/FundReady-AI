@@ -104,7 +104,7 @@ export default function SignIn() {
             accessibilityRole="link"
             className="mt-6 items-center"
             onPress={() => router.replace('/sign-up' as Href)}>
-            <TxtMed className="text-[12.5px] text-ink-muted">New to SACI FundMe? Create an account</TxtMed>
+            <TxtMed className="text-[12.5px] text-ink-muted">New to FundReady AI? Create an account</TxtMed>
           </Pressable>
         </View>
       </ScrollView>

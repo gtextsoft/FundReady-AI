@@ -4,7 +4,7 @@ import type { ComponentProps } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Mono, Txt } from './text';
-import { C } from '@/theme/tokens';
+import { useThemeColors } from '@/theme/use-theme-colors';
 
 /**
  * Expo Router 57 vendors its own copy of bottom-tabs, so there is no
@@ -34,6 +34,7 @@ export function TabBar({
   badges?: Record<string, number>;
 }) {
   const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
 
   return (
     <View
@@ -43,7 +44,7 @@ export function TabBar({
         const focused = state.index === index;
         const { options } = descriptors[route.key];
         const label = options.title ?? route.name;
-        const color = focused ? C.ink : C.inkFaint;
+        const color = focused ? colors.ink : colors.inkFaint;
         const badge = badges?.[route.name] ?? 0;
 
         return (
@@ -51,18 +52,19 @@ export function TabBar({
             key={route.key}
             accessibilityRole="tab"
             accessibilityState={{ selected: focused }}
-            accessibilityLabel={badge ? `${label}, ${badge} unread` : label}
+            accessibilityLabel={badge ? `${label}, ${badge} unread` : String(label)}
+            hitSlop={6}
             onPress={() => {
               const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
               if (!focused && !event.defaultPrevented) navigation.navigate(route.name);
             }}
-            className="flex-1 items-center gap-[3px] py-[6px]">
+            className="min-h-[44px] flex-1 items-center justify-center gap-[3px] py-[6px]">
             <View>
               <Text style={{ fontSize: 15, color }}>{glyphs[route.name] ?? '•'}</Text>
               {badge > 0 ? (
                 <View
                   className="absolute -right-[9px] -top-[4px] h-[14px] min-w-[14px] items-center justify-center rounded-full px-[3px]"
-                  style={{ backgroundColor: C.blue }}>
+                  style={{ backgroundColor: colors.blue }}>
                   <Mono className="text-[8px] text-white">{badge > 9 ? '9+' : badge}</Mono>
                 </View>
               ) : null}

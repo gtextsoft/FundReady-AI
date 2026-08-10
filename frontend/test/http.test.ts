@@ -392,16 +392,20 @@ describe('api/http transport', () => {
   });
 
   describe('password reset', () => {
-    it('posts the token and drops the tokens this device is holding', async () => {
+    it('posts email, code and password, then drops local tokens', async () => {
       await signedIn();
       serve(() => res(204));
 
-      await httpApi.resetPassword('  reset-token\n', 'correct-horse-battery');
+      await httpApi.resetPassword('  Ada@Northwind-Labs.com\n', ' 418-305 ', 'correct-horse-battery');
 
       expect(calls[0]).toMatchObject({
         url: 'http://api.test/v1/auth/password-reset/confirm',
         method: 'POST',
-        body: { token: 'reset-token', password: 'correct-horse-battery' },
+        body: {
+          email: 'ada@northwind-labs.com',
+          code: '418305',
+          password: 'correct-horse-battery',
+        },
       });
       // The server has just revoked every refresh token, so the pair on this
       // device is dead — holding it would leave a live-looking session behind.
@@ -410,15 +414,17 @@ describe('api/http transport', () => {
       expect(calls).toHaveLength(0);
     });
 
-    it('keeps the session when the token is refused', async () => {
+    it('keeps the session when the code is refused', async () => {
       await signedIn();
       serve((call) =>
         call.url.endsWith('/password-reset/confirm')
-          ? res(422, { error: { message: 'This link is invalid or has expired.' } })
+          ? res(422, { error: { message: 'That code is invalid or has expired.' } })
           : res(200, ME),
       );
 
-      await expect(httpApi.resetPassword('stale', 'correct-horse-battery')).rejects.toMatchObject({
+      await expect(
+        httpApi.resetPassword('ada@northwind-labs.com', '000000', 'correct-horse-battery'),
+      ).rejects.toMatchObject({
         code: 'validation',
       });
 
@@ -512,7 +518,7 @@ describe('api/http transport', () => {
       const result = await httpApi.saveProfile({
         ...EMPTY_FORM,
         location: 'Atlantis',
-        stage: 'Bootstrapped',
+        stage: 'NotAStage',
       });
 
       expect(result.unmapped.map((u) => u.field).sort()).toEqual(['location', 'stage']);
@@ -536,12 +542,6 @@ describe('api/http transport', () => {
   });
 
   describe('unbuilt endpoints', () => {
-    it('names the missing backend task rather than inventing an answer', async () => {
-      const error = await httpApi.askMentor('how am I doing?').catch((e: unknown) => e);
-      expect((error as InstanceType<typeof ApiFailure>).code).toBe('not_implemented');
-      expect((error as Error).message).toMatch(/T3\.7/);
-    });
-
     it('refuses the prototype dealflow shape rather than inventing its numbers', async () => {
       // `/v1/discover` exists, but the summary tier carries no MRR, growth,
       // margin or runway — every number the prototype's card draws. Filling
@@ -549,6 +549,43 @@ describe('api/http transport', () => {
       const error = await httpApi.listCompanies({} as never, 1, 20).catch((e: unknown) => e);
       expect((error as InstanceType<typeof ApiFailure>).code).toBe('not_implemented');
       expect((error as Error).message).toMatch(/discoverStartups/);
+    });
+  });
+
+  describe('mentor', () => {
+    const PROFILE = {
+      id: 'profile-1',
+      owner_id: 'user-1',
+      name: 'Northwind Labs',
+      sector: 'Fintech',
+      stage: 'seed',
+      country: 'NG',
+      currency: 'NGN',
+      fields: {},
+      missing_fields: [],
+      created_at: '2026-08-01T00:00:00Z',
+      updated_at: '2026-08-01T00:00:00Z',
+    };
+
+    it('posts chat to the founder mentor endpoint and maps citations', async () => {
+      await signedIn();
+      serve((call) => {
+        if (call.url.endsWith('/v1/startups/me')) return res(200, PROFILE);
+        return res(200, {
+          reply: 'Start with legal_and_ip.',
+          citations: [{ kind: 'verdict', ref: 'fundability' }],
+        });
+      });
+
+      const result = await httpApi.chatMentor({ message: 'What should I fix first?' });
+      expect(
+        calls.some((c) => c.url === 'http://api.test/v1/startups/profile-1/mentor/chat'),
+      ).toBe(true);
+      expect(result).toEqual({
+        reply: 'Start with legal_and_ip.',
+        citations: [{ kind: 'verdict', ref: 'fundability' }],
+      });
+      expect(await httpApi.askMentor('What should I fix first?')).toBe('Start with legal_and_ip.');
     });
   });
 

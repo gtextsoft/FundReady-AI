@@ -14,8 +14,11 @@ export const ONBOARDING_SECTORS = [...SECTORS, 'Consumer', 'Deeptech'] as const;
 
 export const STAGES = ['Pre-seed', 'Seed', 'Series A', 'Growth'] as const;
 
-/** Founders may also self-describe as bootstrapped; listed companies may not. */
-export const FOUNDER_STAGES = ['Pre-seed', 'Seed', 'Series A', 'Bootstrapped'] as const;
+/**
+ * Stages a founder can pick. Matches the server enum (no Bootstrapped —
+ * that posture is not a funding stage and could not be persisted).
+ */
+export const FOUNDER_STAGES = ['Pre-seed', 'Seed', 'Series A', 'Growth'] as const;
 
 export type Sector = (typeof SECTORS)[number];
 export type Stage = (typeof STAGES)[number];

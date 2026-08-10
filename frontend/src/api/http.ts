@@ -4,6 +4,18 @@ import Constants from 'expo-constants';
 import { companyNameFromEmail, isPersonalEmailDomain } from '@/domain/email';
 import type { AuditReport, AuditRun, AuditStatus, Verdict } from '@/domain/audit';
 import type { DiscoveredStartup } from '@/domain/discovery';
+import type { Interest, InterestStatus } from '@/domain/interest';
+import type { MentorChatResult, MentorCitation, MentorCitationKind } from '@/domain/mentor';
+import type {
+  DocumentKind,
+  EvidenceSubmission,
+  ReadinessSummary,
+  ReadinessTask,
+  RegistryEntry,
+  StartupDocument,
+  TaskRequirement,
+  TaskStatus,
+} from '@/domain/readiness';
 import {
   fromWireProfile,
   toWireProfile,
@@ -19,7 +31,8 @@ import type {
   Session,
 } from './contract';
 import { ApiFailure } from './contract';
-import { TRIAL_DAYS } from '@/domain/access';
+
+const WATCHLIST_KEY = 'saci.fundme.watchlist';
 
 /**
  * The real backend.
@@ -67,6 +80,15 @@ function resolveBaseUrl(): string {
   if (Platform.OS === 'web' && typeof globalThis.location !== 'undefined') {
     const { hostname, protocol } = globalThis.location;
     if (hostname) return `${protocol}//${hostname}:${DEV_API_PORT}`;
+  }
+
+  // Release/EAS builds have no Metro host. Falling back to localhost here is
+  // what made the first APK unusable on a phone — require the public URL.
+  if (typeof __DEV__ !== 'undefined' && !__DEV__) {
+    throw new Error(
+      'EXPO_PUBLIC_API_URL is missing from this build. Set it on the EAS ' +
+        'environment for this profile (plaintext or sensitive) and rebuild.',
+    );
   }
 
   return `http://localhost:${DEV_API_PORT}`;
@@ -210,6 +232,26 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   return body as T;
 }
 
+/** Authenticated binary download (PDF). Retries once through refresh on 401. */
+async function requestBytes(path: string): Promise<Uint8Array> {
+  const current = await loadTokens();
+  if (!current) throw new ApiFailure('unauthorized', 'You are signed out.');
+
+  let response = await send(path, { auth: true }, current.access);
+
+  if (response.status === 401) {
+    const next = await refreshTokens();
+    response = await send(path, { auth: true }, next.access);
+  }
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as ErrorEnvelope | null;
+    throw failureFor(response.status, body);
+  }
+
+  return new Uint8Array(await response.arrayBuffer());
+}
+
 // ── server shapes ───────────────────────────────────────────
 
 type TokenPair = { access_token: string; refresh_token: string; expires_in: number };
@@ -253,6 +295,9 @@ type MeResponse = {
   kyc_status: 'none' | 'pending' | 'verified' | 'failed';
   subscription_status: 'none' | 'active' | 'past_due' | 'canceled';
   created_at: string;
+  /** Server-authoritative trial end (ISO UTC). Do not recompute locally. */
+  trial_ends_at: string;
+  has_access: boolean;
 };
 
 /**
@@ -279,7 +324,7 @@ function sessionFrom(me: MeResponse): Session {
   if (me.role === 'admin') {
     throw new ApiFailure(
       'forbidden',
-      'Admin accounts are managed in the SACI console, not in the app.',
+      'Admin accounts are managed in the FundReady AI console, not in the app.',
     );
   }
   const firstName = me.first_name ?? '';
@@ -458,6 +503,19 @@ function toAuditReport(wire: WireFounderReport): AuditReport {
   };
 }
 
+type WireMentorChat = {
+  reply: string;
+  citations: { kind: string; ref: string }[];
+};
+
+function toMentorChat(wire: WireMentorChat): MentorChatResult {
+  const kinds = new Set<MentorCitationKind>(['finding', 'task', 'verdict', 'profile']);
+  const citations: MentorCitation[] = (wire.citations ?? [])
+    .filter((c) => kinds.has(c.kind as MentorCitationKind) && typeof c.ref === 'string')
+    .map((c) => ({ kind: c.kind as MentorCitationKind, ref: c.ref }));
+  return { reply: wire.reply, citations };
+}
+
 // ── discovery wire shapes ───────────────────────────────────
 
 type WireDiscoveryVerdict = { scope: string; level: string; score: number | null };
@@ -494,6 +552,194 @@ function toDiscovered(wire: WireStartupCard): DiscoveredStartup {
     fundability: wire.fundability,
     saleability: wire.saleability,
     publishedAt: wire.published_at,
+  };
+}
+
+type WireInterest = {
+  id: string;
+  startup_id: string;
+  status: InterestStatus;
+  note: string | null;
+  created_at: string;
+  decided_at: string | null;
+  revealed_run_ids: string[];
+};
+
+function toInterest(wire: WireInterest): Interest {
+  return {
+    id: wire.id,
+    startupId: wire.startup_id,
+    status: wire.status,
+    note: wire.note,
+    createdAt: wire.created_at,
+    decidedAt: wire.decided_at,
+    revealedRunIds: wire.revealed_run_ids ?? [],
+  };
+}
+
+type WireRegistry = {
+  country: string;
+  country_name: string;
+  registrar: string;
+  short_name: string;
+  document_name: string;
+  number_label: string;
+  number_example: string;
+};
+
+function toRegistry(wire: WireRegistry): RegistryEntry {
+  return {
+    country: wire.country,
+    countryName: wire.country_name,
+    registrar: wire.registrar,
+    shortName: wire.short_name,
+    documentName: wire.document_name,
+    numberLabel: wire.number_label,
+    numberExample: wire.number_example,
+  };
+}
+
+type WireUploadTicket = {
+  document_id: string;
+  upload_url: string;
+  expires_in: number;
+  max_bytes: number;
+};
+
+type WireDocument = {
+  id: string;
+  startup_id: string;
+  kind: DocumentKind;
+  filename: string;
+  content_type: string | null;
+  size_bytes: number | null;
+  status: StartupDocument['status'];
+  scan_status: StartupDocument['scanStatus'];
+  created_at: string;
+  updated_at: string;
+};
+
+function toDocument(wire: WireDocument): StartupDocument {
+  return {
+    id: wire.id,
+    startupId: wire.startup_id,
+    kind: wire.kind,
+    filename: wire.filename,
+    contentType: wire.content_type,
+    sizeBytes: wire.size_bytes,
+    status: wire.status,
+    scanStatus: wire.scan_status,
+    createdAt: wire.created_at,
+    updatedAt: wire.updated_at,
+  };
+}
+
+type WireTask = {
+  id: string;
+  startup_id: string;
+  audit_run_id: string | null;
+  dimension: string;
+  action: string;
+  requirement: TaskRequirement;
+  status: TaskStatus;
+  dimension_score: number | null;
+  is_priority: boolean;
+  assessment_attempts: number;
+  attempts_remaining: number;
+  created_at: string;
+  updated_at: string;
+};
+
+type WireTaskPage = {
+  items: WireTask[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+type WireSummary = {
+  total: number;
+  required_total: number;
+  required_open: number;
+  required_passed: number;
+  recommended_total: number;
+  has_audit: boolean;
+  gate_cleared: boolean;
+  discoverable: boolean;
+};
+
+function toTask(wire: WireTask): ReadinessTask {
+  return {
+    id: wire.id,
+    startupId: wire.startup_id,
+    auditRunId: wire.audit_run_id,
+    dimension: wire.dimension,
+    action: wire.action,
+    requirement: wire.requirement,
+    status: wire.status,
+    dimensionScore: wire.dimension_score,
+    isPriority: wire.is_priority,
+    assessmentAttempts: wire.assessment_attempts,
+    attemptsRemaining: wire.attempts_remaining,
+    createdAt: wire.created_at,
+    updatedAt: wire.updated_at,
+  };
+}
+
+function toSummary(wire: WireSummary): ReadinessSummary {
+  return {
+    total: wire.total,
+    requiredTotal: wire.required_total,
+    requiredOpen: wire.required_open,
+    requiredPassed: wire.required_passed,
+    recommendedTotal: wire.recommended_total,
+    hasAudit: wire.has_audit,
+    gateCleared: wire.gate_cleared,
+    discoverable: wire.discoverable,
+  };
+}
+
+type WireEvidenceTicket = {
+  evidence_id: string;
+  upload_url: string;
+  expires_in: number;
+  max_bytes: number;
+};
+
+type WireEvidence = {
+  id: string;
+  task_id: string;
+  filename: string;
+  content_type: string | null;
+  size_bytes: number | null;
+  status: EvidenceSubmission['status'];
+  outcome: EvidenceSubmission['outcome'];
+  reasons: string[] | null;
+  assessed_at: string | null;
+  error_code: string | null;
+  created_at: string;
+};
+
+type WireEvidencePage = {
+  items: WireEvidence[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+function toEvidence(wire: WireEvidence): EvidenceSubmission {
+  return {
+    id: wire.id,
+    taskId: wire.task_id,
+    filename: wire.filename,
+    contentType: wire.content_type,
+    sizeBytes: wire.size_bytes,
+    status: wire.status,
+    outcome: wire.outcome,
+    reasons: wire.reasons,
+    assessedAt: wire.assessed_at,
+    errorCode: wire.error_code,
+    createdAt: wire.created_at,
   };
 }
 
@@ -576,10 +822,14 @@ export const httpApi: FundMeApi = {
     });
   },
 
-  async resetPassword(token: string, password: string) {
+  async resetPassword(email: string, code: string, password: string) {
     await request<void>('/v1/auth/password-reset/confirm', {
       method: 'POST',
-      body: { token: token.trim(), password },
+      body: {
+        email: email.trim().toLowerCase(),
+        code: code.replace(/[\s-]/g, ''),
+        password,
+      },
     });
     // The server has just revoked every refresh token and invalidated every
     // access token it had issued, so anything this device is still holding is
@@ -599,7 +849,6 @@ export const httpApi: FundMeApi = {
       fetchMe(),
       ownProfile().catch(() => null),
     ]);
-    const created = new Date(me.created_at).getTime();
 
     return {
       emailVerified: me.email_verified,
@@ -607,11 +856,21 @@ export const httpApi: FundMeApi = {
       // server fills the name in from the verified company domain at
       // registration (T1.4a), so in practice this falls back rarely.
       companyName: profile?.name || companyNameFromEmail(me.email),
-      // Company-registration verification still has no endpoint. This is
-      // deliberately NOT read off `kyc_status`, which is investor identity.
+      // No company-registration status on the server yet. Keep the field for
+      // UI copy, but do not use it to lock the product (see domain/access.ts).
       verification: 'unverified',
-      registration: null,
-      trialEndsAt: new Date(created + TRIAL_DAYS * 86_400_000).toISOString(),
+      registration: (() => {
+        const mapped = profile ? fromWireProfile(profile) : null;
+        if (!mapped?.legalName && !mapped?.registrationNumber) return null;
+        return {
+          country: mapped?.location || profile?.country || '',
+          legalName: mapped?.legalName || '',
+          registrationNumber: mapped?.registrationNumber || '',
+          registrar: mapped?.registrar || '',
+          document: '',
+        };
+      })(),
+      trialEndsAt: me.trial_ends_at,
       subscriptionStatus: me.subscription_status,
     };
   },
@@ -661,12 +920,55 @@ export const httpApi: FundMeApi = {
     return establish(pair);
   },
 
+  async beginMfaEnrolment() {
+    const body = await request<{ secret: string; provisioning_uri: string }>(
+      '/v1/auth/mfa/enroll',
+      { method: 'POST', auth: true },
+    );
+    return { secret: body.secret, provisioningUri: body.provisioning_uri };
+  },
+
+  async confirmMfaEnrolment(code: string) {
+    const body = await request<{ recovery_codes: string[] }>('/v1/auth/mfa/confirm', {
+      method: 'POST',
+      body: { code: code.trim() },
+      auth: true,
+    });
+    return body.recovery_codes ?? [];
+  },
+
   // ── verification ────────────────────────────────────────
   submitCompanyRegistration: () => notYet('Company verification', 'T1.4'),
   submitInvestorCredentials: () => notYet('Investor verification', 'T4.1'),
 
   // ── billing ─────────────────────────────────────────────
-  purchaseUnlock: () => notYet('Payments', 'T3.3 / T3.4'),
+  async purchaseUnlock() {
+    const body = await request<{ checkout_url: string; session_id: string }>(
+      '/v1/billing/checkout',
+      { method: 'POST', auth: true },
+    );
+    return { checkoutUrl: body.checkout_url, sessionId: body.session_id };
+  },
+
+  async getUnlockReceipt() {
+    try {
+      const body = await request<{
+        reference: string;
+        amount: number;
+        currency: string;
+        paid_at: string;
+      }>('/v1/billing/unlock', { auth: true });
+      return {
+        reference: body.reference,
+        amount: body.amount,
+        currency: body.currency,
+        paidAt: body.paid_at,
+      };
+    } catch (error) {
+      if (error instanceof ApiFailure && error.code === 'not_found') return null;
+      throw error;
+    }
+  },
 
   // ── founder ─────────────────────────────────────────────
   /**
@@ -711,6 +1013,11 @@ export const httpApi: FundMeApi = {
     );
   },
 
+  async getAuditReportPdf(runId: string) {
+    const startupId = await requireProfileId();
+    return requestBytes(`/v1/startups/${startupId}/audits/${runId}/report.pdf`);
+  },
+
   // ── investor visibility ─────────────────────────────────
   async publishProfile() {
     const startupId = await requireProfileId();
@@ -722,6 +1029,137 @@ export const httpApi: FundMeApi = {
     await request<unknown>(`/v1/startups/${startupId}/unpublish`, { method: 'POST', auth: true });
   },
 
+  async getVisibility() {
+    const profile = await ownProfile();
+    if (!profile) {
+      return { investorVisible: false, publishedAt: null };
+    }
+    return {
+      investorVisible: Boolean(profile.investor_visible),
+      publishedAt: profile.published_at ?? null,
+    };
+  },
+
+  async listRegistries() {
+    const body = await request<{ registries: WireRegistry[] }>('/v1/registries', { auth: true });
+    return (body.registries ?? []).map(toRegistry);
+  },
+
+  async beginDocumentUpload(input) {
+    const startupId = await requireProfileId();
+    const ticket = await request<WireUploadTicket>(`/v1/startups/${startupId}/documents`, {
+      method: 'POST',
+      body: {
+        kind: input.kind,
+        filename: input.filename,
+        content_type: input.contentType,
+      },
+      auth: true,
+    });
+    return {
+      documentId: ticket.document_id,
+      uploadUrl: ticket.upload_url,
+      expiresIn: ticket.expires_in,
+      maxBytes: ticket.max_bytes,
+    };
+  },
+
+  async completeDocumentUpload(documentId) {
+    return toDocument(
+      await request<WireDocument>(`/v1/documents/${documentId}/complete`, {
+        method: 'POST',
+        auth: true,
+      }),
+    );
+  },
+
+  async listDocuments() {
+    const startupId = await requireProfileId();
+    const rows = await request<WireDocument[]>(`/v1/startups/${startupId}/documents`, {
+      auth: true,
+    });
+    return (rows ?? []).map(toDocument);
+  },
+
+  async getDocumentDownloadUrl(documentId) {
+    const ticket = await request<{ download_url: string; expires_in: number }>(
+      `/v1/documents/${documentId}/download`,
+      { auth: true },
+    );
+    return { downloadUrl: ticket.download_url, expiresIn: ticket.expires_in };
+  },
+
+  async getTasksSummary() {
+    const startupId = await requireProfileId();
+    return toSummary(
+      await request<WireSummary>(`/v1/startups/${startupId}/tasks/summary`, { auth: true }),
+    );
+  },
+
+  async listTasks(query = {}) {
+    const startupId = await requireProfileId();
+    const params = new URLSearchParams();
+    if (query.status) params.set('status', query.status);
+    if (query.requirement) params.set('requirement', query.requirement);
+    params.set('limit', String(query.limit ?? 50));
+    params.set('offset', String(query.offset ?? 0));
+    const page = await request<WireTaskPage>(
+      `/v1/startups/${startupId}/tasks?${params.toString()}`,
+      { auth: true },
+    );
+    return {
+      items: (page.items ?? []).map(toTask),
+      total: page.total,
+      limit: page.limit,
+      offset: page.offset,
+    };
+  },
+
+  async getTask(taskId) {
+    const startupId = await requireProfileId();
+    return toTask(
+      await request<WireTask>(`/v1/startups/${startupId}/tasks/${taskId}`, { auth: true }),
+    );
+  },
+
+  async beginEvidenceUpload(taskId, input) {
+    const ticket = await request<WireEvidenceTicket>(`/v1/tasks/${taskId}/evidence`, {
+      method: 'POST',
+      body: { filename: input.filename, content_type: input.contentType },
+      auth: true,
+    });
+    return {
+      evidenceId: ticket.evidence_id,
+      uploadUrl: ticket.upload_url,
+      expiresIn: ticket.expires_in,
+      maxBytes: ticket.max_bytes,
+    };
+  },
+
+  async completeEvidenceUpload(evidenceId) {
+    return toEvidence(
+      await request<WireEvidence>(`/v1/evidence/${evidenceId}/complete`, {
+        method: 'POST',
+        auth: true,
+      }),
+    );
+  },
+
+  async listEvidence(taskId, query = {}) {
+    const params = new URLSearchParams();
+    params.set('limit', String(query.limit ?? 50));
+    params.set('offset', String(query.offset ?? 0));
+    const page = await request<WireEvidencePage>(
+      `/v1/tasks/${taskId}/evidence?${params.toString()}`,
+      { auth: true },
+    );
+    return {
+      items: (page.items ?? []).map(toEvidence),
+      total: page.total,
+      limit: page.limit,
+      offset: page.offset,
+    };
+  },
 
   async getProfile() {
     const stored = await ownProfile();
@@ -772,7 +1210,27 @@ export const httpApi: FundMeApi = {
   },
 
   enrol: () => notYet('Programme enrolment', 'T3.2'),
-  askMentor: () => notYet('The AI mentor', 'T3.7'),
+
+  async askMentor(question: string) {
+    const result = await httpApi.chatMentor({ message: question });
+    return result.reply;
+  },
+
+  async chatMentor(input) {
+    const startupId = await requireProfileId();
+    const wire = await request<WireMentorChat>(`/v1/startups/${startupId}/mentor/chat`, {
+      method: 'POST',
+      body: {
+        message: input.message,
+        history: (input.history ?? []).map((turn) => ({
+          role: turn.role,
+          content: turn.content,
+        })),
+      },
+      auth: true,
+    });
+    return toMentorChat(wire);
+  },
 
   // ── investor ────────────────────────────────────────────
   /**
@@ -811,17 +1269,51 @@ export const httpApi: FundMeApi = {
   },
 
   async expressInterest(startupId: string, note?: string) {
-    await request<unknown>(`/v1/discover/${startupId}/interest`, {
+    const wire = await request<WireInterest>(`/v1/discover/${startupId}/interest`, {
       method: 'POST',
       // Explicitly null rather than omitted: the field is nullable server-side
       // and sending nothing at all makes the body shape depend on the caller.
       body: { note: note?.trim() || null },
       auth: true,
     });
+    return toInterest(wire);
   },
-  getWatchlist: () => notYet('The watchlist', 'no backend task yet'),
-  toggleWatch: () => notYet('The watchlist', 'no backend task yet'),
-  requestIntroduction: () => notYet('Introductions', 'T4.5'),
+
+  async listInterests(status?: InterestStatus) {
+    const params = status ? `?status=${encodeURIComponent(status)}` : '';
+    const rows = await request<WireInterest[]>(`/v1/interests${params}`, { auth: true });
+    return (rows ?? []).map(toInterest);
+  },
+
+  async getRevealedReport(interestId: string, runId: string) {
+    return toAuditReport(
+      await request<WireFounderReport>(`/v1/interests/${interestId}/reports/${runId}`, {
+        auth: true,
+      }),
+    );
+  },
+
+  async getWatchlist() {
+    const raw = await storage.get(WATCHLIST_KEY);
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+    } catch {
+      return [];
+    }
+  },
+
+  async toggleWatch(startupId: string) {
+    const before = await httpApi.getWatchlist();
+    const next = before.includes(startupId)
+      ? before.filter((id) => id !== startupId)
+      : [...before, startupId];
+    await storage.set(WATCHLIST_KEY, JSON.stringify(next));
+    return next;
+  },
+
+  requestIntroduction: () => notYet('Introductions', 'use expressInterest (T4.5)'),
 
   // ── virtual calls ───────────────────────────────────────
   requestCall: () => notYet('Call scheduling', 'T4.5'),

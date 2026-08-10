@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,39 +9,49 @@ import { Mark } from '@/components/ui/mark';
 import { Mono, Txt, TxtMed, TxtSemi } from '@/components/ui/text';
 import { Unavailable } from '@/components/unavailable';
 import { C } from '@/theme/tokens';
-import { api, ApiFailure } from '@/api';
+import { api, ApiFailure, RESEND_COOLDOWN_MS } from '@/api';
+import { isValidEmail } from '@/domain/email';
 import { checkPassword, PASSWORD_HINT } from '@/domain/password';
-import { tokenFromParams } from '@/lib/deep-link';
 import { FORGOT_PASSWORD, SIGN_IN } from '@/lib/routes';
 
 /**
- * The far end of the reset the email started.
+ * Complete a password reset with the emailed six-digit code.
  *
- * Reached from `{APP_LINK_BASE_URL}/reset-password?token=…`, so the token
- * arrives as a search parameter and the field for it never has to be shown.
- * The paste box is the fallback for when the link opened a browser instead of
- * the app — which is what happens today, because Universal/App Links are not
- * configured yet (see `lib/deep-link.ts`).
+ * Reached from forgot-password (email prefilled) or typed manually. There is
+ * deliberately no deep-link token: the email carries a code, checked against
+ * one named account — same shape as email verification.
  *
- * **Deliberately usable while signed out.** The endpoint takes no
- * authorization, and someone resetting a password is very often locked out of
- * the account — requiring a session here would close the only door they have.
+ * **Usable while signed out.** The endpoint takes no authorization, and someone
+ * resetting a password is very often locked out of the account.
  */
 export default function ResetPassword() {
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams();
+  const params = useLocalSearchParams<{ email?: string | string[] }>();
+  const paramEmail = Array.isArray(params.email) ? params.email[0] : params.email;
 
-  // The token from the link. Held in state so a bad one can be replaced by
-  // hand without needing another email.
-  const linked = tokenFromParams(params);
-  const [token, setToken] = useState(linked ?? '');
-
+  const [email, setEmail] = useState(paramEmail?.trim() ?? '');
+  const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [fieldError, setFieldError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<'reset' | 'resend' | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [done, setDone] = useState(false);
+  const [sentAt, setSentAt] = useState<number | null>(paramEmail ? Date.now() : null);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (paramEmail?.trim()) setEmail(paramEmail.trim());
+  }, [paramEmail]);
+
+  const cooldownLeft = sentAt === null ? 0 : Math.max(0, sentAt + RESEND_COOLDOWN_MS - now);
+  const cooldownSeconds = Math.ceil(cooldownLeft / 1000);
+
+  useEffect(() => {
+    if (cooldownLeft <= 0) return;
+    const id = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(id);
+  }, [cooldownLeft]);
 
   async function submit() {
     const check = checkPassword(password, confirm);
@@ -53,27 +63,47 @@ export default function ResetPassword() {
       setFieldError('Type your new password twice.');
       return;
     }
-    if (!token.trim()) {
-      setFieldError('Paste the code from your reset email.');
+    if (!isValidEmail(email)) {
+      setFieldError('Enter the email the code was sent to.');
+      return;
+    }
+    const digits = code.replace(/[\s-]/g, '');
+    if (digits.length !== 6) {
+      setFieldError('Enter the six-digit code from your email.');
       return;
     }
 
-    setBusy(true);
+    setBusy('reset');
     setFieldError(null);
     setError(null);
     try {
-      await api.resetPassword(token.trim(), password);
+      await api.resetPassword(email.trim(), code, password);
       setDone(true);
     } catch (e) {
       setError(e);
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
-  // Unknown, expired and already-used tokens are one indistinguishable
-  // failure by design, so the offer is always the same: get a fresh link.
-  const badToken = error instanceof ApiFailure && error.code === 'validation';
+  async function resend() {
+    if (!isValidEmail(email) || cooldownLeft > 0) return;
+    setBusy('resend');
+    setError(null);
+    try {
+      await api.requestPasswordReset(email.trim());
+      setSentAt(Date.now());
+      setNow(Date.now());
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Unknown, expired and already-used codes are one indistinguishable
+  // failure by design, so the offer is always the same: get a fresh code.
+  const badCode = error instanceof ApiFailure && error.code === 'validation';
 
   return (
     <KeyboardAvoidingView
@@ -109,8 +139,6 @@ export default function ResetPassword() {
                     SIGNED OUT EVERYWHERE
                   </Mono>
                 </View>
-                {/* Said plainly, because otherwise the other device looking
-                    signed out reads as a fault rather than as the point. */}
                 <Txt className="text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
                   Every device signed in to this account has been signed out, including any
                   that were not yours. Sign in again with your new password.
@@ -121,26 +149,37 @@ export default function ResetPassword() {
           ) : (
             <>
               <Txt className="mb-6 text-[13px] text-ink-muted" style={{ lineHeight: 20 }}>
-                {linked
-                  ? 'Your reset link checked out. Pick a new password and every other device will be signed out.'
-                  : 'Paste the code from your reset email, then pick a new password.'}
+                Enter the six-digit code from your email, then pick a new password. Every other
+                device will be signed out.
               </Txt>
 
               <View className="gap-[14px]">
-                {/* Hidden when the link supplied it: nothing to type, nothing
-                    to mistype. */}
-                {linked ? null : (
-                  <Field
-                    label="Reset code"
-                    placeholder="Paste the code from your email"
-                    value={token}
-                    onChangeText={(value) => {
-                      setToken(value);
-                      if (error) setError(null);
-                    }}
-                    autoCapitalize="none"
-                  />
-                )}
+                <Field
+                  label="Work email"
+                  placeholder="you@company.com"
+                  value={email}
+                  onChangeText={(value) => {
+                    setEmail(value);
+                    if (fieldError) setFieldError(null);
+                  }}
+                  autoCapitalize="none"
+                  autoComplete="email"
+                  keyboardType="email-address"
+                />
+
+                <Field
+                  label="Reset code"
+                  placeholder="Six digits from your email"
+                  value={code}
+                  onChangeText={(value) => {
+                    setCode(value);
+                    if (error) setError(null);
+                    if (fieldError) setFieldError(null);
+                  }}
+                  autoCapitalize="none"
+                  keyboardType="number-pad"
+                  mono
+                />
 
                 <Field
                   label="New password"
@@ -177,22 +216,40 @@ export default function ResetPassword() {
                 </Txt>
               ) : null}
 
-              <View className="mt-[18px]">
-                <Button label="Set new password" onPress={submit} loading={busy} />
+              <View className="mt-[18px] gap-3">
+                <Button
+                  label="Set new password"
+                  onPress={submit}
+                  loading={busy === 'reset'}
+                  disabled={busy !== null}
+                />
+                <Button
+                  label={
+                    cooldownLeft > 0
+                      ? `Resend code in ${cooldownSeconds}s`
+                      : busy === 'resend'
+                        ? 'Sending…'
+                        : 'Resend code'
+                  }
+                  variant="secondary"
+                  onPress={resend}
+                  loading={busy === 'resend'}
+                  disabled={busy !== null || cooldownLeft > 0 || !isValidEmail(email)}
+                />
               </View>
 
               {error ? (
                 <Unavailable
-                  title={badToken ? 'That link has expired' : 'Could not reset your password'}
+                  title={badCode ? 'That code is invalid or has expired' : 'Could not reset your password'}
                   error={error}
                   className="mt-4"
                 />
               ) : null}
 
-              {badToken ? (
+              {badCode ? (
                 <View className="mt-3">
                   <Button
-                    label="Send me a new link"
+                    label="Start over"
                     variant="secondary"
                     onPress={() => router.replace(FORGOT_PASSWORD)}
                   />

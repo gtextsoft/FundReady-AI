@@ -128,7 +128,7 @@ describe('toWireProfile', () => {
     const { unmapped } = toWireProfile(
       form({
         location: 'Somewhere Unmappable',
-        stage: 'Bootstrapped',
+        stage: 'NotAStage',
       }),
     );
 
@@ -210,10 +210,10 @@ describe('toWireProfile', () => {
     );
   });
 
-  it('reports Bootstrapped, which is not one of the server stages', () => {
-    const { wire, unmapped } = toWireProfile(form({ stage: 'Bootstrapped' }));
+  it('reports an unknown stage rather than guessing', () => {
+    const { wire, unmapped } = toWireProfile(form({ stage: 'NotAStage' }));
     expect(wire.stage).toBeUndefined();
-    expect(unmapped.find((u) => u.field === 'stage')?.value).toBe('Bootstrapped');
+    expect(unmapped.find((u) => u.field === 'stage')?.value).toBe('NotAStage');
   });
 
   it('sends cost of revenue only when the founder gave one', () => {

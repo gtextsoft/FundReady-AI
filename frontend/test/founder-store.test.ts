@@ -9,11 +9,12 @@
  * person to reach this screen.
  */
 
-import { isAssessmentComplete, useFounder } from '@/store/founder';
+import { firstIncompleteStep, isAssessmentComplete, useFounder } from '@/store/founder';
 import { ApiFailure } from '@/api/contract';
 import { EMPTY_PROFILE, type FounderProfile } from '@/domain/types';
 
 const mockGetProfile = jest.fn();
+const mockSaveProfile = jest.fn();
 const mockListAuditRuns = jest.fn();
 const mockGetAuditReport = jest.fn();
 
@@ -21,7 +22,7 @@ jest.mock('@/api', () => ({
   ...jest.requireActual('@/api/contract'),
   api: {
     getProfile: (...args: unknown[]) => mockGetProfile(...args),
-    saveProfile: jest.fn(),
+    saveProfile: (...args: unknown[]) => mockSaveProfile(...args),
     submitAssessment: jest.fn(),
     listAuditRuns: (...args: unknown[]) => mockListAuditRuns(...args),
     getAuditReport: (...args: unknown[]) => mockGetAuditReport(...args),
@@ -32,8 +33,16 @@ const reset = () => useFounder.getState().reset();
 
 describe('loading a stored profile', () => {
   beforeEach(() => {
+    jest.useFakeTimers();
     mockGetProfile.mockReset();
+    mockSaveProfile.mockReset();
     reset();
+  });
+
+  afterEach(() => {
+    reset();
+    jest.runOnlyPendingTimers();
+    jest.useRealTimers();
   });
 
   it('finishes loading when the server refuses an unverified founder', async () => {
@@ -76,6 +85,24 @@ describe('loading a stored profile', () => {
     expect(useFounder.getState().profile.company).toBe('Northwind Labs');
   });
 
+  it('reopens on the first incomplete step', async () => {
+    const stored: FounderProfile = {
+      ...EMPTY_PROFILE,
+      company: 'Northwind Labs',
+      sector: 'Fintech',
+      location: 'Nigeria',
+      year: '2023',
+      description: 'Reconciliation software.',
+      businessModel: 'Subscription.',
+      // Step 2 still empty — resume there, not at step 1.
+    };
+    mockGetProfile.mockResolvedValue(stored);
+
+    await useFounder.getState().load();
+
+    expect(useFounder.getState().step).toBe(2);
+  });
+
   it('does not overwrite answers already being typed', async () => {
     // A slow request must not replace what someone is halfway through writing.
     useFounder.getState().setField('company', 'What I Am Typing');
@@ -85,6 +112,95 @@ describe('loading a stored profile', () => {
 
     expect(useFounder.getState().profile.company).toBe('What I Am Typing');
     expect(useFounder.getState().loaded).toBe(true);
+  });
+});
+
+describe('autosave', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    mockSaveProfile.mockReset();
+    mockSaveProfile.mockImplementation(async (profile: FounderProfile) => ({
+      profile,
+      unmapped: [],
+      missingFields: [],
+    }));
+    reset();
+  });
+
+  afterEach(() => {
+    reset();
+    jest.runOnlyPendingTimers();
+    jest.useRealTimers();
+  });
+
+  it('writes the profile after typing settles', async () => {
+    useFounder.getState().setField('company', 'Northwind');
+    expect(mockSaveProfile).not.toHaveBeenCalled();
+
+    await jest.advanceTimersByTimeAsync(900);
+
+    expect(mockSaveProfile).toHaveBeenCalledTimes(1);
+    expect(useFounder.getState().dirty).toBe(false);
+  });
+
+  it('coalesces keystrokes into one write', async () => {
+    useFounder.getState().setField('company', 'N');
+    useFounder.getState().setField('company', 'No');
+    useFounder.getState().setField('company', 'Northwind');
+
+    await jest.advanceTimersByTimeAsync(900);
+
+    expect(mockSaveProfile).toHaveBeenCalledTimes(1);
+    expect(mockSaveProfile.mock.calls[0][0].company).toBe('Northwind');
+  });
+
+  it('keeps dirty when a newer edit lands during save', async () => {
+    let release!: (value: {
+      profile: FounderProfile;
+      unmapped: never[];
+      missingFields: never[];
+    }) => void;
+    mockSaveProfile.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+
+    useFounder.getState().setField('company', 'First');
+    // Flush immediately so the hanging request is the explicit save, not the
+    // debounced one — otherwise fake timers and the save queue deadlock.
+    const pending = useFounder.getState().save();
+    await Promise.resolve();
+    expect(mockSaveProfile).toHaveBeenCalledTimes(1);
+
+    useFounder.getState().setField('company', 'Second');
+    release({
+      profile: { ...EMPTY_PROFILE, company: 'First' },
+      unmapped: [],
+      missingFields: [],
+    });
+    await pending;
+
+    expect(useFounder.getState().profile.company).toBe('Second');
+    expect(useFounder.getState().dirty).toBe(true);
+  });
+});
+
+describe('firstIncompleteStep', () => {
+  it('points at the earliest step still missing a required answer', () => {
+    expect(firstIncompleteStep(EMPTY_PROFILE)).toBe(1);
+    expect(
+      firstIncompleteStep({
+        ...EMPTY_PROFILE,
+        company: 'A',
+        sector: 'Fintech',
+        location: 'Nigeria',
+        year: '2023',
+        description: 'Does a thing.',
+        businessModel: 'SaaS',
+      }),
+    ).toBe(2);
   });
 });
 

@@ -2,6 +2,7 @@ import { Pressable, View } from 'react-native';
 import { Mono, Txt, TxtSemi } from '@/components/ui/text';
 import { C } from '@/theme/tokens';
 import { daysLeftInTrial, hasAccess, isPaid, TRIAL_DAYS } from '@/domain/access';
+import { gateCopy } from '@/domain/gate-copy';
 import type { FounderAccount } from '@/domain/types';
 
 type Tone = 'info' | 'warn' | 'danger' | 'ok';
@@ -16,8 +17,8 @@ const TONE: Record<Tone, { border: string; bg: string; accent: string }> = {
 /**
  * The one thing the founder most needs to act on, at the top of the dashboard.
  *
- * Priority is deliberate: an expired trial outranks verification, because
- * verifying while locked out would not give them the product back.
+ * Priority: email → expired trial → optional registration docs → trial countdown.
+ * Company verification no longer hard-locks the product (no server status yet).
  */
 export function StatusBanner({
   account,
@@ -33,80 +34,56 @@ export function StatusBanner({
   const locked = !hasAccess(account);
   const days = daysLeftInTrial(account);
 
-  // Ahead of everything else: it is the cheapest gate to clear and it blocks
-  // the same things company verification does.
   if (!account.emailVerified) {
+    const copy = gateCopy('email', 'founder');
     return (
       <Banner
         tone="warn"
         eyebrow="CONFIRM YOUR EMAIL"
-        title="Confirm your email address"
-        body="We need to know you control this address before investors can see you, or before you can upload documents."
-        cta="Confirm email"
+        title={copy.title}
+        body={copy.body}
+        cta={copy.cta}
         onPress={onConfirmEmail}
       />
     );
   }
 
   if (locked) {
+    const copy = gateCopy('payment', 'founder');
     return (
       <Banner
         tone="danger"
         eyebrow="TRIAL ENDED"
-        title="Unlock SACI FundMe to continue"
-        body={`Your ${TRIAL_DAYS}-day trial has finished. A single one-off payment restores everything, permanently.`}
-        cta="See what's included"
+        title={copy.title}
+        body={`${copy.body} Your ${TRIAL_DAYS}-day trial has finished.`}
+        cta={copy.cta}
         onPress={onUnlock}
       />
     );
   }
 
-  if (account.verification === 'in_review') {
+  if (!account.registration) {
+    const copy = gateCopy('verification', 'founder');
     return (
       <Banner
         tone="info"
-        eyebrow="VERIFICATION IN REVIEW"
-        title="We're checking your registration"
-        body="This usually takes a few minutes. You'll get a notification the moment it clears."
-      />
-    );
-  }
-
-  if (account.verification === 'rejected') {
-    return (
-      <Banner
-        tone="danger"
-        eyebrow="VERIFICATION FAILED"
-        title="We couldn't confirm your registration"
-        body="The details didn't match the registry. Check the number and resubmit."
-        cta="Try again"
-        onPress={onVerify}
-      />
-    );
-  }
-
-  if (account.verification === 'unverified') {
-    return (
-      <Banner
-        tone="warn"
         eyebrow={`TRIAL · ${days} ${days === 1 ? 'DAY' : 'DAYS'} LEFT`}
-        title="Verify your company to be seen by investors"
-        body="Until your registration is confirmed you stay off the dealflow list and the AI mentor is locked."
-        cta="Verify company"
+        title={copy.title}
+        body={`${copy.body} Store your certificate so audits can cite a real entity.`}
+        cta={copy.cta}
         onPress={onVerify}
       />
     );
   }
 
-  // Verified, and either paid or still inside the trial.
   if (isPaid(account)) return null;
 
   return (
     <Banner
       tone="ok"
       eyebrow={`TRIAL · ${days} ${days === 1 ? 'DAY' : 'DAYS'} LEFT`}
-      title="You're live in the investor dealflow"
-      body="Everything is unlocked for the rest of your trial. Unlock permanently whenever you're ready."
+      title="Clear readiness tasks, then publish"
+      body="When required tasks pass, publish from Home to appear in investor dealflow."
       cta="Unlock permanently"
       onPress={onUnlock}
     />

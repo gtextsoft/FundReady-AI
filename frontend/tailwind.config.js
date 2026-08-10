@@ -2,35 +2,35 @@
 module.exports = {
   content: ['./src/**/*.{js,jsx,ts,tsx}'],
   presets: [require('nativewind/preset')],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
-        // Grounds — every surface in the prototype sits on one of these.
-        ground: '#000000',
+        // Semantic colours — values come from CSS vars set by the theme root.
+        ground: 'var(--color-ground)',
         surface: {
-          1: '#0a0a0a',
-          2: '#111111',
-          3: '#141414',
-          4: '#1a1a1a',
+          1: 'var(--color-surface-1)',
+          2: 'var(--color-surface-2)',
+          3: 'var(--color-surface-3)',
+          4: 'var(--color-surface-4)',
         },
-        // Hairlines, in ascending contrast.
         line: {
-          soft: '#141414',
-          DEFAULT: '#1f1f1f',
-          strong: '#262626',
-          dash: '#2e2e2e',
+          soft: 'var(--color-line-soft)',
+          DEFAULT: 'var(--color-line)',
+          strong: 'var(--color-line-strong)',
+          dash: 'var(--color-line-dash)',
         },
         ink: {
-          DEFAULT: '#ededed',
-          muted: '#a1a1a1',
-          dim: '#666666',
-          faint: '#525252',
-          ghost: '#3d3d3d',
+          DEFAULT: 'var(--color-ink)',
+          muted: 'var(--color-ink-muted)',
+          dim: 'var(--color-ink-dim)',
+          faint: 'var(--color-ink-faint)',
+          ghost: 'var(--color-ink-ghost)',
         },
-        blue: '#0070f3',
-        grn: '#0cce6b',
-        amb: '#f5a623',
-        red: '#ff4d4f',
+        blue: 'var(--color-blue)',
+        grn: 'var(--color-grn)',
+        amb: 'var(--color-amb)',
+        red: 'var(--color-red)',
       },
       fontFamily: {
         // Geist ships one family per weight, so weight is selected by family.

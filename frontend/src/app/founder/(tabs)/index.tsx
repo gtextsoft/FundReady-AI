@@ -1,15 +1,21 @@
-import { useCallback } from 'react';
-import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ModuleTile } from '@/components/founder/module-tile';
+import { NextActionCard } from '@/components/founder/next-action';
+import { PublishStrip } from '@/components/founder/publish-strip';
 import { StatusBanner } from '@/components/founder/status-banner';
+import { Button } from '@/components/ui/button';
 import { Mark } from '@/components/ui/mark';
 import { Eyebrow, Mono, Txt, TxtSemi } from '@/components/ui/text';
 import { C, band } from '@/theme/tokens';
+import { useThemeColors } from '@/theme/use-theme-colors';
+import { api } from '@/api';
 import { gate, hasAccess, isPaid, type Gate } from '@/domain/access';
 import type { AuditReport, AuditRun } from '@/domain/audit';
+import type { ReadinessSummary } from '@/domain/readiness';
 import { assess } from '@/domain/scoring';
 import type { FounderAccount } from '@/domain/types';
 import { route, VERIFY_EMAIL } from '@/lib/routes';
@@ -22,6 +28,7 @@ const ALLOWED: Gate = { allowed: true, reason: null };
 /** Home. Everything the founder can reach, with locks shown rather than hidden. */
 export default function FounderDashboard() {
   const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
 
   const session = useSession((s) => s.session);
   const account = useSession((s) => s.founderAccount);
@@ -30,6 +37,7 @@ export default function FounderDashboard() {
   const profile = useFounder((s) => s.profile);
   const report = useFounder((s) => s.report);
   const run = useFounder((s) => s.run);
+  const missingFields = useFounder((s) => s.missingFields);
   const loadProfile = useFounder((s) => s.load);
   const loadLatestAudit = useFounder((s) => s.loadLatestAudit);
 
@@ -37,20 +45,56 @@ export default function FounderDashboard() {
   const unread = useNotifications((s) => s.unreadCount());
   const pendingCalls = useNotifications((s) => s.pendingCalls().length);
 
-  // Verification and billing state change server-side, so re-read on focus.
-  // The profile and the latest audit come with them: the score below is the
-  // one thing on this screen a founder checks *because* it may have changed
-  // since they last looked.
+  const [summary, setSummary] = useState<ReadinessSummary | null>(null);
+  const [visible, setVisible] = useState(false);
+  const [publishBusy, setPublishBusy] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const refreshHome = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([refreshAccount(), loadProfile(), loadLatestAudit()]);
+      loadNotifications('founder');
+      try {
+        const [sum, vis] = await Promise.all([api.getTasksSummary(), api.getVisibility()]);
+        setSummary(sum);
+        setVisible(vis.investorVisible);
+      } catch {
+        // No profile / email gate — leave widgets empty.
+      }
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshAccount, loadNotifications, loadProfile, loadLatestAudit]);
+
   useFocusEffect(
     useCallback(() => {
-      refreshAccount();
-      loadNotifications('founder');
-      void loadProfile();
-      void loadLatestAudit();
-    }, [refreshAccount, loadNotifications, loadProfile, loadLatestAudit]),
+      void refreshHome();
+    }, [refreshHome]),
   );
 
-  if (!account) return <View className="flex-1 bg-ground" />;
+  // Resume incomplete intake: if email is confirmed but assessment never ran,
+  // send them back into onboarding rather than leaving them on an empty Home.
+  useFocusEffect(
+    useCallback(() => {
+      if (!account?.emailVerified) return;
+      if (report || run) return;
+      if (isAssessmentComplete(profile)) return;
+      // Only auto-route when the profile is still essentially empty — a
+      // half-finished form should resume via the Next action / Assessment tile.
+      if (profile.company.trim() || profile.sector) return;
+      router.replace(route('/onboarding'));
+    }, [account?.emailVerified, report, run, profile]),
+  );
+
+  if (!account) {
+    return (
+      <View className="flex-1 items-center justify-center bg-ground">
+        <ActivityIndicator color={C.inkMuted} />
+      </View>
+    );
+  }
 
   const locked = !hasAccess(account);
   const paid = isPaid(account);
@@ -90,7 +134,7 @@ export default function FounderDashboard() {
       className="flex-1 bg-ground"
       contentContainerStyle={{ paddingTop: insets.top + 4, paddingHorizontal: 18, paddingBottom: 24 }}
       showsVerticalScrollIndicator={false}
-      refreshControl={<RefreshControl refreshing={false} onRefresh={refreshAccount} tintColor={C.inkFaint} />}>
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refreshHome()} tintColor={colors.inkFaint} />}>
       {/* header */}
       <View className="h-[34px] flex-row items-center justify-between">
         <View className="flex-row items-center gap-2">
@@ -109,7 +153,7 @@ export default function FounderDashboard() {
             {unread > 0 ? (
               <View
                 className="absolute -right-[3px] -top-[3px] h-[13px] min-w-[13px] items-center justify-center rounded-full px-[3px]"
-                style={{ backgroundColor: C.blue }}>
+                style={{ backgroundColor: colors.blue }}>
                 <Mono className="text-[8px] text-white">{unread > 9 ? '9+' : unread}</Mono>
               </View>
             ) : null}
@@ -131,12 +175,34 @@ export default function FounderDashboard() {
         />
       </View>
 
+      <View className="mt-4">
+        <NextActionCard
+          account={account}
+          profile={profile}
+          report={report}
+          run={run}
+          summary={summary}
+          investorVisible={visible}
+        />
+      </View>
+
+      <Eyebrow className="mb-[10px] mt-6">PATH TO PUBLISH</Eyebrow>
+      <PublishStrip
+        account={account}
+        profile={profile}
+        report={report}
+        run={run}
+        summary={summary}
+        investorVisible={visible}
+      />
+
       {/* fundability */}
       <Eyebrow className="mb-[10px] mt-6">FUNDABILITY</Eyebrow>
       <ScoreCard
         account={account}
         report={report}
         run={run}
+        investorVisible={visible}
         // Only computed when the form is actually complete, so a half-filled
         // profile cannot produce a number that looks like a verdict.
         // `assess(profile)` rather than the store's `liveAssessment()`: that
@@ -148,20 +214,92 @@ export default function FounderDashboard() {
         assessed={assessed}
       />
 
-      {/* modules */}
-      <Eyebrow className="mb-[10px] mt-6">YOUR TOOLS</Eyebrow>
+      {missingFields.length > 0 ? (
+        <>
+          <Eyebrow className="mb-[10px] mt-6">GAPS TO FILL</Eyebrow>
+          <View className="rounded-[12px] border border-line bg-surface-1 p-[14px]">
+            <Txt className="text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+              The audit still wants: {missingFields.slice(0, 8).join(', ')}
+              {missingFields.length > 8 ? ` (+${missingFields.length - 8} more)` : ''}.
+            </Txt>
+            <View className="mt-3">
+              <Button label="Update profile" height={40} variant="secondary" onPress={() => router.push(route('/onboarding'))} />
+            </View>
+          </View>
+        </>
+      ) : null}
+
+      {summary ? (
+        <>
+          <Eyebrow className="mb-[10px] mt-6">READINESS</Eyebrow>
+          <Pressable
+            onPress={() => router.push(route('/founder/tasks'))}
+            className="rounded-[12px] border border-line bg-surface-1 p-[14px]">
+            <TxtSemi className="text-[14px]">
+              {summary.requiredPassed}/{summary.requiredTotal} required tasks passed
+            </TxtSemi>
+            <Txt className="mt-1 text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+              {summary.gateCleared
+                ? 'Gate cleared — you can publish to dealflow when ready.'
+                : `${summary.requiredOpen} required tasks still open. Upload evidence to clear them.`}
+            </Txt>
+            <Txt className="mt-2 text-[12.5px]" style={{ color: C.blue }}>
+              Open tasks →
+            </Txt>
+          </Pressable>
+        </>
+      ) : null}
+
+      <Eyebrow className="mb-[10px] mt-6">DEALFLOW VISIBILITY</Eyebrow>
+      <View className="rounded-[12px] border border-line bg-surface-1 p-[14px]">
+        <TxtSemi className="text-[14px]">{visible ? 'Published' : 'Not in dealflow'}</TxtSemi>
+        <Txt className="mt-1 text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+          {visible
+            ? 'Investors can see your summary card. You can unpublish any time.'
+            : 'Publishing requires a cleared readiness gate and a confirmed email. The server decides.'}
+        </Txt>
+        {publishError ? (
+          <Txt className="mt-2 text-[12px]" style={{ color: C.red }}>
+            {publishError}
+          </Txt>
+        ) : null}
+        <View className="mt-3">
+          <Button
+            label={visible ? 'Unpublish' : 'Publish to dealflow'}
+            height={42}
+            variant={visible ? 'secondary' : 'primary'}
+            loading={publishBusy}
+            onPress={async () => {
+              setPublishBusy(true);
+              setPublishError(null);
+              try {
+                if (visible) await api.unpublishProfile();
+                else await api.publishProfile();
+                setVisible(!visible);
+              } catch (e) {
+                setPublishError(e instanceof Error ? e.message : 'Could not update visibility.');
+              } finally {
+                setPublishBusy(false);
+              }
+            }}
+          />
+        </View>
+      </View>
+
+      {/* Secondary tools — demoted so Home stays a command surface */}
+      <Eyebrow className="mb-[10px] mt-6">MORE TOOLS</Eyebrow>
       <View className="flex-row flex-wrap gap-[9px]">
         <ModuleTile
           glyph="✦"
           title="AI mentor"
-          subtitle="Ask anything about your metrics"
+          subtitle="Coming soon"
           gate={canAiMentor}
           onPress={openGated(canAiMentor, '/founder/ai-mentor')}
         />
         <ModuleTile
           glyph="◈"
           title="Investor interest"
-          subtitle={pendingCalls ? `${pendingCalls} awaiting your answer` : 'Intros and call requests'}
+          subtitle={pendingCalls ? `${pendingCalls} awaiting your answer` : 'Requests not live yet'}
           gate={canRequests}
           badge={pendingCalls}
           onPress={openGated(canRequests, '/founder/investors')}
@@ -169,32 +307,28 @@ export default function FounderDashboard() {
         <ModuleTile
           glyph="◎"
           title="Programmes"
-          subtitle="Readiness & Wealth Creation"
+          subtitle="Enrolment not live yet"
           gate={canProgrammes}
           onPress={openGated(canProgrammes, '/founder/programmes')}
         />
         <ModuleTile
           glyph="⟳"
           title="Re-assess"
-          subtitle="Update your metrics and re-score"
+          subtitle="Update metrics and re-score"
           gate={canReassess}
           onPress={openGated(canReassess, '/onboarding')}
         />
         <ModuleTile
           glyph="⎘"
           title="Assessment"
-          subtitle={assessed ? 'Your score and action plan' : 'Not taken yet'}
+          subtitle={assessed ? 'Score and action plan' : 'Not taken yet'}
           gate={ALLOWED}
-          // Once it has been taken, this opens the result. Reopening the form
-          // is what "Re-assess" is for, and sending someone back into it to
-          // *see* their score would invite them to edit answers they have
-          // already been scored on.
           onPress={() => router.push(route(assessed ? '/results' : '/onboarding'))}
         />
         <ModuleTile
           glyph="◇"
           title={paid ? 'Your plan' : locked ? 'Unlock access' : 'Trial'}
-          subtitle={paid ? 'Unlocked — one-off payment' : 'Manage your access'}
+          subtitle={paid ? 'Unlocked — one-off payment' : 'Billing not live yet'}
           gate={ALLOWED}
           onPress={goPaywall}
         />
@@ -222,12 +356,14 @@ function ScoreCard({
   run,
   provisional,
   assessed,
+  investorVisible,
 }: {
   account: FounderAccount;
   report: AuditReport | null;
   run: AuditRun | null;
   provisional: number | null;
   assessed: boolean;
+  investorVisible: boolean;
 }) {
   if (!assessed) {
     return (
@@ -237,7 +373,7 @@ function ScoreCard({
         className="rounded-[12px] border border-line bg-surface-1 p-[16px]">
         <TxtSemi className="text-[14px]">Run your Fundability assessment</TxtSemi>
         <Txt className="mt-[4px] text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
-          Four short steps. Investors cannot see you without a score.
+          Five short steps. Investors cannot see you without a score.
         </Txt>
         <Txt className="mt-3 text-[12.5px]" style={{ color: C.blue }}>
           Start assessment →
@@ -293,7 +429,6 @@ function ScoreCard({
   if (score === null) return null;
 
   const b = band(score);
-  const visible = account.verification === 'verified' && hasAccess(account);
 
   return (
     <Pressable
@@ -311,14 +446,14 @@ function ScoreCard({
         <TxtSemi className="text-[14px]" style={{ color: isReal ? b.color : C.inkMuted }}>
           {b.label}
         </TxtSemi>
-        {/* The estimate is never dressed as an audit: it is drawn in muted
-            ink and says what it is. */}
         <Txt className="mt-[3px] text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
           {!isReal
-            ? 'Provisional estimate from your answers — not a SACI audit, and no investor can see it.'
-            : visible
-              ? 'Investors matching your profile can see this score.'
-              : 'Hidden from investors until your company is verified.'}
+            ? 'Provisional estimate from your answers — not a FundReady AI audit, and no investor can see it.'
+            : investorVisible
+              ? 'Published — investors can see your summary card.'
+              : hasAccess(account)
+                ? 'Hidden from investors until you publish.'
+                : 'Unlock access to keep working on your readiness.'}
         </Txt>
       </View>
       <Txt className="text-[13px] text-ink-faint">›</Txt>

@@ -1,6 +1,6 @@
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { Mono, Txt, TxtSemi } from '@/components/ui/text';
-import { C } from '@/theme/tokens';
+import { useThemeColors } from '@/theme/use-theme-colors';
 import { ApiFailure, isUnavailable } from '@/api';
 
 /**
@@ -15,11 +15,15 @@ export function Unavailable({
   title,
   error,
   className,
+  onRetry,
 }: {
   title: string;
   error: unknown;
   className?: string;
+  /** Shown for real failures (network / server), not for not_implemented. */
+  onRetry?: () => void;
 }) {
+  const colors = useThemeColors();
   const missing = isUnavailable(error);
   const message =
     error instanceof ApiFailure
@@ -32,10 +36,10 @@ export function Unavailable({
       style={{
         borderWidth: 1,
         borderStyle: missing ? 'dashed' : 'solid',
-        borderColor: missing ? C.lineDash : '#4a1d1d',
+        borderColor: missing ? colors.lineDash : '#4a1d1d',
         backgroundColor: missing ? 'transparent' : 'rgba(255,77,79,0.08)',
       }}>
-      <Mono className="text-[9px]" style={{ letterSpacing: 1.2, color: missing ? C.inkFaint : C.red }}>
+      <Mono className="text-[9px]" style={{ letterSpacing: 1.2, color: missing ? colors.inkFaint : colors.red }}>
         {missing ? 'NOT BUILT YET' : 'COULD NOT LOAD'}
       </Mono>
       <TxtSemi className="mb-[5px] mt-[9px] text-[15px]" style={{ letterSpacing: -0.3 }}>
@@ -44,6 +48,14 @@ export function Unavailable({
       <Txt className="text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
         {message}
       </Txt>
+      {!missing && onRetry ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={onRetry}
+          className="mt-3 self-start rounded-[8px] border border-line px-3 py-2">
+          <TxtSemi className="text-[12px]">Try again</TxtSemi>
+        </Pressable>
+      ) : null}
     </View>
   );
 }

@@ -1,9 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Animated, Easing, View } from 'react-native';
-import Svg, { Circle } from 'react-native-svg';
+import Svg, { Circle, type CircleProps } from 'react-native-svg';
 import { Mono, Txt } from './text';
 
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+/**
+ * Animated.createAnimatedComponent injects collapsable={false} (Android view
+ * flattening). react-native-svg forwards unknown props to the DOM on web, so
+ * strip it before it reaches <circle>.
+ */
+function CircleWebSafe({ collapsable: _collapsable, ...props }: CircleProps & { collapsable?: boolean }) {
+  return <Circle {...props} />;
+}
+
+const AnimatedCircle = Animated.createAnimatedComponent(CircleWebSafe);
 
 const SIZE = 172;
 const R = 70;

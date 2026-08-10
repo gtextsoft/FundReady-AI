@@ -11,7 +11,7 @@ const STAGE_BONUS: Record<string, number> = {
   'Pre-seed': 2,
   Seed: 4,
   'Series A': 6,
-  Bootstrapped: 3,
+  Growth: 7,
 };
 
 /** Monthly revenue, whichever unit the founder chose to state it in. */

@@ -3,28 +3,24 @@ import { Pressable, ScrollView, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AppearanceControl } from '@/components/appearance-control';
 import { Button } from '@/components/ui/button';
+import { Field } from '@/components/ui/field';
 import { Eyebrow, Mono, Txt, TxtMed, TxtSemi } from '@/components/ui/text';
 import { Unavailable } from '@/components/unavailable';
 import { C } from '@/theme/tokens';
+import { useThemeColors } from '@/theme/use-theme-colors';
 import { api } from '@/api';
 import { daysLeftInTrial, hasAccess, isPaid } from '@/domain/access';
 import { UNLOCK_PRICE } from '@/domain/pricing';
 import { initials } from '@/lib/format';
-import type { VerificationStatus } from '@/domain/types';
-import { route, SIGN_IN, VERIFY_EMAIL } from '@/lib/routes';
+import { RESET_PASSWORD, route, SIGN_IN, VERIFY_EMAIL } from '@/lib/routes';
 import { isAssessmentComplete, useFounder } from '@/store/founder';
 import { useSession } from '@/store/session';
 
-const VERIFICATION_COPY: Record<VerificationStatus, { label: string; color: string }> = {
-  unverified: { label: 'Not verified', color: C.amb },
-  in_review: { label: 'In review', color: C.blue },
-  verified: { label: 'Verified', color: C.grn },
-  rejected: { label: 'Rejected', color: C.red },
-};
-
 export default function FounderProfile() {
   const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
   const session = useSession((s) => s.session);
   const account = useSession((s) => s.founderAccount);
   const signOut = useSession((s) => s.signOut);
@@ -36,12 +32,17 @@ export default function FounderProfile() {
   const [busy, setBusy] = useState(false);
   const [resetSent, setResetSent] = useState(false);
   const [resetError, setResetError] = useState<unknown>(null);
+  const [mfaSecret, setMfaSecret] = useState<string | null>(null);
+  const [mfaCode, setMfaCode] = useState('');
+  const [mfaCodes, setMfaCodes] = useState<string[] | null>(null);
+  const [mfaError, setMfaError] = useState<string | null>(null);
+  const [mfaBusy, setMfaBusy] = useState(false);
 
   const email = session?.email ?? '';
 
   /**
-   * Password changes go through the email reset, because that is the only
-   * mechanism the API has — there is no authenticated change-password
+   * Password changes go through the emailed reset code, because that is the
+   * only mechanism the API has — there is no authenticated change-password
    * endpoint. That is not a workaround: proving control of the mailbox before
    * changing the credential is why a stolen session cannot take an account
    * over, and completing it revokes every refresh token.
@@ -53,6 +54,7 @@ export default function FounderProfile() {
     try {
       await api.requestPasswordReset(email);
       setResetSent(true);
+      router.push(route(`${RESET_PASSWORD}?email=${encodeURIComponent(email)}`));
     } catch (e) {
       setResetError(e);
     } finally {
@@ -62,7 +64,6 @@ export default function FounderProfile() {
 
   if (!account) return <View className="flex-1 bg-ground" />;
 
-  const verification = VERIFICATION_COPY[account.verification];
   const locked = !hasAccess(account);
   const paid = isPaid(account);
   const assessed = report !== null || run !== null || isAssessmentComplete(profile);
@@ -99,10 +100,14 @@ export default function FounderProfile() {
           <Txt className="text-[12px] text-ink-dim">{session?.email ?? 'not signed in'}</Txt>
         </View>
         <View className="rounded-[5px] border border-line-strong px-2 py-[3px]">
-          <Mono className="text-[9.5px]" style={{ color: C.inkMuted }}>
+          <Mono className="text-[9.5px]" style={{ color: colors.inkMuted }}>
             FOUNDER
           </Mono>
         </View>
+      </View>
+
+      <View className="mt-6 rounded-[12px] border border-line bg-surface-1 p-[14px]">
+        <AppearanceControl />
       </View>
 
       {/* account */}
@@ -133,8 +138,8 @@ export default function FounderProfile() {
           label="Password"
           value={
             resetSent
-              ? 'Reset link sent — check your inbox'
-              : 'Changed by email, so a stolen session cannot do it'
+              ? 'Reset code sent — enter it to finish'
+              : 'Changed by email code, so a stolen session cannot do it'
           }
           action={
             resetSent
@@ -143,15 +148,82 @@ export default function FounderProfile() {
           }
         />
         <Divider />
-        {/* Honest about the limit rather than showing a toggle that lies:
-            `/v1/users/me` carries no MFA field, so the app cannot tell whether
-            two-factor is already on, and a switch defaulting to "off" would
-            claim something it does not know. */}
-        <Row
-          label="Two-factor authentication"
-          value="Not available in the app yet"
-          status={{ text: 'SOON', color: C.inkFaint }}
-        />
+        <View className="px-[14px] py-3">
+          <TxtMed className="text-[13.5px]">Two-factor authentication</TxtMed>
+          {mfaCodes ? (
+            <View className="mt-2 gap-1">
+              <Txt className="text-[12px] text-ink-muted" style={{ lineHeight: 18 }}>
+                MFA is on. Store these recovery codes now — they will not be shown again.
+              </Txt>
+              {mfaCodes.map((c) => (
+                <Mono key={c} className="text-[12px]">
+                  {c}
+                </Mono>
+              ))}
+            </View>
+          ) : mfaSecret ? (
+            <View className="mt-2 gap-2">
+              <Txt className="text-[12px] text-ink-muted" style={{ lineHeight: 18 }}>
+                Add this secret to your authenticator app, then enter a 6-digit code.
+              </Txt>
+              <Mono className="text-[11px] text-ink">{mfaSecret}</Mono>
+              <Field
+                label="Authenticator code"
+                value={mfaCode}
+                onChangeText={setMfaCode}
+                keyboardType="number-pad"
+                mono
+              />
+              <Button
+                label={mfaBusy ? 'Confirming…' : 'Confirm MFA'}
+                height={40}
+                loading={mfaBusy}
+                onPress={async () => {
+                  setMfaBusy(true);
+                  setMfaError(null);
+                  try {
+                    setMfaCodes(await api.confirmMfaEnrolment(mfaCode));
+                    setMfaSecret(null);
+                  } catch (e) {
+                    setMfaError(e instanceof Error ? e.message : 'Could not confirm MFA.');
+                  } finally {
+                    setMfaBusy(false);
+                  }
+                }}
+              />
+            </View>
+          ) : (
+            <View className="mt-2">
+              <Txt className="mb-2 text-[12px] text-ink-muted" style={{ lineHeight: 18 }}>
+                Optional. The app cannot tell if MFA is already on — enrolling again replaces an
+                unfinished setup.
+              </Txt>
+              <Button
+                label={mfaBusy ? 'Starting…' : 'Enable MFA'}
+                height={40}
+                variant="secondary"
+                loading={mfaBusy}
+                onPress={async () => {
+                  setMfaBusy(true);
+                  setMfaError(null);
+                  try {
+                    const enrolment = await api.beginMfaEnrolment();
+                    setMfaSecret(enrolment.secret);
+                  } catch (e) {
+                    setMfaError(e instanceof Error ? e.message : 'Could not start MFA.');
+                  } finally {
+                    setMfaBusy(false);
+                  }
+                }}
+              />
+            </View>
+          )}
+          {mfaError ? (
+            <Txt className="mt-2 text-[12px]" style={{ color: C.red }}>
+              {mfaError}
+            </Txt>
+          ) : null}
+        </View>
       </View>
 
       {resetError ? (
@@ -177,22 +249,14 @@ export default function FounderProfile() {
         <Txt className="mt-2 text-[12px] text-ink-muted" style={{ lineHeight: 18 }}>
           {assessed
             ? 'Your score, what does not add up, and what to do next.'
-            : 'Four short steps. Investors cannot see you without a score.'}
+            : 'Five short steps. Investors cannot see you without a score.'}
         </Txt>
       </Pressable>
 
-      {/* verification */}
-      <Eyebrow className="mb-[10px] mt-6">COMPANY VERIFICATION</Eyebrow>
+      {/* registration docs */}
+      <Eyebrow className="mb-[10px] mt-6">COMPANY REGISTRATION</Eyebrow>
       <View className="rounded-[12px] border border-line bg-surface-1 p-[14px]">
-        <View className="flex-row items-center justify-between">
-          <TxtMed className="text-[13.5px]">Registration status</TxtMed>
-          <View className="flex-row items-center gap-2">
-            <View className="h-[6px] w-[6px] rounded-full" style={{ backgroundColor: verification.color }} />
-            <Mono className="text-[11px]" style={{ color: verification.color }}>
-              {verification.label}
-            </Mono>
-          </View>
-        </View>
+        <TxtMed className="text-[13.5px]">Legal details & certificate</TxtMed>
         {account.registration ? (
           <Txt className="mt-2 text-[12px] text-ink-muted" style={{ lineHeight: 18 }}>
             {account.registration.legalName} · {account.registration.registrationNumber} ·{' '}
@@ -200,14 +264,17 @@ export default function FounderProfile() {
           </Txt>
         ) : (
           <Txt className="mt-2 text-[12px] text-ink-muted" style={{ lineHeight: 18 }}>
-            Confirm your company is registered in your country to be seen by investors.
+            Optional: store registration for audits. Publishing uses the readiness gate on Home.
           </Txt>
         )}
-        {account.verification !== 'verified' && account.verification !== 'in_review' ? (
-          <View className="mt-3">
-            <Button label="Verify company" height={42} onPress={() => router.push(route('/founder/verify'))} />
-          </View>
-        ) : null}
+        <View className="mt-3">
+          <Button
+            label={account.registration ? 'Update registration' : 'Add registration'}
+            height={42}
+            variant="secondary"
+            onPress={() => router.push(route('/founder/verify'))}
+          />
+        </View>
       </View>
 
       {/* access */}

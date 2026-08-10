@@ -5,11 +5,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Mono, Txt, TxtSemi } from '@/components/ui/text';
 import { Unavailable } from '@/components/unavailable';
-import { C } from '@/theme/tokens';
 import { notificationColor, relativeTime, type AppNotification } from '@/domain/notifications';
 import { route } from '@/lib/routes';
 import { useNotifications } from '@/store/notifications';
 import type { Role } from '@/api';
+import { useThemeColors } from '@/theme/use-theme-colors';
 
 /**
  * The alerts tab, shared by both sides.
@@ -19,6 +19,7 @@ import type { Role } from '@/api';
  */
 export function NotificationCentre({ audience }: { audience: Role }) {
   const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
   const load = useNotifications((s) => s.load);
   const markAllRead = useNotifications((s) => s.markAllRead);
   const items = useNotifications((s) => s.items);
@@ -46,7 +47,7 @@ export function NotificationCentre({ audience }: { audience: Role }) {
       </TxtSemi>
 
       {error ? (
-        <Unavailable title="Alerts are not live" error={error} />
+        <Unavailable title="Alerts will appear here when live" error={error} />
       ) : items.length ? (
         <View className="gap-[9px]">
           {items.map((n) => (
@@ -57,14 +58,14 @@ export function NotificationCentre({ audience }: { audience: Role }) {
         <View className="items-center gap-[11px] px-6 py-[70px]">
           <View
             className="h-[42px] w-[42px] items-center justify-center rounded-[11px]"
-            style={{ borderWidth: 1, borderStyle: 'dashed', borderColor: C.lineDash }}>
+            style={{ borderWidth: 1, borderStyle: 'dashed', borderColor: colors.lineDash }}>
             <Txt className="text-[16px] text-ink-ghost">◔</Txt>
           </View>
           <TxtSemi className="text-center text-[14px]">Nothing yet</TxtSemi>
           <Txt className="text-center text-[12.5px] text-ink-dim" style={{ lineHeight: 19 }}>
             {audience === 'founder'
-              ? 'Investor introductions, call requests and verification updates land here.'
-              : 'Score changes on your watchlist and answers from founders land here.'}
+              ? 'Alerts will appear here when investors engage — introductions, call requests, and verification updates.'
+              : 'Alerts will appear here when companies you watch change or FundReady AI answers an interest.'}
           </Txt>
         </View>
       )}

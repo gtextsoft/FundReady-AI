@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,65 +11,67 @@ import { Eyebrow, FieldLabel, Mono, Txt, TxtMed, TxtSemi } from '@/components/ui
 import { C } from '@/theme/tokens';
 import { Unavailable } from '@/components/unavailable';
 import { api } from '@/api';
-import type { CompanyRegistration } from '@/domain/types';
+import type { RegistryEntry } from '@/domain/readiness';
+import { putToSignedUrl } from '@/lib/upload';
 import { useFounder } from '@/store/founder';
-import { useSession } from '@/store/session';
-
-/**
- * Countries with their registrar prefilled, so the founder does not have to
- * know what the body is called. Extend as the market expands.
- */
-const REGISTRARS: Record<string, string> = {
-  Nigeria: 'CAC',
-  Ghana: 'RGD',
-  Kenya: 'BRS',
-  'South Africa': 'CIPC',
-  'United Kingdom': 'Companies House',
-  'United States': 'Secretary of State',
-  Canada: 'Corporations Canada',
-  India: 'MCA',
-  Singapore: 'ACRA',
-  Germany: 'Handelsregister',
-  Netherlands: 'KvK',
-  Other: '',
-};
-
-const COUNTRIES = Object.keys(REGISTRARS);
 
 const MAX_DOC_BYTES = 10 * 1024 * 1024;
 
+/**
+ * Store legal registration details + certificate on the startup profile.
+ *
+ * There is no server "verified company" switch yet — this uploads a
+ * `registration_certificate` document for FundReady AI and saves profile fields.
+ * Publishing still depends on the readiness gate.
+ */
 export default function VerifyCompany() {
   const insets = useSafeAreaInsets();
-  const account = useSession((s) => s.founderAccount);
-  const setFounderAccount = useSession((s) => s.setFounderAccount);
   const profile = useFounder((s) => s.profile);
   const setField = useFounder((s) => s.setField);
   const save = useFounder((s) => s.save);
 
-  // Seeded from the stored profile first: these are real profile fields now,
-  // so whatever was saved last time is what should be shown.
-  const [country, setCountry] = useState(account?.registration?.country ?? '');
-  const [legalName, setLegalName] = useState(profile.legalName || (account?.registration?.legalName ?? ''));
-  const [registrationNumber, setRegistrationNumber] = useState(
-    profile.registrationNumber || (account?.registration?.registrationNumber ?? ''),
-  );
-  const [registrar, setRegistrar] = useState(profile.registrar || (account?.registration?.registrar ?? ''));
+  const [registries, setRegistries] = useState<RegistryEntry[]>([]);
+  const [country, setCountry] = useState('');
+  const [legalName, setLegalName] = useState(profile.legalName || '');
+  const [registrationNumber, setRegistrationNumber] = useState(profile.registrationNumber || '');
+  const [registrar, setRegistrar] = useState(profile.registrar || '');
   const [incorporationYear, setIncorporationYear] = useState(profile.incorporationYear);
   const [regulatoryLicences, setRegulatoryLicences] = useState(profile.regulatoryLicences);
-  const [document, setDocument] = useState(account?.registration?.document ?? '');
-  const [docError, setDocError] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [documentName, setDocumentName] = useState('');
+  const [pickedUri, setPickedUri] = useState<string | null>(null);
+  const [pickedMime, setPickedMime] = useState('application/pdf');
+  const [docError, setDocError] = useState<string | null>(null);
   const [touched, setTouched] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [done, setDone] = useState(false);
 
-  const inReview = account?.verification === 'in_review';
-  const complete = country && legalName.trim() && registrationNumber.trim() && document;
+  useEffect(() => {
+    void api
+      .listRegistries()
+      .then((rows) => {
+        setRegistries(rows);
+        setCountry((current) => {
+          if (current || !rows[0]) return current;
+          setRegistrar(rows[0].shortName || rows[0].registrar);
+          return rows[0].countryName;
+        });
+      })
+      .catch(() => {
+        // Fall back to free-text country if registries fail.
+      });
+  }, []);
+
+  const countryOptions = registries.length
+    ? registries.map((r) => r.countryName)
+    : ['Nigeria', 'Ghana', 'Kenya', 'South Africa', 'United Kingdom', 'United States', 'Other'];
+
+  const complete = country && legalName.trim() && registrationNumber.trim() && (documentName || pickedUri);
 
   function pickCountry(value: string) {
     setCountry(value);
-    // Prefill the registrar, but let the founder correct it.
-    if (!registrar || REGISTRARS[registrar] !== undefined) setRegistrar(REGISTRARS[value] ?? '');
+    const match = registries.find((r) => r.countryName === value);
+    if (match) setRegistrar(match.shortName || match.registrar);
   }
 
   async function pickDocument() {
@@ -80,11 +82,13 @@ export default function VerifyCompany() {
     if (result.canceled) return;
     const file = result.assets[0];
     if ((file.size ?? 0) > MAX_DOC_BYTES) {
-      setDocError(true);
+      setDocError('File exceeds 10 MB. Compress the scan and try again.');
       return;
     }
-    setDocError(false);
-    setDocument(file.name);
+    setDocError(null);
+    setDocumentName(file.name);
+    setPickedUri(file.uri);
+    setPickedMime(file.mimeType || 'application/pdf');
   }
 
   async function submit() {
@@ -95,30 +99,28 @@ export default function VerifyCompany() {
     setBusy(true);
     setError(null);
     try {
-      // The registration details are Startup Profile fields, so they are saved
-      // even though the *review* workflow below has no endpoint yet. Storing
-      // them is what lets an audit cite a registered legal entity at all.
       setField('legalName', legalName.trim());
       setField('registrationNumber', registrationNumber.trim());
-      setField('registrar', registrar.trim() || REGISTRARS[country] || 'Registrar');
+      setField('registrar', registrar.trim());
       setField('incorporationYear', incorporationYear.trim());
       setField('regulatoryLicences', regulatoryLicences.trim());
+      // Country on the profile is free text today; registries give the label.
+      if (!profile.location.trim()) setField('location', country);
       await save();
-      setSaved(true);
 
-      const registration: CompanyRegistration = {
-        country,
-        legalName: legalName.trim(),
-        registrationNumber: registrationNumber.trim(),
-        registrar: registrar.trim() || REGISTRARS[country] || 'Registrar',
-        document,
-      };
-      setFounderAccount(await api.submitCompanyRegistration(registration));
-      router.back();
+      if (pickedUri && documentName) {
+        const ticket = await api.beginDocumentUpload({
+          kind: 'registration_certificate',
+          filename: documentName,
+          contentType: pickedMime,
+        });
+        const blob = await (await fetch(pickedUri)).blob();
+        await putToSignedUrl(ticket.uploadUrl, blob, pickedMime, ticket.maxBytes);
+        await api.completeDocumentUpload(ticket.documentId);
+      }
+
+      setDone(true);
     } catch (e) {
-      // Stay on the screen: navigating back would imply the review started.
-      // The details themselves are already saved by this point, which is why
-      // `saved` is tracked separately from the submission.
       setError(e);
     } finally {
       setBusy(false);
@@ -133,7 +135,7 @@ export default function VerifyCompany() {
             <Txt className="text-[19px] text-ink">←</Txt>
           </Pressable>
           <Mono className="text-[10px] text-ink-faint" style={{ letterSpacing: 1.2 }}>
-            COMPANY VERIFICATION
+            REGISTRATION
           </Mono>
           <View className="w-5" />
         </View>
@@ -144,33 +146,38 @@ export default function VerifyCompany() {
         contentContainerStyle={{ padding: 18, paddingTop: 20 }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}>
-        {inReview ? (
-          <View
-            className="mb-5 rounded-[12px] p-[14px]"
-            style={{ borderWidth: 1, borderColor: 'rgba(0,112,243,0.35)', backgroundColor: 'rgba(0,112,243,0.08)' }}>
-            <Mono className="text-[9px]" style={{ letterSpacing: 1.2, color: C.blue }}>
-              IN REVIEW
-            </Mono>
-            <Txt className="mt-2 text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
-              We are checking your registration against the registry. You will get a notification the moment it clears.
-            </Txt>
-          </View>
-        ) : null}
-
         <Eyebrow>REGISTRATION</Eyebrow>
         <TxtSemi className="mb-1 mt-2 text-[23px]" style={{ letterSpacing: -0.7 }}>
-          Prove your company is real
+          Store your company registration
         </TxtSemi>
         <Txt className="mb-[22px] text-[13px] text-ink-dim" style={{ lineHeight: 20 }}>
-          Investors only see companies that are registered in their own country. This is checked once.
+          Details and the certificate are saved for audits and FundReady AI review. This does not by itself
+          put you in dealflow — clear readiness tasks, then publish from Home.
         </Txt>
+
+        {done ? (
+          <View
+            className="mb-5 rounded-[12px] p-[14px]"
+            style={{ borderWidth: 1, borderColor: 'rgba(12,206,107,0.30)', backgroundColor: 'rgba(12,206,107,0.07)' }}>
+            <Mono className="text-[9px]" style={{ letterSpacing: 1.2, color: C.grn }}>
+              SAVED
+            </Mono>
+            <Txt className="mt-2 text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+              Registration details and certificate are on your profile. Return to Home to publish when the readiness
+              gate is clear.
+            </Txt>
+            <View className="mt-3">
+              <Button label="Back to Home" height={40} onPress={() => router.back()} />
+            </View>
+          </View>
+        ) : null}
 
         <View className="gap-4">
           <Select
             label="Country of registration"
             placeholder="Select a country…"
             value={country}
-            options={COUNTRIES}
+            options={countryOptions}
             onChange={pickCountry}
           />
           <Field
@@ -192,7 +199,7 @@ export default function VerifyCompany() {
             placeholder="CAC"
             value={registrar}
             onChangeText={setRegistrar}
-            hint="The government body you filed with. Prefilled from your country."
+            hint="The government body you filed with."
           />
           <Field
             label="Year incorporated"
@@ -201,31 +208,29 @@ export default function VerifyCompany() {
             onChangeText={setIncorporationYear}
             keyboardType="number-pad"
             mono
-            hint="As on the certificate. This can differ from when you started trading."
           />
           <Field
             label="Licences your model needs"
-            placeholder="Lending licence — applied for, awaiting CBN approval"
+            placeholder="None needed"
             value={regulatoryLicences}
             onChangeText={setRegulatoryLicences}
             multiline
-            hint="What the business requires and whether you hold it. &quot;None needed&quot; is a real answer."
           />
 
           <View className="gap-[9px]">
             <FieldLabel>Certificate of incorporation</FieldLabel>
-            {document ? (
+            {documentName ? (
               <View className="flex-row items-center gap-[11px] rounded-[11px] border border-line-strong bg-surface-1 p-[14px]">
                 <View className="h-[34px] w-[34px] items-center justify-center rounded-[7px] border border-line-strong bg-surface-3">
                   <Mono className="text-[9px] text-ink-muted">
-                    {document.split('.').pop()?.slice(0, 4).toUpperCase() ?? 'DOC'}
+                    {documentName.split('.').pop()?.slice(0, 4).toUpperCase() ?? 'DOC'}
                   </Mono>
                 </View>
                 <View className="min-w-0 flex-1">
                   <Txt className="text-[13px]" numberOfLines={1}>
-                    {document}
+                    {documentName}
                   </Txt>
-                  <Txt className="text-[11px] text-ink-faint">attached</Txt>
+                  <Txt className="text-[11px] text-ink-faint">ready to upload</Txt>
                 </View>
                 <Pressable accessibilityRole="button" onPress={pickDocument} hitSlop={8}>
                   <Txt className="text-[11.5px] text-ink-muted">Replace</Txt>
@@ -242,42 +247,17 @@ export default function VerifyCompany() {
                 <Txt className="text-[11px] text-ink-faint">PDF, JPG or PNG · up to 10 MB</Txt>
               </Pressable>
             )}
-            {docError ? (
-              <ErrorNote text="File exceeds 10 MB. Compress the scan and try again." />
-            ) : null}
+            {docError ? <ErrorNote text={docError} /> : null}
           </View>
 
-          {touched && !complete ? <ErrorNote text="Fill every field and attach your certificate to submit." /> : null}
+          {touched && !complete ? <ErrorNote text="Fill every field and attach your certificate." /> : null}
         </View>
 
-        <Txt className="mt-5 text-[11px] text-ink-faint" style={{ lineHeight: 17 }}>
-          Your certificate is used only to confirm registration and is never shown to investors.
-        </Txt>
-
-        {/* The details and the review are different things now. Saving the
-            first can succeed while the second has no endpoint, and saying
-            "verification is not live" over a successful save would be wrong. */}
-        {saved && error ? (
-          <View
-            className="mt-5 rounded-[12px] p-[13px]"
-            style={{ borderWidth: 1, borderColor: '#3d2f14', backgroundColor: 'rgba(245,166,35,0.08)' }}>
-            <Mono className="text-[9px]" style={{ letterSpacing: 1.2, color: C.amb }}>
-              DETAILS SAVED
-            </Mono>
-            <Txt className="mt-[7px] text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
-              Your registration details are stored against your profile and the audit can use them.
-              The review that marks you verified to investors is not built yet.
-            </Txt>
-          </View>
-        ) : null}
-
-        {error && !saved ? (
-          <Unavailable title="Could not save your details" error={error} className="mt-5" />
-        ) : null}
+        {error ? <Unavailable title="Could not save registration" error={error} className="mt-5" /> : null}
       </ScrollView>
 
       <View className="border-t border-line-soft bg-ground px-[18px] pt-3" style={{ paddingBottom: insets.bottom + 14 }}>
-        <Button label={inReview ? 'Resubmit for review' : 'Submit for verification'} height={48} loading={busy} onPress={submit} />
+        <Button label="Save registration" height={48} loading={busy} disabled={done} onPress={submit} />
       </View>
     </KeyboardAvoidingView>
   );

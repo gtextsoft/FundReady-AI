@@ -16,9 +16,42 @@ import { EMPTY_PROFILE, type Assessment, type FounderProfile } from '@/domain/ty
 const POLL_INTERVAL_MS = 3_000;
 const POLL_TIMEOUT_MS = 5 * 60_000;
 
+/**
+ * Pause after the last keystroke before writing the profile. Short enough that
+ * a founder who leaves mid-step does not lose work; long enough that typing a
+ * sentence is one PATCH, not one per character.
+ */
+const AUTOSAVE_MS = 900;
+
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export type Step = 1 | 2 | 3 | 4 | 5;
+
+/**
+ * Bumped on every local edit. A save that started against an older revision
+ * must not clear `dirty` or replace the form with a stale server read-back.
+ */
+let editRevision = 0;
+let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
+/** Serialises overlapping save() calls so Continue + debounce cannot race. */
+let saveChain: Promise<unknown> = Promise.resolve();
+
+function clearAutosaveTimer() {
+  if (autosaveTimer) {
+    clearTimeout(autosaveTimer);
+    autosaveTimer = null;
+  }
+}
+
+function scheduleAutosave(save: () => Promise<SaveResult>) {
+  clearAutosaveTimer();
+  autosaveTimer = setTimeout(() => {
+    autosaveTimer = null;
+    // Best-effort: a failed autosave leaves `dirty` set and the next edit,
+    // Continue, or Exit will try again. Do not surface toast noise mid-typing.
+    void save().catch(() => undefined);
+  }, AUTOSAVE_MS);
+}
 
 type FounderState = {
   profile: FounderProfile;
@@ -31,11 +64,15 @@ type FounderState = {
   loaded: boolean;
   /** True when the form holds edits the server has not been told about. */
   dirty: boolean;
+  /** True while a save request is in flight. */
+  saving: boolean;
   /**
    * Answers the server had no field for on the last save. Surface these — they
    * were typed by a person and are not being stored.
    */
   unmapped: UnmappedAnswer[];
+  /** Fields the server still needs for a strong audit. */
+  missingFields: string[];
 
   /** Reads the saved profile back, so onboarding resumes where it stopped. */
   load(): Promise<void>;
@@ -124,6 +161,17 @@ export function isAssessmentComplete(profile: FounderProfile): boolean {
   return ([1, 2, 3, 4, 5] as Step[]).every((step) => isStepValid(profile, step));
 }
 
+/**
+ * First step that still lacks a required answer — where onboarding should reopen.
+ * When every step is complete, land on the last one so the founder can revise.
+ */
+export function firstIncompleteStep(profile: FounderProfile): Step {
+  for (const step of [1, 2, 3, 4, 5] as Step[]) {
+    if (!isStepValid(profile, step)) return step;
+  }
+  return 5;
+}
+
 /** The slice of the store the audit helpers below write to. */
 type AuditSet = (partial: Partial<FounderState>) => void;
 
@@ -182,13 +230,17 @@ export const useFounder = create<FounderState>((set, get) => ({
   assessment: null,
   loaded: false,
   dirty: false,
+  saving: false,
   unmapped: [],
+  missingFields: [],
   run: null,
   report: null,
   auditError: null,
 
   setField(key, value) {
+    editRevision += 1;
     set((s) => ({ profile: { ...s.profile, [key]: value }, dirty: true }));
+    scheduleAutosave(() => get().save());
   },
 
   setStep(step) {
@@ -200,7 +252,9 @@ export const useFounder = create<FounderState>((set, get) => ({
   },
 
   uploadDeck(filename) {
+    editRevision += 1;
     set((s) => ({ profile: { ...s.profile, deck: filename }, deckError: false, dirty: true }));
+    scheduleAutosave(() => get().save());
   },
 
   failUpload() {
@@ -212,6 +266,9 @@ export const useFounder = create<FounderState>((set, get) => ({
   },
 
   reset() {
+    clearAutosaveTimer();
+    editRevision = 0;
+    saveChain = Promise.resolve();
     set({
       profile: { ...EMPTY_PROFILE },
       step: 1,
@@ -220,7 +277,9 @@ export const useFounder = create<FounderState>((set, get) => ({
       assessment: null,
       loaded: false,
       dirty: false,
+      saving: false,
       unmapped: [],
+      missingFields: [],
       run: null,
       report: null,
       auditError: null,
@@ -237,8 +296,13 @@ export const useFounder = create<FounderState>((set, get) => ({
       // Only adopt a stored profile over an untouched form. Someone who has
       // started typing must not have it replaced underneath them by a slow
       // request that resolves mid-edit.
-      if (stored && !get().dirty) set({ profile: stored, loaded: true });
-      else set({ loaded: true });
+      if (stored && !get().dirty) {
+        set({
+          profile: stored,
+          step: firstIncompleteStep(stored),
+          loaded: true,
+        });
+      } else set({ loaded: true });
     } catch {
       // **`loaded` is set whatever happens, and that is the point.** It means
       // "we have finished trying", not "we succeeded" -- the form is gated on
@@ -259,11 +323,49 @@ export const useFounder = create<FounderState>((set, get) => ({
   },
 
   async save() {
-    // Persisted separately from the audit, and first: an audit that fails to
+    clearAutosaveTimer();
+
+    // Persist separately from the audit, and first: an audit that fails to
     // queue must not also cost the founder their answers.
-    const result = await api.saveProfile(get().profile);
-    set({ profile: result.profile, unmapped: result.unmapped, dirty: false, loaded: true });
-    return result;
+    const run = async (): Promise<SaveResult> => {
+      if (!get().dirty) {
+        return {
+          profile: get().profile,
+          unmapped: get().unmapped,
+          missingFields: get().missingFields,
+        };
+      }
+
+      const revision = editRevision;
+      const toSave = get().profile;
+      set({ saving: true });
+      try {
+        const result = await api.saveProfile(toSave);
+        const superseded = editRevision !== revision;
+        set((s) => ({
+          // Keep local edits that landed while the request was in flight.
+          profile: superseded ? s.profile : result.profile,
+          unmapped: result.unmapped,
+          missingFields: result.missingFields,
+          dirty: superseded,
+          loaded: true,
+          saving: false,
+        }));
+        // Another keystroke arrived mid-save — schedule a follow-up write.
+        if (superseded) scheduleAutosave(() => get().save());
+        return result;
+      } catch (error) {
+        set({ saving: false });
+        throw error;
+      }
+    };
+
+    const next = saveChain.then(run, run);
+    saveChain = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
   },
 
   async runAudit() {

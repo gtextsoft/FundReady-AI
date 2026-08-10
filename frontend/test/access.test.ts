@@ -66,10 +66,10 @@ describe('founder gates', () => {
     expect(gate(account, 'aiMentor', NOW).reason).toBe('payment');
   });
 
-  it('gates on verification once email and payment are satisfied', () => {
-    const account = founder({ verification: 'in_review' });
+  it('does not gate mentor/visibility on company verification (no server status yet)', () => {
+    const account = founder({ verification: 'unverified' });
     for (const capability of GATED) {
-      expect(gate(account, capability, NOW).reason).toBe('verification');
+      expect(gate(account, capability, NOW).allowed).toBe(true);
     }
   });
 
@@ -112,9 +112,12 @@ describe('investor gates', () => {
     expect(investorGate(account, 'requestIntroduction').reason).toBe('email');
   });
 
-  it('refuses an unverified investor and allows a verified one', () => {
+  it('refuses an unverified investor for schedule/intro, but allows express interest', () => {
     expect(investorGate(investor({ verification: 'in_review' }), 'scheduleCall').reason).toBe(
       'verification',
+    );
+    expect(investorGate(investor({ verification: 'unverified' }), 'expressInterest').allowed).toBe(
+      true,
     );
     expect(investorGate(investor(), 'scheduleCall').allowed).toBe(true);
   });

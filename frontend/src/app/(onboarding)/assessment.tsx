@@ -22,14 +22,14 @@ import { useBackTo } from '@/lib/use-back-to';
 import { useFounder } from '@/store/founder';
 
 const PHASES = [
-  'Analysing market size and growth potential…',
-  'Evaluating unit economics against global VC & PE benchmarks…',
-  'Calculating your proprietary Fundability Score…',
-  'Matching you with optimal growth pathways…',
+  'Saving your profile and queuing the FundReady AI audit…',
+  'The audit usually takes a few minutes on the server…',
+  'You can leave — we will show a provisional estimate first…',
+  'Opening your results…',
 ];
 
-const PHASE_MS = 1250;
-const SETTLE_MS = 900;
+const PHASE_MS = 1400;
+const SETTLE_MS = 700;
 
 export default function AssessmentScreen() {
   const { height } = useWindowDimensions();

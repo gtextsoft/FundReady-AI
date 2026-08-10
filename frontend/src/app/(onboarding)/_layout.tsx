@@ -1,9 +1,9 @@
 import { View } from 'react-native';
 import { Redirect, Stack } from 'expo-router';
 
-import { C } from '@/theme/tokens';
 import { INVESTOR_HOME, SIGN_IN } from '@/lib/routes';
 import { useSession } from '@/store/session';
+import { useThemeColors } from '@/theme/use-theme-colors';
 
 /**
  * The founder assessment runs full-screen, outside the dashboard tabs.
@@ -12,6 +12,7 @@ import { useSession } from '@/store/session';
 export default function OnboardingLayout() {
   const status = useSession((s) => s.status);
   const role = useSession((s) => s.role);
+  const colors = useThemeColors();
 
   if (status === 'loading') return <View className="flex-1 bg-ground" />;
   if (status === 'signedOut') return <Redirect href={SIGN_IN} />;
@@ -21,7 +22,7 @@ export default function OnboardingLayout() {
     <Stack
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: C.ground },
+        contentStyle: { backgroundColor: colors.ground },
         animation: 'fade',
       }}
     />

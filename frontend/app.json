@@ -1,18 +1,19 @@
 {
   "expo": {
-    "name": "SACI FundMe",
+    "name": "FundReady AI",
     "slug": "saci-fundme",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "sacifundme",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "automatic",
     "backgroundColor": "#000000",
     "ios": {
       "icon": "./assets/expo.icon",
       "supportsTablet": false
     },
     "android": {
+      "package": "com.sacifundme.app",
       "adaptiveIcon": {
         "backgroundColor": "#000000",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -35,11 +36,18 @@
           "imageWidth": 76
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "1942dc89-f25d-406e-ba64-3a97de8bc220"
+      }
     }
   }
 }

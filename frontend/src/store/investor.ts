@@ -1,103 +1,96 @@
 import { create } from 'zustand';
 import { api } from '@/api';
-import type { MatchType, SortKey } from '@/domain/types';
+import type { ServerStage } from '@/api/profile-mapping';
+import type { Interest } from '@/domain/interest';
 
 type InvestorState = {
-  query: string;
-  minScore: number;
-  match: 'All' | MatchType;
-  sectors: string[];
-  stages: string[];
-  sort: SortKey;
-  page: number;
-  watchlist: number[];
-  /** Companies the user has already asked to be introduced to. */
-  introRequested: number[];
+  /** Single sector filter — `/v1/discover` accepts one. */
+  sector: string | null;
+  stage: ServerStage | null;
+  country: string | null;
+  watchlist: string[];
+  /** Startup ids the investor has already expressed interest in (this session + reloads). */
+  interestedIds: string[];
+  interests: Interest[];
 
-  setQuery(q: string): void;
-  setMinScore(n: number): void;
-  setMatch(m: 'All' | MatchType): void;
-  toggleSector(s: string): void;
-  toggleStage(s: string): void;
-  setSort(s: SortKey): void;
-  setPage(p: number): void;
+  setSector(s: string | null): void;
+  setStage(s: ServerStage | null): void;
+  setCountry(c: string | null): void;
   clearFilters(): void;
   activeFilterCount(): number;
 
   loadWatchlist(): Promise<void>;
-  toggleWatch(id: number): Promise<void>;
-  requestIntro(id: number): Promise<void>;
+  toggleWatch(startupId: string): Promise<void>;
+  loadInterests(): Promise<void>;
+  expressInterest(startupId: string, note?: string): Promise<Interest>;
 };
 
 export const useInvestor = create<InvestorState>((set, get) => ({
-  query: '',
-  minScore: 0,
-  match: 'All',
-  sectors: [],
-  stages: [],
-  sort: 'score',
-  page: 1,
+  sector: null,
+  stage: null,
+  country: null,
   watchlist: [],
-  introRequested: [],
+  interestedIds: [],
+  interests: [],
 
-  setQuery(query) {
-    set({ query, page: 1 });
+  setSector(sector) {
+    set({ sector });
   },
-  setMinScore(minScore) {
-    set({ minScore, page: 1 });
+  setStage(stage) {
+    set({ stage });
   },
-  setMatch(match) {
-    set({ match, page: 1 });
-  },
-  toggleSector(s) {
-    set((st) => ({
-      sectors: st.sectors.includes(s) ? st.sectors.filter((x) => x !== s) : [...st.sectors, s],
-      page: 1,
-    }));
-  },
-  toggleStage(s) {
-    set((st) => ({
-      stages: st.stages.includes(s) ? st.stages.filter((x) => x !== s) : [...st.stages, s],
-      page: 1,
-    }));
-  },
-  setSort(sort) {
-    set({ sort, page: 1 });
-  },
-  setPage(page) {
-    set({ page });
+  setCountry(country) {
+    set({ country });
   },
   clearFilters() {
-    set({ minScore: 0, match: 'All', sectors: [], stages: [], query: '', page: 1 });
+    set({ sector: null, stage: null, country: null });
   },
   activeFilterCount() {
     const s = get();
-    return (s.minScore > 0 ? 1 : 0) + (s.match !== 'All' ? 1 : 0) + s.sectors.length + s.stages.length;
+    return (s.sector ? 1 : 0) + (s.stage ? 1 : 0) + (s.country ? 1 : 0);
   },
 
   async loadWatchlist() {
     try {
       set({ watchlist: await api.getWatchlist() });
     } catch {
-      // No watchlist endpoint yet. An empty list is the truth, not a guess.
       set({ watchlist: [] });
     }
   },
 
-  async toggleWatch(id) {
-    // Optimistic — the star should not wait on a round trip.
+  async toggleWatch(startupId) {
     const before = get().watchlist;
-    const next = before.includes(id) ? before.filter((x) => x !== id) : [...before, id];
+    const next = before.includes(startupId)
+      ? before.filter((x) => x !== startupId)
+      : [...before, startupId];
     set({ watchlist: next });
     try {
-      set({ watchlist: await api.toggleWatch(id) });
+      set({ watchlist: await api.toggleWatch(startupId) });
     } catch {
       set({ watchlist: before });
     }
   },
 
-  async requestIntro(id) {
-    await api.requestIntroduction(id);
-    set((s) => ({ introRequested: s.introRequested.includes(id) ? s.introRequested : [...s.introRequested, id] }));
+  async loadInterests() {
+    try {
+      const interests = await api.listInterests();
+      set({
+        interests,
+        interestedIds: interests.map((i) => i.startupId),
+      });
+    } catch {
+      // Endpoint may 403 before email verify; leave local state alone.
+    }
+  },
+
+  async expressInterest(startupId, note) {
+    const interest = await api.expressInterest(startupId, note);
+    set((s) => ({
+      interests: [interest, ...s.interests.filter((i) => i.id !== interest.id)],
+      interestedIds: s.interestedIds.includes(startupId)
+        ? s.interestedIds
+        : [...s.interestedIds, startupId],
+    }));
+    return interest;
   },
 }));

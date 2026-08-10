@@ -7,10 +7,9 @@ import { Button } from '@/components/ui/button';
 import { Segmented } from '@/components/ui/controls';
 import { Field } from '@/components/ui/field';
 import { Mark } from '@/components/ui/mark';
-import { Mono, Txt, TxtMed, TxtSemi } from '@/components/ui/text';
-import { C } from '@/theme/tokens';
-import { api, type DomainSso, type Role } from '@/api';
-import { checkFounderEmail, emailDomain, isValidEmail } from '@/domain/email';
+import { Txt, TxtMed, TxtSemi } from '@/components/ui/text';
+import { type Role } from '@/api';
+import { checkFounderEmail, isValidEmail } from '@/domain/email';
 import { checkPassword, MIN_PASSWORD } from '@/domain/password';
 import { homeFor, route, SIGN_IN } from '@/lib/routes';
 import { useSession } from '@/store/session';
@@ -37,12 +36,9 @@ export default function SignUp() {
   const [nameError, setNameError] = useState<string | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
-  const [sso, setSso] = useState<DomainSso | null>(null);
-
   const status = useSession((s) => s.status);
   const sessionRole = useSession((s) => s.role);
   const signUp = useSession((s) => s.signUp);
-  const signInWithSso = useSession((s) => s.signInWithSso);
   const busy = useSession((s) => s.busy);
   const error = useSession((s) => s.error);
   const clearError = useSession((s) => s.clearError);
@@ -69,39 +65,20 @@ export default function SignUp() {
   function onChangeEmail(value: string) {
     setEmail(value);
     if (emailError) setEmailError(null);
-    if (sso) setSso(null);
     if (error) clearError();
   }
 
   function switchRole(next: Role) {
     setRole(next);
     setEmailError(null);
-    setSso(null);
     clearError();
   }
 
-  /**
-   * On blur, reject a personal domain immediately and ask the backend whether
-   * the company runs single sign-on. Investors skip both — angels legitimately
-   * operate from personal addresses.
-   */
-  async function onBlurEmail() {
+  /** On blur, reject a personal domain immediately for founders. */
+  function onBlurEmail() {
     if (role !== 'founder' || !email.trim()) return;
-
     const verdict = checkFounderEmail(email);
-    if (!verdict.ok) {
-      setEmailError(verdict.message);
-      setSso(null);
-      return;
-    }
-
-    setEmailError(null);
-    try {
-      const lookup = await api.lookupEmailDomain(verdict.domain);
-      setSso(lookup.sso);
-    } catch {
-      setSso(null); // A failed lookup just means the password form stays.
-    }
+    setEmailError(verdict.ok ? null : verdict.message);
   }
 
   async function submit() {
@@ -146,11 +123,6 @@ export default function SignUp() {
       firstName: firstName.trim(),
       lastName: lastName.trim(),
     });
-    if (session) router.replace(landing);
-  }
-
-  async function continueWithSso() {
-    const session = await signInWithSso(emailDomain(email), role);
     if (session) router.replace(landing);
   }
 
@@ -218,34 +190,30 @@ export default function SignUp() {
                   : undefined
               }
             />
-            {!sso ? (
-              <>
-                <Field
-                  label="Password"
-                  placeholder="••••••••••"
-                  value={password}
-                  onChangeText={(value) => {
-                    setPassword(value);
-                    if (passwordError) setPasswordError(null);
-                  }}
-                  secureTextEntry
-                  autoComplete="new-password"
-                  hint={passwordError ? undefined : `At least ${MIN_PASSWORD} characters.`}
-                />
-                <Field
-                  label="Confirm password"
-                  placeholder="••••••••••"
-                  value={confirm}
-                  onChangeText={(value) => {
-                    setConfirm(value);
-                    if (passwordError) setPasswordError(null);
-                  }}
-                  secureTextEntry
-                  autoComplete="new-password"
-                  onSubmitEditing={submit}
-                />
-              </>
-            ) : null}
+            <Field
+              label="Password"
+              placeholder="••••••••••"
+              value={password}
+              onChangeText={(value) => {
+                setPassword(value);
+                if (passwordError) setPasswordError(null);
+              }}
+              secureTextEntry
+              autoComplete="new-password"
+              hint={passwordError ? undefined : `At least ${MIN_PASSWORD} characters.`}
+            />
+            <Field
+              label="Confirm password"
+              placeholder="••••••••••"
+              value={confirm}
+              onChangeText={(value) => {
+                setConfirm(value);
+                if (passwordError) setPasswordError(null);
+              }}
+              secureTextEntry
+              autoComplete="new-password"
+              onSubmitEditing={submit}
+            />
           </View>
 
           {nameError ? <ErrorNote text={nameError} /> : null}
@@ -253,31 +221,13 @@ export default function SignUp() {
           {passwordError && !nameError && !emailError ? <ErrorNote text={passwordError} /> : null}
           {error && !nameError && !emailError && !passwordError ? <ErrorNote text={error} /> : null}
 
-          {sso ? (
-            /* The company runs its own identity provider, so we hand off to it
-               rather than minting another password. */
-            <View className="mt-4 gap-3">
-              <View
-                className="rounded-[11px] p-[13px]"
-                style={{ borderWidth: 1, borderColor: 'rgba(0,112,243,0.35)', backgroundColor: 'rgba(0,112,243,0.08)' }}>
-                <Mono className="text-[9px]" style={{ letterSpacing: 1.2, color: C.blue }}>
-                  SINGLE SIGN-ON
-                </Mono>
-                <Txt className="mt-2 text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
-                  {emailDomain(email)} uses {sso.displayName}. Sign in with your work account — no new password.
-                </Txt>
-              </View>
-              <Button label={`Continue with ${sso.displayName}`} onPress={continueWithSso} loading={busy} />
-            </View>
-          ) : (
-            <View className="mt-[18px]">
-              <Button
-                label={role === 'investor' ? 'Create investor account' : 'Create founder account'}
-                onPress={submit}
-                loading={busy}
-              />
-            </View>
-          )}
+          <View className="mt-[18px]">
+            <Button
+              label={role === 'investor' ? 'Create investor account' : 'Create founder account'}
+              onPress={submit}
+              loading={busy}
+            />
+          </View>
 
           <Pressable accessibilityRole="link" className="mt-6 items-center" onPress={() => router.replace(SIGN_IN)}>
             <TxtMed className="text-[12.5px] text-ink-muted">Already have an account? Sign in</TxtMed>
@@ -285,8 +235,8 @@ export default function SignUp() {
         </View>
 
         <Txt className="text-center text-[11px] text-ink-faint" style={{ lineHeight: 17 }}>
-          By continuing you agree that SACI may share your anonymised metrics with vetted investors. You control every
-          direct introduction.
+          By continuing you agree that FundReady AI may share your anonymised metrics with vetted investors. You
+          control every direct introduction.
         </Txt>
       </ScrollView>
     </KeyboardAvoidingView>

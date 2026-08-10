@@ -1,4 +1,4 @@
-# SACI FundMe — mobile frontend
+# FundReady AI — mobile frontend
 
 Expo SDK 57 / React Native 0.86 / expo-router / NativeWind 4. Two sides of one
 marketplace, kept strictly apart: **founder** (dashboard, assessment, company

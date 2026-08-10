@@ -1,5 +1,19 @@
 import type { AuditReport, AuditRun } from '@/domain/audit';
 import type { DiscoveredStartup, DiscoveryPage, DiscoveryQuery } from '@/domain/discovery';
+import type { Interest, InterestStatus } from '@/domain/interest';
+import type { MentorChatResult, MentorChatTurn } from '@/domain/mentor';
+import type {
+  DocumentKind,
+  EvidenceSubmission,
+  EvidenceUploadTicket,
+  ReadinessSummary,
+  ReadinessTask,
+  RegistryEntry,
+  StartupDocument,
+  TaskRequirement,
+  TaskStatus,
+  UploadTicket,
+} from '@/domain/readiness';
 import type { UnmappedAnswer } from './profile-mapping';
 import type { AppNotification, CallRequest } from '@/domain/notifications';
 import type {
@@ -12,6 +26,16 @@ import type {
   InvestorAccount,
   InvestorCredentials,
 } from '@/domain/types';
+
+export type { Interest, InterestStatus };
+export type {
+  DocumentKind,
+  EvidenceSubmission,
+  ReadinessSummary,
+  ReadinessTask,
+  RegistryEntry,
+  StartupDocument,
+};
 
 /**
  * The complete surface the app needs from the backend.
@@ -143,6 +167,12 @@ export type PaymentReceipt = {
   paidAt: string;
 };
 
+/** Hosted Stripe Checkout for the one-off unlock (backend D21). */
+export type CheckoutSession = {
+  checkoutUrl: string;
+  sessionId: string;
+};
+
 export interface FundMeApi {
   // ── auth ────────────────────────────────────────────────
   /** Sign in to an existing account. The role comes from the account. */
@@ -171,18 +201,20 @@ export interface FundMeApi {
    */
   requestPasswordReset(email: string): Promise<void>;
   /**
-   * Complete the reset with the token from the email and a new password.
+   * Complete the reset with the emailed six-digit code and a new password.
    *
-   * The token is single-use and expires in an hour; a second attempt with the
-   * same one fails. Succeeding **ends every session on every device** — the
-   * server revokes all refresh tokens and invalidates the access tokens it has
-   * already issued — so the caller must sign in again afterwards, and should
-   * say so rather than letting the sign-out look like a fault.
+   * Both the address and the code are required: the code is only checked
+   * against one account. The code is single-use, expires in fifteen minutes,
+   * and dies after five wrong guesses. Succeeding **ends every session on
+   * every device** — the server revokes all refresh tokens and invalidates the
+   * access tokens it has already issued — so the caller must sign in again
+   * afterwards, and should say so rather than letting the sign-out look like a
+   * fault.
    *
-   * Unknown, expired and already-used tokens come back as one indistinguishable
-   * `validation` failure, deliberately.
+   * Wrong, expired, spent, exhausted and unknown-address failures come back as
+   * one indistinguishable `validation` failure, deliberately.
    */
-  resetPassword(token: string, password: string): Promise<void>;
+  resetPassword(email: string, code: string, password: string): Promise<void>;
 
   // ── email verification ──────────────────────────────────
   /**
@@ -223,6 +255,10 @@ export interface FundMeApi {
    * replaying it inside its own window is refused.
    */
   verifyMfa(mfaToken: string, code: string): Promise<Session>;
+  /** Begin TOTP enrolment — MFA is not active until `confirmMfaEnrolment`. */
+  beginMfaEnrolment(): Promise<{ secret: string; provisioningUri: string }>;
+  /** Enable MFA with a code from the authenticator; returns one-time recovery codes. */
+  confirmMfaEnrolment(code: string): Promise<string[]>;
 
   // ── accounts ────────────────────────────────────────────
   /** Trial window, payment state and verification status for the founder. */
@@ -239,7 +275,13 @@ export interface FundMeApi {
    * One-off unlock. The real implementation should hand off to a hosted
    * checkout and never see card data; this resolves once payment settles.
    */
-  purchaseUnlock(): Promise<PaymentReceipt>;
+  /**
+   * Starts Stripe Checkout for the one-off unlock. Open `checkoutUrl` in a
+   * browser; entitlement arrives via webhook — refresh the account after return.
+   */
+  purchaseUnlock(): Promise<CheckoutSession>;
+  /** Completed unlock receipt when Stripe has already granted access. */
+  getUnlockReceipt(): Promise<PaymentReceipt | null>;
 
   // ── founder ─────────────────────────────────────────────
   /** Persists the profile and returns the scored assessment. */
@@ -277,18 +319,59 @@ export interface FundMeApi {
    * an empty report.
    */
   getAuditReport(runId: string): Promise<AuditReport>;
+  /**
+   * Founder-tier audit PDF bytes for a succeeded run.
+   * Same auth/ownership as `getAuditReport`.
+   */
+  getAuditReportPdf(runId: string): Promise<Uint8Array>;
 
   // ── investor visibility ─────────────────────────────────
   /** Makes the startup discoverable. Requires a cleared audit server-side. */
   publishProfile(): Promise<void>;
   unpublishProfile(): Promise<void>;
+  /** Whether the profile is currently investor-visible, plus publish timestamp. */
+  getVisibility(): Promise<{ investorVisible: boolean; publishedAt: string | null }>;
+
+  // ── documents & registries ──────────────────────────────
+  listRegistries(): Promise<RegistryEntry[]>;
+  beginDocumentUpload(input: {
+    kind: DocumentKind;
+    filename: string;
+    contentType: string;
+  }): Promise<UploadTicket>;
+  completeDocumentUpload(documentId: string): Promise<StartupDocument>;
+  listDocuments(): Promise<StartupDocument[]>;
+  getDocumentDownloadUrl(documentId: string): Promise<{ downloadUrl: string; expiresIn: number }>;
+
+  // ── readiness tasks & evidence ──────────────────────────
+  getTasksSummary(): Promise<ReadinessSummary>;
+  listTasks(query?: {
+    status?: TaskStatus;
+    requirement?: TaskRequirement;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ items: ReadinessTask[]; total: number; limit: number; offset: number }>;
+  getTask(taskId: string): Promise<ReadinessTask>;
+  beginEvidenceUpload(
+    taskId: string,
+    input: { filename: string; contentType: string },
+  ): Promise<EvidenceUploadTicket>;
+  completeEvidenceUpload(evidenceId: string): Promise<EvidenceSubmission>;
+  listEvidence(
+    taskId: string,
+    query?: { limit?: number; offset?: number },
+  ): Promise<{ items: EvidenceSubmission[]; total: number; limit: number; offset: number }>;
+
   enrol(programme: 'readiness' | 'wealth'): Promise<void>;
   /**
-   * AI mentor. The mock answers from the founder's own metrics with rules;
-   * the real implementation should put an LLM behind this same call so the
-   * screen never changes.
+   * Founder AI mentor (T3.7). Grounded in the caller's own audit/tasks.
+   * Prefer `chatMentor` when citations or history matter.
    */
   askMentor(question: string): Promise<string>;
+  chatMentor(input: {
+    message: string;
+    history?: MentorChatTurn[];
+  }): Promise<MentorChatResult>;
 
   // ── investor ────────────────────────────────────────────
   listCompanies(query: DealflowQuery, page: number, perPage: number): Promise<Page<CompanySummary>>;
@@ -310,9 +393,20 @@ export interface FundMeApi {
    * the UI, because an investor writes differently when the subject is not
    * reading. Optional: the server accepts null.
    */
-  expressInterest(startupId: string, note?: string): Promise<void>;
-  getWatchlist(): Promise<number[]>;
-  toggleWatch(id: number): Promise<number[]>;
+  expressInterest(startupId: string, note?: string): Promise<Interest>;
+  /** The signed-in investor's interest queue (or admin work queue). */
+  listInterests(status?: InterestStatus): Promise<Interest[]>;
+  /**
+   * Full founder report for a run SACI has revealed to this investor.
+   * Only works when `interest.revealedRunIds` contains `runId`.
+   */
+  getRevealedReport(interestId: string, runId: string): Promise<AuditReport>;
+  /**
+   * Local device watchlist of startup ids. There is no sync endpoint yet —
+   * the store owns persistence; these stay for callers that still expect them.
+   */
+  getWatchlist(): Promise<string[]>;
+  toggleWatch(startupId: string): Promise<string[]>;
   requestIntroduction(companyId: number): Promise<void>;
 
   // ── virtual calls ───────────────────────────────────────

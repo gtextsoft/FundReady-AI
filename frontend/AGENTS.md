@@ -1,10 +1,14 @@
-# SACI FundMe — mobile frontend
+# FundReady AI — mobile frontend
 
-Expo SDK 57 / React Native 0.86 / expo-router / NativeWind 4. Two sides of one
-marketplace, kept strictly apart: **founder** (dashboard, assessment, company
-verification, paywall, AI mentor) and **investor** (dealflow, deep dive,
-watchlist, scheduling). Backend is owned by a partner; this repo talks to it
-through one seam only.
+Expo SDK 57 / React Native 0.86 / expo-router / NativeWind 4. Product display
+name is **FundReady AI** (no space in FundReady). The URL scheme remains
+`sacifundme` until a coordinated migration. Appearance is System / Light / Dark
+via Profile (`store/appearance.ts` + CSS vars on the root layout).
+
+Two sides of one marketplace, kept strictly apart: **founder** (dashboard,
+assessment, company verification, paywall, AI mentor) and **investor**
+(dealflow, deep dive, watchlist, scheduling). Backend is owned by a partner;
+this repo talks to it through one seam only.
 
 Expo has changed a lot — read the versioned docs at
 https://docs.expo.dev/versions/v57.0.0/ before writing new integration code.
@@ -122,26 +126,16 @@ Check rendered output in a browser, not just a green build.
    `gate(account, capability)` and pass `account` in, so the dependency is
    visible. Applies to any store getter that closes over `get()`.
 
-## Links from emails
+## Codes from emails
 
-The backend sends `{APP_LINK_BASE_URL}/verify-email?token=…` and
-`{APP_LINK_BASE_URL}/reset-password?token=…` — links that point at **this app**,
-not at the API. Mail security scanners prefetch every URL in a message, so a
-`GET` endpoint on the API would have its single-use token spent before the
-recipient clicked.
+Email verification and password reset both email a **six-digit code**. The
+recipient types it into the app with the address it was sent to — nothing in
+those messages is a clickable credential, so mail scanners cannot burn them.
 
-- **Those two path segments are a contract with the server.** Renaming either
-  route breaks every link already sitting in an inbox.
-- expo-router's own linking resolves the custom scheme, the Expo Go
-  `exp://…/--/…` form and the plain web URL onto the same route with the same
-  search params. There is no URL parser in this repo and there should not be —
-  `lib/deep-link.ts` only reads the parameter safely.
-- Both screens keep a paste-the-code field, because **`https://` links do not
-  open the app yet**: Universal Links (`associatedDomains`) and App Links
-  (`intentFilters`) are not configured in `app.json`. Until they are,
-  `APP_LINK_BASE_URL` must be the `sacifundme://` scheme to reach a phone.
-- Both screens work **signed out**. Whoever follows a reset link is often
-  locked out, and neither endpoint takes authorization.
+- `verify-email` and `reset-password` are in-app destinations, not deep-link
+  targets for secrets.
+- Both screens work **signed out**. Neither confirm endpoint takes
+  authorization, and someone resetting a password is often locked out.
 
 ## Running it
 

@@ -7,8 +7,9 @@ import { Button } from '@/components/ui/button';
 import { Eyebrow, Mono, Txt, TxtMed, TxtSemi } from '@/components/ui/text';
 import { C } from '@/theme/tokens';
 import { gate as capabilityGate, lockExplanation } from '@/domain/access';
+import { gateCopy } from '@/domain/gate-copy';
 import { formatSlot, relativeTime, type CallRequest } from '@/domain/notifications';
-import { route } from '@/lib/routes';
+import { route, VERIFY_EMAIL } from '@/lib/routes';
 import { useNotifications } from '@/store/notifications';
 import { useSession } from '@/store/session';
 
@@ -21,7 +22,7 @@ export default function InvestorInterest() {
   const account = useSession((s) => s.founderAccount);
   const gate = account
     ? capabilityGate(account, 'investorRequests')
-    : ({ allowed: false, reason: 'verification' } as const);
+    : ({ allowed: false, reason: 'email' } as const);
 
   const load = useNotifications((s) => s.load);
   const callRequests = useNotifications((s) => s.callRequests);
@@ -44,22 +45,27 @@ export default function InvestorInterest() {
       contentContainerStyle={{ paddingTop: insets.top + 8, paddingHorizontal: 18, paddingBottom: 24 }}
       showsVerticalScrollIndicator={false}>
       <TxtSemi className="mb-4 text-[19px]" style={{ letterSpacing: -0.5 }}>
-        Investor interest
+        Requests
       </TxtSemi>
+      <Txt className="mb-4 text-[12.5px] text-ink-dim" style={{ lineHeight: 19 }}>
+        FundReady AI-mediated call requests and introductions appear here when that loop is live.
+      </Txt>
 
       {!gate.allowed ? (
         <View className="rounded-[12px] border border-line bg-surface-1 p-4">
-          <TxtSemi className="text-[14px]">Locked</TxtSemi>
+          <TxtSemi className="text-[14px]">{gateCopy(gate.reason, 'founder').title}</TxtSemi>
           <Txt className="mt-[4px] text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
             {lockExplanation(gate.reason)}
           </Txt>
           <View className="mt-4">
             <Button
-              label={gate.reason === 'payment' ? 'Unlock access' : 'Verify company'}
+              label={gateCopy(gate.reason, 'founder').cta}
               height={42}
-              onPress={() =>
-                router.push(route(gate.reason === 'payment' ? '/founder/paywall' : '/founder/verify'))
-              }
+              onPress={() => {
+                if (gate.reason === 'payment') router.push(route('/founder/paywall'));
+                else if (gate.reason === 'email') router.push(VERIFY_EMAIL);
+                else router.push(route('/founder/verify'));
+              }}
             />
           </View>
         </View>

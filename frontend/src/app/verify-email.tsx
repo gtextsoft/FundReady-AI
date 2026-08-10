@@ -23,8 +23,8 @@ import { useSession } from '@/store/session';
  *
  * **The email carries a code, not a link.** There is deliberately no deep-link
  * handling left here: a link would have to be a credential in a URL, and the
- * server now checks a code against one named account instead. `reset-password`
- * still uses a token link, which is why `lib/deep-link.ts` remains.
+ * server checks a code against one named account instead. Password reset uses
+ * the same code shape.
  *
  * **Usable signed out.** Neither endpoint is authenticated, because someone who
  * registered on a laptop may be reading the mail on a phone. Signed in, the
@@ -87,7 +87,12 @@ export default function VerifyEmail() {
   // was heading before this screen existed. Anything else falls back to their
   // own side of the marketplace.
   const onward = next === 'onboarding' ? ONBOARDING : homeFor(role);
-  const onwardLabel = next === 'onboarding' ? 'Start your assessment' : 'Continue';
+  const onwardLabel =
+    next === 'onboarding'
+      ? 'Continue to company basics'
+      : next === 'investor'
+        ? 'Open dealflow'
+        : 'Continue';
 
   // The server drops a resend made within 60s of the last one and still
   // answers 202, so the countdown is the only thing that stops the button
@@ -193,7 +198,11 @@ export default function VerifyEmail() {
 
           <Txt className="mb-6 text-[13px] text-ink-muted" style={{ lineHeight: 20 }}>
             {verified
-              ? `${email || 'Your address'} is confirmed. Everything that needs a confirmed address is now open to you.`
+              ? next === 'onboarding'
+                ? `${email || 'Your address'} is confirmed. Next: company basics (~3 minutes), then your FundReady AI assessment.`
+                : next === 'investor'
+                  ? `${email || 'Your address'} is confirmed. Next: browse dealflow, star companies, and express interest — FundReady AI brokers introductions.`
+                  : `${email || 'Your address'} is confirmed. Everything that needs a confirmed address is now open to you.`
               : `Enter the six-digit code we emailed${sessionEmail ? ` to ${sessionEmail}` : ''}. You can look around your own account in the meantime.`}
           </Txt>
 

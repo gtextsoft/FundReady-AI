@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,18 +10,23 @@ import { Field, OptionGrid } from '@/components/ui/field';
 import { Select } from '@/components/ui/select';
 import { Segmented } from '@/components/ui/controls';
 import { Eyebrow, FieldLabel, Mono, Txt, TxtMed, TxtSemi } from '@/components/ui/text';
-import { C } from '@/theme/tokens';
+import { api } from '@/api';
+import { COUNTRY_OPTIONS, currencyForCountryLabel, toWireProfile } from '@/api/profile-mapping';
 import { companyNameFromEmail } from '@/domain/email';
 import { ltvCacRatio } from '@/domain/scoring';
 import { COST_TRENDS, FOUNDER_STAGES, ONBOARDING_SECTORS, type RevModel } from '@/domain/types';
 import { FOUNDER_HOME, route } from '@/lib/routes';
+import { putToSignedUrl } from '@/lib/upload';
 import { isStepValid, useFounder, type Step } from '@/store/founder';
 import { useSession } from '@/store/session';
+import { useThemeColors } from '@/theme/use-theme-colors';
 
 const MAX_DECK_BYTES = 25 * 1024 * 1024;
 
 export default function Onboarding() {
   const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
+  const [exiting, setExiting] = useState(false);
 
   const profile = useFounder((s) => s.profile);
   const step = useFounder((s) => s.step);
@@ -34,7 +39,9 @@ export default function Onboarding() {
   const failUpload = useFounder((s) => s.failUpload);
 
   const loaded = useFounder((s) => s.loaded);
+  const saving = useFounder((s) => s.saving);
   const load = useFounder((s) => s.load);
+  const save = useFounder((s) => s.save);
 
   const email = useSession((s) => s.session?.email ?? '');
 
@@ -61,24 +68,64 @@ export default function Onboarding() {
   const valid = isStepValid(profile, step);
   const showError = touched && !valid;
 
-  function next() {
+  /** Flush pending edits before leaving a step or the screen. */
+  async function flushSave() {
+    try {
+      await save();
+    } catch {
+      // Autosave will retry on the next edit. Do not trap the founder here.
+    }
+  }
+
+  async function next() {
     if (!valid) {
       markTouched();
       return;
     }
-    if (step < 5) setStep((step + 1) as Step);
+    await flushSave();
+    if (step < 5) {
+      setStep((step + 1) as Step);
+      return;
+    }
+    // Warn before the audit when answers have nowhere to go on the server.
+    if (pendingUnmapped.length && !unmappedAck) {
+      setUnmappedAck(true);
+      return;
+    }
     // `replace`, not `push`: once the assessment is submitted the form must
-    // not still be sitting underneath it. Going back into a half-edited copy
-    // of answers that have already been sent is how someone ends up
-    // resubmitting a different profile than the one they were scored on.
-    else router.replace(route('/assessment'));
+    // not still be sitting underneath it.
+    router.replace(route('/assessment'));
   }
 
   /** Step 1 backs out to the dashboard, not to sign-in — they are signed up. */
   function back() {
-    if (step > 1) setStep((step - 1) as Step);
-    else router.replace(FOUNDER_HOME);
+    if (step > 1) {
+      void flushSave();
+      setStep((step - 1) as Step);
+      return;
+    }
+    void exit();
   }
+
+  const [uploadingDeck, setUploadingDeck] = useState(false);
+  const [deckUploadError, setDeckUploadError] = useState<string | null>(null);
+  const [unmappedAck, setUnmappedAck] = useState(false);
+  const pendingUnmapped = toWireProfile(profile).unmapped;
+  const currencyHint = currencyForCountryLabel(profile.location);
+
+  async function exit() {
+    setExiting(true);
+    try {
+      await save();
+    } catch {
+      // Still leave — answers stay in memory and resume on next open.
+    } finally {
+      setExiting(false);
+      router.replace(FOUNDER_HOME);
+    }
+  }
+
+  const exitLabel = exiting || saving ? 'Saving…' : 'Exit';
 
   async function pickDeck() {
     const result = await DocumentPicker.getDocumentAsync({
@@ -97,7 +144,27 @@ export default function Onboarding() {
       failUpload();
       return;
     }
-    uploadDeck(file.name);
+    setUploadingDeck(true);
+    setDeckUploadError(null);
+    try {
+      // Profile must exist before a document can be attached to it.
+      await save();
+      const contentType = file.mimeType || 'application/pdf';
+      const ticket = await api.beginDocumentUpload({
+        kind: 'deck',
+        filename: file.name,
+        contentType,
+      });
+      const blob = await (await fetch(file.uri)).blob();
+      await putToSignedUrl(ticket.uploadUrl, blob, contentType, ticket.maxBytes);
+      await api.completeDocumentUpload(ticket.documentId);
+      uploadDeck(file.name);
+    } catch (e) {
+      failUpload();
+      setDeckUploadError(e instanceof Error ? e.message : 'Upload failed.');
+    } finally {
+      setUploadingDeck(false);
+    }
   }
 
   return (
@@ -116,8 +183,13 @@ export default function Onboarding() {
           <Mono className="text-[11px] text-ink-muted" style={{ letterSpacing: 0.6 }}>
             STEP {step} OF 5
           </Mono>
-          <Pressable accessibilityRole="button" onPress={() => router.replace(FOUNDER_HOME)} hitSlop={10}>
-            <Txt className="text-[12px] text-ink-dim">Save &amp; exit</Txt>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Exit onboarding"
+            onPress={() => void exit()}
+            disabled={exiting}
+            hitSlop={10}>
+            <Txt className="text-[12px] text-ink-dim">{exitLabel}</Txt>
           </Pressable>
         </View>
         <View className="mt-[10px] flex-row gap-1">
@@ -125,7 +197,7 @@ export default function Onboarding() {
             <View
               key={i}
               className="h-[3px] flex-1 rounded-[3px]"
-              style={{ backgroundColor: step >= i ? C.ink : '#242424' }}
+              style={{ backgroundColor: step >= i ? colors.ink : colors.lineStrong }}
             />
           ))}
         </View>
@@ -145,7 +217,7 @@ export default function Onboarding() {
                 Tell us who you are
               </TxtSemi>
               <Txt className="mb-[22px] text-[13px] text-ink-dim" style={{ lineHeight: 20 }}>
-                Four fields. Roughly 30 seconds.
+                Company basics. Roughly a minute.
               </Txt>
               <View className="gap-4">
                 <Field
@@ -161,11 +233,17 @@ export default function Onboarding() {
                   options={ONBOARDING_SECTORS}
                   onChange={(v) => setField('sector', v)}
                 />
-                <Field
-                  label="Headquarters"
-                  placeholder="Lagos, Nigeria"
+                <Select
+                  label="Country"
+                  placeholder="Select a country…"
                   value={profile.location}
-                  onChangeText={(v) => setField('location', v)}
+                  options={COUNTRY_OPTIONS}
+                  onChange={(v) => setField('location', v)}
+                  hint={
+                    currencyHint
+                      ? `Money figures will be stored in ${currencyHint}.`
+                      : 'Pick the country you operate in — this sets your currency for the audit.'
+                  }
                 />
                 <Field
                   label="Founding year"
@@ -568,7 +646,9 @@ export default function Onboarding() {
                         </Txt>
                         <Txt className="text-[11px] text-ink-faint">uploaded</Txt>
                       </View>
-                      <View className="h-[18px] w-[18px] items-center justify-center rounded-full" style={{ backgroundColor: C.grn }}>
+                      <View
+                        className="h-[18px] w-[18px] items-center justify-center rounded-full"
+                        style={{ backgroundColor: colors.grn }}>
                         <Txt className="text-[11px] text-ground">✓</Txt>
                       </View>
                     </View>
@@ -576,20 +656,24 @@ export default function Onboarding() {
                     <Pressable
                       accessibilityRole="button"
                       onPress={pickDeck}
+                      disabled={uploadingDeck}
                       className="w-full items-center gap-[6px] rounded-[11px] bg-surface-1 px-4 py-[26px]"
-                      style={{ borderWidth: 1.5, borderStyle: 'dashed', borderColor: C.lineDash }}>
+                      style={{ borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.lineDash }}>
                       <Txt className="text-[19px] text-ink">↑</Txt>
-                      <TxtMed className="text-[13.5px] text-ink">Drop a file or browse</TxtMed>
+                      <TxtMed className="text-[13.5px] text-ink">
+                        {uploadingDeck ? 'Uploading…' : 'Drop a file or browse'}
+                      </TxtMed>
                       <Txt className="text-[11px] text-ink-faint">PDF, PPTX or XLSX · up to 25 MB</Txt>
                     </Pressable>
                   )}
 
-                  {deckError ? (
+                  {deckError || deckUploadError ? (
                     <View
                       className="rounded-[9px] px-[13px] py-[11px]"
                       style={{ borderWidth: 1, borderColor: '#4a1d1d', backgroundColor: 'rgba(255,77,79,0.07)' }}>
                       <Txt className="text-[12px]" style={{ color: '#ff8a8c', lineHeight: 18 }}>
-                        File exceeds 25 MB. Compress the deck or link a Drive URL instead.
+                        {deckUploadError ??
+                          'File exceeds 25 MB. Compress the deck or link a Drive URL instead.'}
                       </Txt>
                     </View>
                   ) : null}
@@ -607,12 +691,30 @@ export default function Onboarding() {
               </Txt>
             </View>
           ) : null}
+
+          {step === 5 && unmappedAck && pendingUnmapped.length ? (
+            <View
+              className="mt-[18px] rounded-[9px] px-[13px] py-[11px]"
+              style={{ borderWidth: 1, borderColor: '#3d2f14', backgroundColor: 'rgba(245,166,35,0.08)' }}>
+              <Mono className="text-[9px]" style={{ letterSpacing: 1.2, color: colors.amb }}>
+                NOT SAVED YET
+              </Mono>
+              <Txt className="mt-[7px] text-[12px] text-ink-muted" style={{ lineHeight: 18 }}>
+                These answers have no field on the server and will not be audited:{' '}
+                {pendingUnmapped.map((u) => u.field).join(', ')}. Tap again to run the assessment anyway.
+              </Txt>
+            </View>
+          ) : null}
         </Animated.View>
       </ScrollView>
 
       {/* footer */}
       <View className="border-t border-line-soft bg-ground px-5 pt-[14px]" style={{ paddingBottom: insets.bottom + 16 }}>
-        <Button label={step === 5 ? 'Run AI assessment' : 'Continue'} height={50} onPress={next} />
+        <Button
+          label={step === 5 ? 'Run AI assessment' : 'Continue'}
+          height={50}
+          onPress={() => void next()}
+        />
       </View>
     </KeyboardAvoidingView>
   );
@@ -620,10 +722,11 @@ export default function Onboarding() {
 
 /** Live LTV:CAC readout — turns green once the ratio clears 3:1. */
 function RatioRow() {
+  const colors = useThemeColors();
   const profile = useFounder((s) => s.profile);
   const ratio = ltvCacRatio(profile);
   const label = ratio > 0 ? `${ratio.toFixed(1)} : 1` : '—';
-  const color = ratio >= 3 ? C.grn : ratio > 0 ? C.amb : C.inkFaint;
+  const color = ratio >= 3 ? colors.grn : ratio > 0 ? colors.amb : colors.inkFaint;
 
   return (
     <View className="flex-row items-center justify-between rounded-[9px] border border-line bg-surface-1 px-[14px] py-[13px]">

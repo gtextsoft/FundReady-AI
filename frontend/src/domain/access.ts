@@ -3,17 +3,15 @@ import type { FounderAccount, InvestorAccount } from './types';
 /**
  * Who may do what, and why not.
  *
- * Two independent gates sit in front of the founder product:
+ * Founder gates (aligned with what the server actually enforces today):
  *
- *   payment      — every founder gets 14 days of full access from signup.
- *                  When the window closes, a one-off unlock payment is
- *                  required and everything gated goes dark.
- *   verification — the company must be shown to be registered in its own
- *                  country before it can be surfaced to investors or use the
- *                  AI mentor. This gate applies during the trial too.
+ *   email     — confirm address before discovery / mentor / investor flows
+ *   payment   — trial or paid subscription
  *
- * Screens never re-derive these rules; they call `gate()` and render the
- * reason they get back.
+ * Company-registration verification used to gate mentor and visibility, but
+ * there is no server status field for it yet — hardcoding `unverified` locked
+ * the product forever. Visibility is now controlled by publish + readiness
+ * gate on the server. Investor KYC still uses real `kyc_status`.
  */
 
 export const TRIAL_DAYS = 14;
@@ -27,7 +25,7 @@ export type FounderCapability =
   | 'programmes'
   | 'reassess';
 
-export type InvestorCapability = 'requestIntroduction' | 'scheduleCall';
+export type InvestorCapability = 'requestIntroduction' | 'scheduleCall' | 'expressInterest';
 
 export type GateReason = 'email' | 'payment' | 'verification';
 
@@ -55,18 +53,9 @@ export function hasAccess(account: FounderAccount, now: number = Date.now()): bo
   return isPaid(account) || trialActive(account, now);
 }
 
-/** Capabilities that verification gates, regardless of payment state. */
-const NEEDS_VERIFICATION: ReadonlySet<FounderCapability> = new Set<FounderCapability>([
-  'aiMentor',
-  'investorVisibility',
-  'investorRequests',
-]);
-
 /**
- * Capabilities that a confirmed email address gates (AUTH.md): buying,
- * uploading, being discovered, and dealing with investors. Browsing your own
- * empty account is deliberately allowed while unverified, so `reassess` and
- * `programmes` stay open.
+ * Capabilities that a confirmed email address gates (AUTH.md).
+ * Browsing your own empty account stays open while unverified.
  */
 const NEEDS_EMAIL: ReadonlySet<FounderCapability> = new Set<FounderCapability>([
   'aiMentor',
@@ -79,20 +68,20 @@ export function gate(
   capability: FounderCapability,
   now: number = Date.now(),
 ): Gate {
-  // Email comes first. It is the cheapest thing to fix and it gates the same
-  // actions company verification does, so telling someone to send us their
-  // certificate while their address is unconfirmed is the wrong instruction.
   if (NEEDS_EMAIL.has(capability) && !account.emailVerified) return deny('email');
-  // Then payment: an expired trial locks the whole product, so "verify your
-  // company" would also be the wrong thing to say.
   if (!hasAccess(account, now)) return deny('payment');
-  if (NEEDS_VERIFICATION.has(capability) && account.verification !== 'verified') return deny('verification');
   return ALLOW;
 }
 
-/** Investors confirm their address, then their credentials, before reaching a founder. */
-export function investorGate(account: InvestorAccount, _capability: InvestorCapability): Gate {
+/**
+ * Investors confirm email before brokerage actions.
+ *
+ * KYC (`verification`) is shown on profile but does not hard-block express
+ * interest until Stripe Identity (T4.1) is live — otherwise the tab is a dead end.
+ */
+export function investorGate(account: InvestorAccount, capability: InvestorCapability): Gate {
   if (!account.emailVerified) return deny('email');
+  if (capability === 'expressInterest') return ALLOW;
   return account.verification === 'verified' ? ALLOW : deny('verification');
 }
 
@@ -103,7 +92,7 @@ export function lockLabel(reason: GateReason): string {
 }
 
 export function lockExplanation(reason: GateReason): string {
-  if (reason === 'payment') return 'Your free trial has ended. Unlock SACI FundMe to continue.';
+  if (reason === 'payment') return 'Your free trial has ended. Unlock FundReady AI to continue.';
   if (reason === 'email') return 'Confirm your email address to unlock this.';
-  return 'Verify that your company is registered in your country to unlock this.';
+  return 'Complete investor verification when it becomes available.';
 }

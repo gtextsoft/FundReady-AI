@@ -1,6 +1,6 @@
 import { Pressable, View } from 'react-native';
 import { Mono, Txt, TxtMed } from './text';
-import { C } from '@/theme/tokens';
+import { useThemeColors } from '@/theme/use-theme-colors';
 
 /**
  * Segmented control — MRR/ARR, All/VC/PE, Metrics/AI memo. `grow` makes the
@@ -19,6 +19,7 @@ export function Segmented<T extends string>({
   grow?: boolean;
   size?: 'sm' | 'md';
 }) {
+  const colors = useThemeColors();
   return (
     <View className="flex-row gap-[2px] rounded-[9px] border border-line bg-surface-1 p-[3px]">
       {options.map((opt) => {
@@ -32,7 +33,7 @@ export function Segmented<T extends string>({
             className={`items-center justify-center rounded-[5px] ${grow ? 'flex-1' : ''} ${
               size === 'md' ? 'px-[11px] py-2' : 'px-[11px] py-[5px]'
             }`}
-            style={{ backgroundColor: on ? C.ink : 'transparent' }}>
+            style={{ backgroundColor: on ? colors.ink : 'transparent' }}>
             <TxtMed className={`${size === 'md' ? 'text-[12.5px]' : 'text-[11.5px]'} ${on ? 'text-ground' : 'text-ink-muted'}`}>
               {opt.label}
             </TxtMed>
@@ -58,6 +59,7 @@ export function Chip({
   badge?: number;
   leading?: string;
 }) {
+  const colors = useThemeColors();
   return (
     <Pressable
       accessibilityRole="button"
@@ -67,7 +69,7 @@ export function Chip({
       {selected ? (
         <View
           className="absolute inset-0 rounded-[8px]"
-          style={{ borderWidth: 1.5, borderColor: C.ink, backgroundColor: 'rgba(237,237,237,0.10)' }}
+          style={{ borderWidth: 1.5, borderColor: colors.ink, backgroundColor: 'rgba(128,128,128,0.12)' }}
         />
       ) : null}
       {leading ? <Txt className="text-[12px] text-ink">{leading}</Txt> : null}
@@ -83,6 +85,7 @@ export function Chip({
 
 /** Larger chip used inside the filter sheet for sectors and stages. */
 export function FilterChip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+  const colors = useThemeColors();
   return (
     <Pressable
       accessibilityRole="button"
@@ -92,7 +95,7 @@ export function FilterChip({ label, selected, onPress }: { label: string; select
       {selected ? (
         <View
           className="absolute inset-0 rounded-[8px]"
-          style={{ borderWidth: 1.5, borderColor: C.ink, backgroundColor: 'rgba(237,237,237,0.10)' }}
+          style={{ borderWidth: 1.5, borderColor: colors.ink, backgroundColor: 'rgba(128,128,128,0.12)' }}
         />
       ) : null}
       <Txt className="text-[12.5px] text-ink">{label}</Txt>

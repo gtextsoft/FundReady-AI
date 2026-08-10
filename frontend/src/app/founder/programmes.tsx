@@ -126,7 +126,11 @@ export default function Programmes() {
                 </View>
 
                 <Button
-                  label={done ? 'Enrolled ✓' : `Enrol in ${p.key === 'readiness' ? 'Funding Readiness' : 'Wealth Creation'}`}
+                  label={
+                    done
+                      ? 'Enrolled ✓'
+                      : `Enrol in ${p.key === 'readiness' ? 'Funding Readiness' : 'Wealth Creation'} (coming soon)`
+                  }
                   variant={p.variant}
                   loading={busy === p.key}
                   disabled={done}

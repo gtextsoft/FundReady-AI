@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { Tabs } from 'expo-router';
 
 import { TabBar } from '@/components/ui/tab-bar';
-import { C } from '@/theme/tokens';
+import { useThemeColors } from '@/theme/use-theme-colors';
 import { useNotifications } from '@/store/notifications';
 
 const GLYPHS = {
@@ -13,8 +13,8 @@ const GLYPHS = {
 };
 
 export default function FounderTabs() {
+  const colors = useThemeColors();
   const load = useNotifications((s) => s.load);
-  const unread = useNotifications((s) => s.unreadCount());
   const pending = useNotifications((s) => s.pendingCalls().length);
 
   useEffect(() => {
@@ -23,10 +23,17 @@ export default function FounderTabs() {
 
   return (
     <Tabs
-      tabBar={(props) => <TabBar {...props} glyphs={GLYPHS} badges={{ alerts: unread, investors: pending }} />}
-      screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: C.ground } }}>
+      tabBar={(props) => (
+        <TabBar
+          {...props}
+          glyphs={GLYPHS}
+          // Alerts/calls are not live yet — hide badge counts that imply inbox activity.
+          badges={{ alerts: 0, investors: pending }}
+        />
+      )}
+      screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: colors.ground } }}>
       <Tabs.Screen name="index" options={{ title: 'Home' }} />
-      <Tabs.Screen name="investors" options={{ title: 'Investors' }} />
+      <Tabs.Screen name="investors" options={{ title: 'Requests' }} />
       <Tabs.Screen name="alerts" options={{ title: 'Alerts' }} />
       <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
     </Tabs>

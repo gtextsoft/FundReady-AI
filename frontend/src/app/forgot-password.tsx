@@ -7,26 +7,32 @@ import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { Mark } from '@/components/ui/mark';
 import { Txt, TxtMed, TxtSemi } from '@/components/ui/text';
-import { C } from '@/theme/tokens';
 import { Unavailable } from '@/components/unavailable';
 import { api } from '@/api';
-import { SIGN_IN } from '@/lib/routes';
+import { RESET_PASSWORD, SIGN_IN, route } from '@/lib/routes';
 
+/**
+ * Start a password reset by emailing a six-digit code.
+ *
+ * Always shows the same success copy whether or not the address has an
+ * account — confirming registration would be an enumeration leak. After a
+ * successful send the user continues to the code + new-password screen.
+ */
 export default function ForgotPassword() {
   const insets = useSafeAreaInsets();
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
-  const [sent, setSent] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
   async function submit() {
+    const trimmed = email.trim();
     setBusy(true);
     setError(null);
     try {
-      await api.requestPasswordReset(email.trim());
-      setSent(true);
+      await api.requestPasswordReset(trimmed);
+      router.replace(route(`${RESET_PASSWORD}?email=${encodeURIComponent(trimmed)}`));
     } catch (e) {
-      // Never claim a link was sent when nothing was sent.
+      // Never claim a code was sent when nothing was sent.
       setError(e);
     } finally {
       setBusy(false);
@@ -47,41 +53,27 @@ export default function ForgotPassword() {
         <View className="flex-1 justify-center py-7">
           <Mark size={38} />
 
-          <TxtSemi className="mb-7 mt-7 text-[30px]" style={{ letterSpacing: -1.1, lineHeight: 33 }}>
+          <TxtSemi className="mb-3 mt-7 text-[30px]" style={{ letterSpacing: -1.1, lineHeight: 33 }}>
             Reset your password.
           </TxtSemi>
+          <Txt className="mb-7 text-[13px] text-ink-muted" style={{ lineHeight: 20 }}>
+            We will email a six-digit code. Enter it on the next screen with your new password.
+          </Txt>
 
-          {sent ? (
-            <View className="rounded-[11px] border border-line bg-surface-1 p-4">
-              <View className="mb-2 flex-row items-center gap-2">
-                <View className="h-[6px] w-[6px] rounded-full" style={{ backgroundColor: C.grn }} />
-                <TxtSemi className="text-[13.5px]">Check your inbox</TxtSemi>
-              </View>
-              {/* Deliberately does not confirm whether the address has an
-                  account — that would leak which emails are registered. */}
-              <Txt className="text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
-                If {email.trim() || 'that address'} has an account, a reset link is on its way. The
-                link can be used once and expires in an hour.
-              </Txt>
-            </View>
-          ) : (
-            <>
-              <Field
-                label="Work email"
-                placeholder="you@company.com"
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                autoComplete="email"
-                keyboardType="email-address"
-                onSubmitEditing={submit}
-              />
-              <View className="mt-[18px]">
-                <Button label="Send reset link" onPress={submit} loading={busy} />
-              </View>
-              {error ? <Unavailable title="Password reset is not live" error={error} className="mt-4" /> : null}
-            </>
-          )}
+          <Field
+            label="Work email"
+            placeholder="you@company.com"
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            autoComplete="email"
+            keyboardType="email-address"
+            onSubmitEditing={submit}
+          />
+          <View className="mt-[18px]">
+            <Button label="Send reset code" onPress={submit} loading={busy} />
+          </View>
+          {error ? <Unavailable title="Password reset is not live" error={error} className="mt-4" /> : null}
 
           <Pressable accessibilityRole="link" className="mt-6 items-center" onPress={() => router.replace(SIGN_IN)}>
             <TxtMed className="text-[12.5px] text-ink-muted">Back to sign in</TxtMed>
