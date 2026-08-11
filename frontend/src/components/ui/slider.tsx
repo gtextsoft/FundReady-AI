@@ -77,13 +77,13 @@ export function Slider({
         });
       }}
       {...responder.panHandlers}>
-      <View className="h-[3px] w-full rounded-[3px]" style={{ backgroundColor: C.lineStrong }}>
-        <View className="h-full rounded-[3px]" style={{ width: `${pct * 100}%`, backgroundColor: C.ink }} />
+      <View className="h-[3px] w-full rounded-[3px]" style={{ backgroundColor: C.graphiteStrong }}>
+        <View className="h-full rounded-[3px]" style={{ width: `${pct * 100}%`, backgroundColor: C.bone }} />
       </View>
       <View
         pointerEvents="none"
         className="absolute h-[22px] w-[22px] rounded-full"
-        style={{ left: thumbX, backgroundColor: C.ink, borderWidth: 3, borderColor: C.ground }}
+        style={{ left: thumbX, backgroundColor: C.bone, borderWidth: 3, borderColor: C.obsidian }}
       />
     </View>
   );

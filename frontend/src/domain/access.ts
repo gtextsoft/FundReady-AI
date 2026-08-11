@@ -103,7 +103,7 @@ export function lockLabel(reason: GateReason): string {
 }
 
 export function lockExplanation(reason: GateReason): string {
-  if (reason === 'payment') return 'Your free trial has ended. Unlock SACI FundMe to continue.';
+  if (reason === 'payment') return 'Your free trial has ended. Unlock FundReady to continue.';
   if (reason === 'email') return 'Confirm your email address to unlock this.';
   return 'Verify that your company is registered in your country to unlock this.';
 }

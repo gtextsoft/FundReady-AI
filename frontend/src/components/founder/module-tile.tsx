@@ -34,32 +34,32 @@ export function ModuleTile({
       accessibilityLabel={locked ? `${title}, locked` : title}
       accessibilityState={{ disabled: false }}
       onPress={onPress}
-      className="flex-1 rounded-[12px] border border-line bg-surface-1 p-[14px]"
+      className="flex-1 rounded-[12px] border border-graphite bg-carbon-low p-[14px]"
       style={{ minWidth: 150 }}>
       <View className="mb-[10px] flex-row items-start justify-between">
-        <Txt className="text-[17px]" style={{ color: locked ? C.inkFaint : C.ink }}>
+        <Txt className="text-[17px]" style={{ color: locked ? C.boneFaint : C.bone }}>
           {glyph}
         </Txt>
 
         {locked ? (
-          <View className="rounded-[4px] border border-line-strong px-[6px] py-[2px]">
-            <Mono className="text-[8.5px]" style={{ letterSpacing: 0.6, color: C.inkFaint }}>
+          <View className="rounded-[4px] border border-graphite-strong px-[6px] py-[2px]">
+            <Mono className="text-[8.5px]" style={{ letterSpacing: 0.6, color: C.boneFaint }}>
               {gate.reason === 'payment' ? 'LOCKED' : 'VERIFY'}
             </Mono>
           </View>
         ) : badge ? (
           <View
             className="h-[18px] min-w-[18px] items-center justify-center rounded-full px-[5px]"
-            style={{ backgroundColor: C.blue }}>
-            <Mono className="text-[9px] text-white">{badge}</Mono>
+            style={{ backgroundColor: C.flag }}>
+            <Mono className="text-[9px] text-obsidian">{badge}</Mono>
           </View>
         ) : null}
       </View>
 
-      <TxtSemi className="text-[13.5px]" style={{ color: locked ? C.inkMuted : C.ink }}>
+      <TxtSemi className="text-[13.5px]" style={{ color: locked ? C.boneSecondary : C.bone }}>
         {title}
       </TxtSemi>
-      <Txt className="mt-[3px] text-[11.5px] text-ink-dim" style={{ lineHeight: 17 }}>
+      <Txt className="mt-[3px] text-[11.5px] text-bone-muted" style={{ lineHeight: 17 }}>
         {locked ? lockLabel(gate.reason) : subtitle}
       </Txt>
     </Pressable>

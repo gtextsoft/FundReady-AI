@@ -54,21 +54,21 @@ export type CallRequest = {
 };
 
 const DOT: Record<NotificationKind, string> = {
-  call_requested: C.blue,
-  call_accepted: C.grn,
-  call_declined: C.red,
-  intro_requested: C.blue,
-  intro_accepted: C.grn,
-  verification_approved: C.grn,
-  verification_rejected: C.red,
-  payment_receipt: C.grn,
-  trial_ending: C.amb,
-  score_changed: C.grn,
-  new_matches: C.amb,
+  call_requested: C.info,
+  call_accepted: C.signal,
+  call_declined: C.alert,
+  intro_requested: C.info,
+  intro_accepted: C.signal,
+  verification_approved: C.signal,
+  verification_rejected: C.alert,
+  payment_receipt: C.signal,
+  trial_ending: C.flag,
+  score_changed: C.signal,
+  new_matches: C.flag,
 };
 
 export function notificationColor(kind: NotificationKind): string {
-  return DOT[kind] ?? C.blue;
+  return DOT[kind] ?? C.info;
 }
 
 /** "2h ago", "Yesterday", "12 Jul" — relative until it stops being useful. */

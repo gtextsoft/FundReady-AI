@@ -13,7 +13,7 @@ export default function OnboardingLayout() {
   const status = useSession((s) => s.status);
   const role = useSession((s) => s.role);
 
-  if (status === 'loading') return <View className="flex-1 bg-ground" />;
+  if (status === 'loading') return <View className="flex-1 bg-obsidian" />;
   if (status === 'signedOut') return <Redirect href={SIGN_IN} />;
   if (role !== 'founder') return <Redirect href={INVESTOR_HOME} />;
 
@@ -21,7 +21,7 @@ export default function OnboardingLayout() {
     <Stack
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: C.ground },
+        contentStyle: { backgroundColor: C.obsidian },
         animation: 'fade',
       }}
     />

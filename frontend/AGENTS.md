@@ -1,4 +1,4 @@
-# SACI FundMe — mobile frontend
+# FundReady — mobile frontend
 
 Expo SDK 57 / React Native 0.86 / expo-router / NativeWind 4. Two sides of one
 marketplace, kept strictly apart: **founder** (dashboard, assessment, company
@@ -42,6 +42,38 @@ https://docs.expo.dev/versions/v57.0.0/ before writing new integration code.
 - `src/components/ui/` — primitives. `src/theme/tokens.ts` mirrors
   `tailwind.config.js` for the values Tailwind cannot reach (SVG strokes,
   gradients, data-driven colours).
+
+## Brand
+
+FundReady brand v1.0 — obsidian base, one rationed accent. `tailwind.config.js`
+and `src/theme/tokens.ts` are the two copies of the palette and must agree.
+
+| Token | Hex | Use |
+|---|---|---|
+| `obsidian` | `#0C0F0E` | Base surface. The default state of every screen. |
+| `carbon` (+`-low`/`-high`/`-top`) | `#14181A` | Cards, sheets, raised surfaces. |
+| `signal` | `#C6F24E` | AI output and primary action. Nothing else. |
+| `flag` | `#FF7A3D` | A specific, fixable gap. Never decorative. |
+| `graphite` (+`-soft`/`-strong`/`-bright`) | `#23292A` | Borders, dividers, inactive. |
+| `bone` (+`-secondary`/`-muted`/`-faint`/`-ghost`) | `#EDF0EA` | Text on dark. |
+
+- **Signal is rationed.** If a user can't press it and the AI didn't produce it,
+  it isn't green — and never fill an area larger than a button with it. That is
+  why `Button` has exactly three variants (`primary` = signal, `secondary`,
+  `flag`) and why unread badges are flag, not signal.
+- **Both accents are light.** Bone-on-signal and bone-on-flag both fall under
+  4.5:1; label them `text-obsidian`.
+- **`info` and `alert` are not brand tokens.** The score bands need four
+  separable hues and the brand sheet defines two. Use them for score bands and
+  status only, never for chrome.
+- **The mark is two objects** — the F (bone) and the signal (green). Never
+  recolour the F green, rotate it, or add a gradient. `Mark` drops the node and
+  thickens its strokes at or below 24px, which is the brand's small variant;
+  two call sites render it at 16px, below the brand's 24px minimum.
+- Type is Archivo (interface) and JetBrains Mono (anything read as data —
+  numbers, scores, labels, timestamps). The brand scale is available as
+  `text-display` / `text-title` / `text-heading` / `text-body` / `text-data` /
+  `text-label`. Never set Archivo below 11px.
 
 ## Sign-up identity rules
 
@@ -102,12 +134,12 @@ Check rendered output in a browser, not just a green build.
    vanish (a `flex-row` will lay out as a column).
 3. **Never put two colour utilities on one element.** Tailwind resolves
    conflicts by stylesheet order, not class-string order, so a baked-in
-   `text-ink` beats a caller's `text-ground` and paints white-on-white. The
+   `text-bone` beats a caller's `text-obsidian` and paints bone-on-bone. The
    `Txt*` components in `components/ui/text.tsx` drop their default when the
    caller supplies a colour — keep that behaviour.
-4. **Weight comes from the font family, not `fontWeight`.** Geist ships one file
-   per weight. `font-semibold` does nothing; use `font-sans` / `font-med` /
-   `font-semi` / `font-mono*` (see `tailwind.config.js`).
+4. **Weight comes from the font family, not `fontWeight`.** Archivo ships one
+   file per weight. `font-semibold` does nothing; use `font-sans` / `font-med` /
+   `font-semi` / `font-bold` / `font-mono*` (see `tailwind.config.js`).
 5. **No nested `Pressable`.** Both render as `<button>` on web; a nested button
    is invalid HTML that React refuses to hydrate. See `company-card.tsx` for the
    sibling-with-absolute-position pattern.
@@ -132,6 +164,11 @@ recipient clicked.
 
 - **Those two path segments are a contract with the server.** Renaming either
   route breaks every link already sitting in an inbox.
+- **The scheme is still `sacifundme://`, deliberately.** It survived the
+  FundReady rebrand because it is the other half of that same contract: the
+  backend builds `APP_LINK_BASE_URL` from it, so the app and the server have to
+  change together or every verification and reset link in flight stops opening
+  the app. Renaming it is a two-repo change — see `TASKS.md`.
 - expo-router's own linking resolves the custom scheme, the Expo Go
   `exp://…/--/…` form and the plain web URL onto the same route with the same
   search params. There is no URL parser in this repo and there should not be —

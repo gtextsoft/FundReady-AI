@@ -31,22 +31,22 @@ export function Sheet({
             accessibilityLabel="Close"
             onPress={onClose}
             className="flex-1"
-            style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+            style={{ backgroundColor: 'rgba(12,15,14,0.6)' }}
           />
         </Animated.View>
 
         <Animated.View
           entering={SlideInDown.duration(240)}
-          className="max-h-[82%] rounded-t-[18px] border-t border-line-strong bg-surface-1 px-5 pt-3"
+          className="max-h-[82%] rounded-t-[18px] border-t border-graphite-strong bg-carbon-low px-5 pt-3"
           style={{ paddingBottom: insets.bottom + 30 }}>
-          <View className="mx-auto mb-4 h-1 w-9 rounded-[4px] bg-line-dash" />
+          <View className="mx-auto mb-4 h-1 w-9 rounded-[4px] bg-graphite-bright" />
           <View className="mb-5 flex-row items-center justify-between">
             <TxtSemi className="text-[16px]" style={{ letterSpacing: -0.3 }}>
               {title}
             </TxtSemi>
             {action ? (
               <Pressable accessibilityRole="button" onPress={action.onPress} hitSlop={8}>
-                <Txt className="text-[12px] text-ink-dim">{action.label}</Txt>
+                <Txt className="text-[12px] text-bone-muted">{action.label}</Txt>
               </Pressable>
             ) : null}
           </View>

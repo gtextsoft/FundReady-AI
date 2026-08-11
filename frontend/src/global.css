@@ -8,9 +8,10 @@
 
 /* Web only: Expo paints the document root #f2f2f2 by default, which shows
    through as a light flash during navigation and on overscroll. The app is
-   dark on every surface, so ground it here too. */
+   dark on every surface, so ground it here too. Obsidian, matching
+   `obsidian` in tailwind.config.js. */
 html,
 body,
 #root {
-  background-color: #000000;
+  background-color: #0c0f0e;
 }

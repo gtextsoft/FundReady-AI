@@ -143,7 +143,7 @@ export type PaymentReceipt = {
   paidAt: string;
 };
 
-export interface FundMeApi {
+export interface FundReadyApi {
   // ── auth ────────────────────────────────────────────────
   /** Sign in to an existing account. The role comes from the account. */
   signIn(creds: Credentials): Promise<Session>;

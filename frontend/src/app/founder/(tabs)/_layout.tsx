@@ -24,7 +24,7 @@ export default function FounderTabs() {
   return (
     <Tabs
       tabBar={(props) => <TabBar {...props} glyphs={GLYPHS} badges={{ alerts: unread, investors: pending }} />}
-      screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: C.ground } }}>
+      screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: C.obsidian } }}>
       <Tabs.Screen name="index" options={{ title: 'Home' }} />
       <Tabs.Screen name="investors" options={{ title: 'Investors' }} />
       <Tabs.Screen name="alerts" options={{ title: 'Alerts' }} />

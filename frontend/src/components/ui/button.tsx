@@ -2,7 +2,13 @@ import { ActivityIndicator, Pressable, type PressableProps } from 'react-native'
 import { TxtSemi, TxtMed } from './text';
 import { C } from '@/theme/tokens';
 
-type Variant = 'primary' | 'secondary' | 'amber' | 'green';
+/**
+ * `primary` is signal green, because the brand reserves signal for AI output
+ * and the primary action and nothing else. `flag` is for an action that closes
+ * a specific gap. There is no third accent — a button that is neither of those
+ * is `secondary`.
+ */
+type Variant = 'primary' | 'secondary' | 'flag';
 
 type Props = Omit<PressableProps, 'children'> & {
   label: string;
@@ -13,24 +19,23 @@ type Props = Omit<PressableProps, 'children'> & {
 };
 
 const SURFACE: Record<Variant, string> = {
-  primary: 'bg-ink border border-ink',
-  secondary: 'bg-transparent border border-line-strong',
-  amber: 'bg-amb border border-amb',
-  green: 'bg-grn border border-grn',
+  primary: 'bg-signal border border-signal',
+  secondary: 'bg-transparent border border-graphite-strong',
+  flag: 'bg-flag border border-flag',
 };
 
+// Both accents are light enough that bone-on-accent falls under 4.5:1;
+// obsidian clears 7:1 on each.
 const LABEL: Record<Variant, string> = {
-  primary: 'text-ground',
-  secondary: 'text-ink',
-  amber: 'text-[#0a0a0a]',
-  green: 'text-[#04150c]',
+  primary: 'text-obsidian',
+  secondary: 'text-bone',
+  flag: 'text-obsidian',
 };
 
 const SPINNER: Record<Variant, string> = {
-  primary: C.ground,
-  secondary: C.ink,
-  amber: '#0a0a0a',
-  green: '#04150c',
+  primary: C.obsidian,
+  secondary: C.bone,
+  flag: C.obsidian,
 };
 
 export function Button({

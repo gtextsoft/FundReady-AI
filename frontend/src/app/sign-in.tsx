@@ -40,7 +40,7 @@ export default function SignIn() {
   }
 
   return (
-    <KeyboardAvoidingView className="flex-1 bg-ground" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView className="flex-1 bg-obsidian" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
         contentContainerStyle={{
           flexGrow: 1,
@@ -83,13 +83,13 @@ export default function SignIn() {
             className="mt-3 self-end"
             hitSlop={8}
             onPress={() => router.push('/forgot-password' as Href)}>
-            <Txt className="text-[12px] text-ink-muted">Forgot password?</Txt>
+            <Txt className="text-[12px] text-bone-secondary">Forgot password?</Txt>
           </Pressable>
 
           {error ? (
             <View
               className="mt-4 rounded-[9px] px-[13px] py-[11px]"
-              style={{ borderWidth: 1, borderColor: '#4a1d1d', backgroundColor: 'rgba(255,77,79,0.07)' }}>
+              style={{ borderWidth: 1, borderColor: '#4A1F1E', backgroundColor: 'rgba(242,85,78,0.07)' }}>
               <Txt className="text-[12px]" style={{ color: '#ff8a8c', lineHeight: 18 }}>
                 {error}
               </Txt>
@@ -104,7 +104,7 @@ export default function SignIn() {
             accessibilityRole="link"
             className="mt-6 items-center"
             onPress={() => router.replace('/sign-up' as Href)}>
-            <TxtMed className="text-[12.5px] text-ink-muted">New to SACI FundMe? Create an account</TxtMed>
+            <TxtMed className="text-[12.5px] text-bone-secondary">New to FundReady? Create an account</TxtMed>
           </Pressable>
         </View>
       </ScrollView>

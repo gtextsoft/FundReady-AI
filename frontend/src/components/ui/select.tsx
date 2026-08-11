@@ -37,13 +37,13 @@ export function Select<T extends string>({
           Keyboard.dismiss();
           setOpen(true);
         }}
-        className="h-[46px] flex-row items-center justify-between rounded-[9px] border border-line-strong bg-surface-1 px-[14px]">
-        <Txt className={`text-[15px] ${value ? 'text-ink' : 'text-ink-faint'}`}>{value || placeholder}</Txt>
-        <Txt className="text-[11px] text-ink-faint">▾</Txt>
+        className="h-[46px] flex-row items-center justify-between rounded-[9px] border border-graphite-strong bg-carbon-low px-[14px]">
+        <Txt className={`text-[15px] ${value ? 'text-bone' : 'text-bone-faint'}`}>{value || placeholder}</Txt>
+        <Txt className="text-[11px] text-bone-faint">▾</Txt>
       </Pressable>
 
       <Sheet visible={open} onClose={() => setOpen(false)} title={label}>
-        <View className="gap-[1px] overflow-hidden rounded-[11px]" style={{ backgroundColor: C.surface4 }}>
+        <View className="gap-[1px] overflow-hidden rounded-[11px]" style={{ backgroundColor: C.carbonTop }}>
           {options.map((opt) => {
             const on = opt === value;
             return (
@@ -55,13 +55,13 @@ export function Select<T extends string>({
                   onChange(opt);
                   setOpen(false);
                 }}
-                className="flex-row items-center justify-between bg-surface-1 px-[14px] py-[14px]">
+                className="flex-row items-center justify-between bg-carbon-low px-[14px] py-[14px]">
                 {on ? (
-                  <TxtMed className="text-[14px] text-ink">{opt}</TxtMed>
+                  <TxtMed className="text-[14px] text-bone">{opt}</TxtMed>
                 ) : (
-                  <Txt className="text-[14px] text-ink-muted">{opt}</Txt>
+                  <Txt className="text-[14px] text-bone-secondary">{opt}</Txt>
                 )}
-                {on ? <Txt className="text-[13px] text-ink">✓</Txt> : null}
+                {on ? <Txt className="text-[13px] text-bone">✓</Txt> : null}
               </Pressable>
             );
           })}

@@ -13,7 +13,7 @@ export default function FounderLayout() {
       <Stack
         screenOptions={{
           headerShown: false,
-          contentStyle: { backgroundColor: C.ground },
+          contentStyle: { backgroundColor: C.obsidian },
           animation: 'slide_from_right',
         }}>
         <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />

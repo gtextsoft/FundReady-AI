@@ -34,7 +34,7 @@ export default function ForgotPassword() {
   }
 
   return (
-    <KeyboardAvoidingView className="flex-1 bg-ground" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView className="flex-1 bg-obsidian" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
         contentContainerStyle={{
           flexGrow: 1,
@@ -52,14 +52,14 @@ export default function ForgotPassword() {
           </TxtSemi>
 
           {sent ? (
-            <View className="rounded-[11px] border border-line bg-surface-1 p-4">
+            <View className="rounded-[11px] border border-graphite bg-carbon-low p-4">
               <View className="mb-2 flex-row items-center gap-2">
-                <View className="h-[6px] w-[6px] rounded-full" style={{ backgroundColor: C.grn }} />
+                <View className="h-[6px] w-[6px] rounded-full" style={{ backgroundColor: C.signal }} />
                 <TxtSemi className="text-[13.5px]">Check your inbox</TxtSemi>
               </View>
               {/* Deliberately does not confirm whether the address has an
                   account — that would leak which emails are registered. */}
-              <Txt className="text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+              <Txt className="text-[12.5px] text-bone-secondary" style={{ lineHeight: 19 }}>
                 If {email.trim() || 'that address'} has an account, a reset link is on its way. The
                 link can be used once and expires in an hour.
               </Txt>
@@ -84,7 +84,7 @@ export default function ForgotPassword() {
           )}
 
           <Pressable accessibilityRole="link" className="mt-6 items-center" onPress={() => router.replace(SIGN_IN)}>
-            <TxtMed className="text-[12.5px] text-ink-muted">Back to sign in</TxtMed>
+            <TxtMed className="text-[12.5px] text-bone-secondary">Back to sign in</TxtMed>
           </Pressable>
         </View>
       </ScrollView>

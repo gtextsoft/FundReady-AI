@@ -10,18 +10,18 @@ import { Text as RNText, type TextProps } from 'react-native';
 
 type Props = TextProps & { className?: string };
 
-/** `text-ink-muted` and `text-ground` are colours; `text-[13px]` is a size. */
+/** `text-bone-secondary` and `text-obsidian` are colours; `text-[13px]` is a size. */
 const HAS_COLOR = /(?:^|\s)text-(?!\[)/;
 
 /**
  * Compose the family class with the default ink colour — but drop the default
  * when the caller supplies its own colour utility. Tailwind resolves competing
  * utilities by their order in the stylesheet, not by their order in the class
- * string, so leaving both in place would let `text-ink` silently beat a
- * caller's `text-ground` and paint white text on a white button.
+ * string, so leaving both in place would let `text-bone` silently beat a
+ * caller's `text-obsidian` and paint white text on a white button.
  */
 const join = (family: string, extra?: string) =>
-  [family, extra && HAS_COLOR.test(extra) ? '' : 'text-ink', extra ?? ''].filter(Boolean).join(' ');
+  [family, extra && HAS_COLOR.test(extra) ? '' : 'text-bone', extra ?? ''].filter(Boolean).join(' ');
 
 export function Txt({ className, ...rest }: Props) {
   return <RNText className={join('font-sans', className)} {...rest} />;
@@ -51,7 +51,7 @@ export function MonoSemi({ className, ...rest }: Props) {
 export function Eyebrow({ className, style, ...rest }: Props) {
   return (
     <RNText
-      className={`font-mono text-[10px] text-ink-faint ${className ?? ''}`}
+      className={`font-mono text-[10px] text-bone-faint ${className ?? ''}`}
       style={[{ letterSpacing: 1.3 }, style]}
       {...rest}
     />
@@ -62,7 +62,7 @@ export function Eyebrow({ className, style, ...rest }: Props) {
 export function FieldLabel({ className, style, ...rest }: Props) {
   return (
     <RNText
-      className={`font-med text-[11px] text-ink-muted uppercase ${className ?? ''}`}
+      className={`font-med text-[11px] text-bone-secondary uppercase ${className ?? ''}`}
       style={[{ letterSpacing: 0.3 }, style]}
       {...rest}
     />

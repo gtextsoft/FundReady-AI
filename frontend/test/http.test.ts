@@ -11,7 +11,7 @@
  * through a reset registry rather than sharing one instance.
  */
 
-import type { FundMeApi } from '@/api/contract';
+import type { FundReadyApi } from '@/api/contract';
 import { EMPTY_PROFILE as EMPTY_FORM } from '@/domain/types';
 
 type Json = Record<string, unknown>;
@@ -47,7 +47,7 @@ const ME = {
 type Call = { url: string; method: string; body: Json | null; auth: string | null };
 
 describe('api/http transport', () => {
-  let httpApi: FundMeApi;
+  let httpApi: FundReadyApi;
   let MfaRequired: typeof import('@/api/http').MfaRequired;
   let ApiFailure: typeof import('@/api/contract').ApiFailure;
   let calls: Call[];
@@ -163,7 +163,7 @@ describe('api/http transport', () => {
         return res(200, { ...ME, role: 'admin' });
       });
 
-      await expect(httpApi.signIn({ email: 'root@saci.com', password: 'pw' })).rejects.toMatchObject({
+      await expect(httpApi.signIn({ email: 'root@fundready.com', password: 'pw' })).rejects.toMatchObject({
         code: 'forbidden',
       });
 

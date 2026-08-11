@@ -29,7 +29,7 @@ export default function Paywall() {
   const [receipt, setReceipt] = useState<PaymentReceipt | null>(null);
   const [error, setError] = useState<unknown>(null);
 
-  if (!account) return <View className="flex-1 bg-ground" />;
+  if (!account) return <View className="flex-1 bg-obsidian" />;
 
   const paid = isPaid(account) || receipt !== null;
   const locked = !hasAccess(account);
@@ -49,12 +49,12 @@ export default function Paywall() {
   }
 
   return (
-    <View className="flex-1 bg-ground">
+    <View className="flex-1 bg-obsidian">
       <View className="flex-row items-center justify-between px-[18px] pb-3" style={{ paddingTop: insets.top + 4 }}>
         <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => router.back()} hitSlop={10}>
-          <Txt className="text-[19px] text-ink">←</Txt>
+          <Txt className="text-[19px] text-bone">←</Txt>
         </Pressable>
-        <Mono className="text-[10px] text-ink-faint" style={{ letterSpacing: 1.2 }}>
+        <Mono className="text-[10px] text-bone-faint" style={{ letterSpacing: 1.2 }}>
           {paid ? 'YOUR PLAN' : 'UNLOCK'}
         </Mono>
         <View className="w-5" />
@@ -64,9 +64,9 @@ export default function Paywall() {
         className="flex-1"
         contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 24 }}
         showsVerticalScrollIndicator={false}>
-        <View className="overflow-hidden rounded-[14px] border border-line">
-          <LinearGradient colors={['#0f0f0f', '#0a0a0a']} className="items-center px-5 py-7">
-            <Mono className="text-[9.5px]" style={{ letterSpacing: 1.2, color: paid ? C.grn : C.amb }}>
+        <View className="overflow-hidden rounded-[14px] border border-graphite">
+          <LinearGradient colors={['#14181A', '#101415']} className="items-center px-5 py-7">
+            <Mono className="text-[9.5px]" style={{ letterSpacing: 1.2, color: paid ? C.signal : C.flag }}>
               {paid ? 'UNLOCKED' : locked ? 'TRIAL ENDED' : `TRIAL · ${days} ${days === 1 ? 'DAY' : 'DAYS'} LEFT`}
             </Mono>
 
@@ -74,9 +74,9 @@ export default function Paywall() {
               <Mono className="text-[42px]" style={{ letterSpacing: -2 }}>
                 {UNLOCK_PRICE.label}
               </Mono>
-              <Txt className="text-[13px] text-ink-faint">once</Txt>
+              <Txt className="text-[13px] text-bone-faint">once</Txt>
             </View>
-            <Txt className="mt-2 text-center text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+            <Txt className="mt-2 text-center text-[12.5px] text-bone-secondary" style={{ lineHeight: 19 }}>
               {paid
                 ? 'Paid. Your access does not expire and there is nothing to renew.'
                 : 'A single payment. No subscription, no renewal, no expiry.'}
@@ -87,7 +87,7 @@ export default function Paywall() {
         <View className="mt-5 gap-[10px]">
           {UNLOCK_BENEFITS.map((b) => (
             <View key={b} className="flex-row gap-[10px]">
-              <Txt className="text-[12.5px]" style={{ color: paid ? C.grn : C.ink }}>
+              <Txt className="text-[12.5px]" style={{ color: paid ? C.signal : C.bone }}>
                 ✓
               </Txt>
               <Txt className="flex-1 text-[13px]" style={{ lineHeight: 20 }}>
@@ -102,25 +102,25 @@ export default function Paywall() {
         {receipt ? (
           <View
             className="mt-6 rounded-[12px] p-[14px]"
-            style={{ borderWidth: 1, borderColor: 'rgba(12,206,107,0.30)', backgroundColor: 'rgba(12,206,107,0.07)' }}>
-            <Mono className="text-[9px]" style={{ letterSpacing: 1.2, color: C.grn }}>
+            style={{ borderWidth: 1, borderColor: 'rgba(198,242,78,0.30)', backgroundColor: 'rgba(198,242,78,0.07)' }}>
+            <Mono className="text-[9px]" style={{ letterSpacing: 1.2, color: C.signal }}>
               PAYMENT RECEIVED
             </Mono>
-            <Txt className="mt-2 text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+            <Txt className="mt-2 text-[12.5px] text-bone-secondary" style={{ lineHeight: 19 }}>
               Reference {receipt.reference}. A copy has been emailed to you.
             </Txt>
           </View>
         ) : null}
 
         {!paid ? (
-          <Txt className="mt-6 text-[11px] text-ink-faint" style={{ lineHeight: 17 }}>
+          <Txt className="mt-6 text-[11px] text-bone-faint" style={{ lineHeight: 17 }}>
             Every founder gets {TRIAL_DAYS} days of full access from signup. After that, this one-off payment keeps
             everything on permanently.
           </Txt>
         ) : null}
       </ScrollView>
 
-      <View className="border-t border-line-soft bg-ground px-[18px] pt-3" style={{ paddingBottom: insets.bottom + 14 }}>
+      <View className="border-t border-graphite-soft bg-obsidian px-[18px] pt-3" style={{ paddingBottom: insets.bottom + 14 }}>
         {paid ? (
           <Button label="Back to dashboard" variant="secondary" height={48} onPress={() => router.back()} />
         ) : (

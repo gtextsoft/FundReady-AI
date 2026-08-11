@@ -7,10 +7,10 @@ import type { FounderAccount } from '@/domain/types';
 type Tone = 'info' | 'warn' | 'danger' | 'ok';
 
 const TONE: Record<Tone, { border: string; bg: string; accent: string }> = {
-  info: { border: 'rgba(0,112,243,0.35)', bg: 'rgba(0,112,243,0.08)', accent: C.blue },
-  warn: { border: 'rgba(245,166,35,0.35)', bg: 'rgba(245,166,35,0.08)', accent: C.amb },
-  danger: { border: '#4a1d1d', bg: 'rgba(255,77,79,0.08)', accent: C.red },
-  ok: { border: 'rgba(12,206,107,0.30)', bg: 'rgba(12,206,107,0.07)', accent: C.grn },
+  info: { border: 'rgba(78,168,242,0.35)', bg: 'rgba(78,168,242,0.08)', accent: C.info },
+  warn: { border: 'rgba(255,122,61,0.35)', bg: 'rgba(255,122,61,0.08)', accent: C.flag },
+  danger: { border: '#4A1F1E', bg: 'rgba(242,85,78,0.08)', accent: C.alert },
+  ok: { border: 'rgba(198,242,78,0.30)', bg: 'rgba(198,242,78,0.07)', accent: C.signal },
 };
 
 /**
@@ -53,7 +53,7 @@ export function StatusBanner({
       <Banner
         tone="danger"
         eyebrow="TRIAL ENDED"
-        title="Unlock SACI FundMe to continue"
+        title="Unlock FundReady to continue"
         body={`Your ${TRIAL_DAYS}-day trial has finished. A single one-off payment restores everything, permanently.`}
         cta="See what's included"
         onPress={onUnlock}
@@ -137,7 +137,7 @@ function Banner({
       <TxtSemi className="mb-[5px] mt-[9px] text-[15px]" style={{ letterSpacing: -0.3 }}>
         {title}
       </TxtSemi>
-      <Txt className="text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+      <Txt className="text-[12.5px] text-bone-secondary" style={{ lineHeight: 19 }}>
         {body}
       </Txt>
       {cta && onPress ? (

@@ -30,10 +30,10 @@ export function CompanyCard({
         accessibilityRole="button"
         accessibilityLabel={`${company.name}, fundability ${company.score}`}
         onPress={onPress}
-        className="rounded-[12px] border border-line bg-surface-1 p-[14px]">
+        className="rounded-[12px] border border-graphite bg-carbon-low p-[14px]">
         <View className="flex-row items-start gap-[11px]">
-          <View className="h-[34px] w-[34px] items-center justify-center rounded-[9px] border border-line-strong bg-surface-3">
-            <TxtSemi className="text-[11px] text-ink-muted">{initials(company.name)}</TxtSemi>
+          <View className="h-[34px] w-[34px] items-center justify-center rounded-[9px] border border-graphite-strong bg-carbon-high">
+            <TxtSemi className="text-[11px] text-bone-secondary">{initials(company.name)}</TxtSemi>
           </View>
 
           <View className="min-w-0 flex-1">
@@ -41,11 +41,11 @@ export function CompanyCard({
               <TxtSemi className="text-[14.5px]" style={{ letterSpacing: -0.2 }} numberOfLines={1}>
                 {company.name}
               </TxtSemi>
-              <View className="rounded-[4px] border border-line-strong px-[5px] py-[1px]">
-                <Mono className="text-[9.5px] text-ink-muted">{company.match}</Mono>
+              <View className="rounded-[4px] border border-graphite-strong px-[5px] py-[1px]">
+                <Mono className="text-[9.5px] text-bone-secondary">{company.match}</Mono>
               </View>
             </View>
-            <Txt className="mt-[3px] text-[12px] text-ink-dim" style={{ lineHeight: 17 }} numberOfLines={2}>
+            <Txt className="mt-[3px] text-[12px] text-bone-muted" style={{ lineHeight: 17 }} numberOfLines={2}>
               {company.tagline}
             </Txt>
           </View>
@@ -77,7 +77,7 @@ export function CompanyCard({
         hitSlop={10}
         onPress={onToggleWatch}
         className="absolute right-[13px] top-[43px] h-[20px] w-[24px] items-center justify-center">
-        <Txt className="text-[15px]" style={{ color: watched ? C.amb : '#3d3d3d' }}>
+        <Txt className="text-[15px]" style={{ color: watched ? C.flag : C.boneGhost }}>
           {watched ? '★' : '☆'}
         </Txt>
       </Pressable>
@@ -100,7 +100,7 @@ function Metric({
 }) {
   return (
     <View style={{ flex }}>
-      <Txt className="text-[9.5px] text-ink-faint" style={{ letterSpacing: 0.5 }}>
+      <Txt className="text-[9.5px] text-bone-faint" style={{ letterSpacing: 0.5 }}>
         {label}
       </Txt>
       {mono ? (
@@ -108,7 +108,7 @@ function Metric({
           {value}
         </Mono>
       ) : (
-        <Txt className="mt-[2px] text-[12px] text-ink-muted" numberOfLines={1}>
+        <Txt className="mt-[2px] text-[12px] text-bone-secondary" numberOfLines={1}>
           {value}
         </Txt>
       )}

@@ -101,9 +101,9 @@ export default function Onboarding() {
   }
 
   return (
-    <KeyboardAvoidingView className="flex-1 bg-ground" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView className="flex-1 bg-obsidian" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       {/* header */}
-      <View className="border-b border-line-soft px-5 pb-[14px]" style={{ paddingTop: insets.top + 6 }}>
+      <View className="border-b border-graphite-soft px-5 pb-[14px]" style={{ paddingTop: insets.top + 6 }}>
         <View className="h-[34px] flex-row items-center justify-between">
           <Pressable
             accessibilityRole="button"
@@ -111,13 +111,13 @@ export default function Onboarding() {
             onPress={back}
             hitSlop={10}
             className="-ml-2 h-8 w-8 items-center justify-center">
-            <Txt className="text-[19px] text-ink">←</Txt>
+            <Txt className="text-[19px] text-bone">←</Txt>
           </Pressable>
-          <Mono className="text-[11px] text-ink-muted" style={{ letterSpacing: 0.6 }}>
+          <Mono className="text-[11px] text-bone-secondary" style={{ letterSpacing: 0.6 }}>
             STEP {step} OF 5
           </Mono>
           <Pressable accessibilityRole="button" onPress={() => router.replace(FOUNDER_HOME)} hitSlop={10}>
-            <Txt className="text-[12px] text-ink-dim">Save &amp; exit</Txt>
+            <Txt className="text-[12px] text-bone-muted">Save &amp; exit</Txt>
           </Pressable>
         </View>
         <View className="mt-[10px] flex-row gap-1">
@@ -125,7 +125,7 @@ export default function Onboarding() {
             <View
               key={i}
               className="h-[3px] flex-1 rounded-[3px]"
-              style={{ backgroundColor: step >= i ? C.ink : '#242424' }}
+              style={{ backgroundColor: step >= i ? C.bone : '#242424' }}
             />
           ))}
         </View>
@@ -144,7 +144,7 @@ export default function Onboarding() {
               <TxtSemi className="mb-1 mt-2 text-[23px]" style={{ letterSpacing: -0.7 }}>
                 Tell us who you are
               </TxtSemi>
-              <Txt className="mb-[22px] text-[13px] text-ink-dim" style={{ lineHeight: 20 }}>
+              <Txt className="mb-[22px] text-[13px] text-bone-muted" style={{ lineHeight: 20 }}>
                 Four fields. Roughly 30 seconds.
               </Txt>
               <View className="gap-4">
@@ -207,7 +207,7 @@ export default function Onboarding() {
               <TxtSemi className="mb-1 mt-2 text-[23px]" style={{ letterSpacing: -0.7 }}>
                 What comes in, what goes out
               </TxtSemi>
-              <Txt className="mb-[22px] text-[13px] text-ink-dim" style={{ lineHeight: 20 }}>
+              <Txt className="mb-[22px] text-[13px] text-bone-muted" style={{ lineHeight: 20 }}>
                 Approximate is fine — you can revise before investors see it.
               </Txt>
               <View className="gap-5">
@@ -316,7 +316,7 @@ export default function Onboarding() {
               <TxtSemi className="mb-1 mt-2 text-[23px]" style={{ letterSpacing: -0.7 }}>
                 Does the maths work?
               </TxtSemi>
-              <Txt className="mb-[22px] text-[13px] text-ink-dim" style={{ lineHeight: 20 }}>
+              <Txt className="mb-[22px] text-[13px] text-bone-muted" style={{ lineHeight: 20 }}>
                 Four numbers. We work out lifetime value and payback from them, so you do not have to.
               </Txt>
               <View className="gap-4">
@@ -408,7 +408,7 @@ export default function Onboarding() {
               <TxtSemi className="mb-1 mt-2 text-[23px]" style={{ letterSpacing: -0.7 }}>
                 What is the opportunity?
               </TxtSemi>
-              <Txt className="mb-[22px] text-[13px] text-ink-dim" style={{ lineHeight: 20 }}>
+              <Txt className="mb-[22px] text-[13px] text-bone-muted" style={{ lineHeight: 20 }}>
                 All optional, and all worth answering. These are what the audit quotes back when it
                 explains a verdict — numbers alone only ever produce a score.
               </Txt>
@@ -455,7 +455,7 @@ export default function Onboarding() {
               <TxtSemi className="mb-1 mt-2 text-[23px]" style={{ letterSpacing: -0.7 }}>
                 Who is building it?
               </TxtSemi>
-              <Txt className="mb-[22px] text-[13px] text-ink-dim" style={{ lineHeight: 20 }}>
+              <Txt className="mb-[22px] text-[13px] text-bone-muted" style={{ lineHeight: 20 }}>
                 Last step. The ownership questions are quick, and they decide whether the business
                 could ever be sold.
               </Txt>
@@ -537,7 +537,7 @@ export default function Onboarding() {
                     onChange={(v) => setField('deliveryCostTrend', v)}
                     columns={3}
                   />
-                  <Txt className="text-[11px] text-ink-faint">
+                  <Txt className="text-[11px] text-bone-faint">
                     The direction matters more than the number — it separates a business that scales
                     from one that only grows.
                   </Txt>
@@ -556,9 +556,9 @@ export default function Onboarding() {
                   <FieldLabel>Pitch deck / financial model</FieldLabel>
 
                   {profile.deck ? (
-                    <View className="flex-row items-center gap-[11px] rounded-[11px] border border-line-strong bg-surface-1 p-[14px]">
-                      <View className="h-[34px] w-[34px] items-center justify-center rounded-[7px] border border-line-strong bg-surface-3">
-                        <Mono className="text-[9px] text-ink-muted">
+                    <View className="flex-row items-center gap-[11px] rounded-[11px] border border-graphite-strong bg-carbon-low p-[14px]">
+                      <View className="h-[34px] w-[34px] items-center justify-center rounded-[7px] border border-graphite-strong bg-carbon-high">
+                        <Mono className="text-[9px] text-bone-secondary">
                           {profile.deck.split('.').pop()?.slice(0, 4).toUpperCase() ?? 'DOC'}
                         </Mono>
                       </View>
@@ -566,28 +566,28 @@ export default function Onboarding() {
                         <Txt className="text-[13px]" numberOfLines={1}>
                           {profile.deck}
                         </Txt>
-                        <Txt className="text-[11px] text-ink-faint">uploaded</Txt>
+                        <Txt className="text-[11px] text-bone-faint">uploaded</Txt>
                       </View>
-                      <View className="h-[18px] w-[18px] items-center justify-center rounded-full" style={{ backgroundColor: C.grn }}>
-                        <Txt className="text-[11px] text-ground">✓</Txt>
+                      <View className="h-[18px] w-[18px] items-center justify-center rounded-full" style={{ backgroundColor: C.signal }}>
+                        <Txt className="text-[11px] text-obsidian">✓</Txt>
                       </View>
                     </View>
                   ) : (
                     <Pressable
                       accessibilityRole="button"
                       onPress={pickDeck}
-                      className="w-full items-center gap-[6px] rounded-[11px] bg-surface-1 px-4 py-[26px]"
-                      style={{ borderWidth: 1.5, borderStyle: 'dashed', borderColor: C.lineDash }}>
-                      <Txt className="text-[19px] text-ink">↑</Txt>
-                      <TxtMed className="text-[13.5px] text-ink">Drop a file or browse</TxtMed>
-                      <Txt className="text-[11px] text-ink-faint">PDF, PPTX or XLSX · up to 25 MB</Txt>
+                      className="w-full items-center gap-[6px] rounded-[11px] bg-carbon-low px-4 py-[26px]"
+                      style={{ borderWidth: 1.5, borderStyle: 'dashed', borderColor: C.graphiteBright }}>
+                      <Txt className="text-[19px] text-bone">↑</Txt>
+                      <TxtMed className="text-[13.5px] text-bone">Drop a file or browse</TxtMed>
+                      <Txt className="text-[11px] text-bone-faint">PDF, PPTX or XLSX · up to 25 MB</Txt>
                     </Pressable>
                   )}
 
                   {deckError ? (
                     <View
                       className="rounded-[9px] px-[13px] py-[11px]"
-                      style={{ borderWidth: 1, borderColor: '#4a1d1d', backgroundColor: 'rgba(255,77,79,0.07)' }}>
+                      style={{ borderWidth: 1, borderColor: '#4A1F1E', backgroundColor: 'rgba(242,85,78,0.07)' }}>
                       <Txt className="text-[12px]" style={{ color: '#ff8a8c', lineHeight: 18 }}>
                         File exceeds 25 MB. Compress the deck or link a Drive URL instead.
                       </Txt>
@@ -601,7 +601,7 @@ export default function Onboarding() {
           {showError ? (
             <View
               className="mt-[18px] rounded-[9px] px-[13px] py-[11px]"
-              style={{ borderWidth: 1, borderColor: '#4a1d1d', backgroundColor: 'rgba(255,77,79,0.07)' }}>
+              style={{ borderWidth: 1, borderColor: '#4A1F1E', backgroundColor: 'rgba(242,85,78,0.07)' }}>
               <Txt className="text-[12px]" style={{ color: '#ff8a8c', lineHeight: 18 }}>
                 Complete every field on this step to continue.
               </Txt>
@@ -611,7 +611,7 @@ export default function Onboarding() {
       </ScrollView>
 
       {/* footer */}
-      <View className="border-t border-line-soft bg-ground px-5 pt-[14px]" style={{ paddingBottom: insets.bottom + 16 }}>
+      <View className="border-t border-graphite-soft bg-obsidian px-5 pt-[14px]" style={{ paddingBottom: insets.bottom + 16 }}>
         <Button label={step === 5 ? 'Run AI assessment' : 'Continue'} height={50} onPress={next} />
       </View>
     </KeyboardAvoidingView>
@@ -623,11 +623,11 @@ function RatioRow() {
   const profile = useFounder((s) => s.profile);
   const ratio = ltvCacRatio(profile);
   const label = ratio > 0 ? `${ratio.toFixed(1)} : 1` : '—';
-  const color = ratio >= 3 ? C.grn : ratio > 0 ? C.amb : C.inkFaint;
+  const color = ratio >= 3 ? C.signal : ratio > 0 ? C.flag : C.boneFaint;
 
   return (
-    <View className="flex-row items-center justify-between rounded-[9px] border border-line bg-surface-1 px-[14px] py-[13px]">
-      <Txt className="text-[12px] text-ink-muted">LTV : CAC ratio</Txt>
+    <View className="flex-row items-center justify-between rounded-[9px] border border-graphite bg-carbon-low px-[14px] py-[13px]">
+      <Txt className="text-[12px] text-bone-secondary">LTV : CAC ratio</Txt>
       <Mono className="text-[14px]" style={{ color }}>
         {label}
       </Mono>

@@ -49,7 +49,7 @@ export default function Mfa() {
   }
 
   return (
-    <KeyboardAvoidingView className="flex-1 bg-ground" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView className="flex-1 bg-obsidian" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
         contentContainerStyle={{
           flexGrow: 1,
@@ -65,7 +65,7 @@ export default function Mfa() {
           <TxtSemi className="mb-3 mt-7 text-[30px]" style={{ letterSpacing: -1.1, lineHeight: 33 }}>
             Enter your code.
           </TxtSemi>
-          <Txt className="mb-7 text-[13px] text-ink-muted" style={{ lineHeight: 20 }}>
+          <Txt className="mb-7 text-[13px] text-bone-secondary" style={{ lineHeight: 20 }}>
             Open your authenticator app and enter the current six-digit code. You can use one of your
             recovery codes instead — each of those works once.
           </Txt>
@@ -88,15 +88,15 @@ export default function Mfa() {
           {error ? (
             <View
               className="mt-4 rounded-[11px] p-[13px]"
-              style={{ borderWidth: 1, borderColor: '#4a1d1d', backgroundColor: 'rgba(255,77,79,0.08)' }}>
-              <Txt className="text-[12.5px]" style={{ color: C.red, lineHeight: 19 }}>
+              style={{ borderWidth: 1, borderColor: '#4A1F1E', backgroundColor: 'rgba(242,85,78,0.08)' }}>
+              <Txt className="text-[12.5px]" style={{ color: C.alert, lineHeight: 19 }}>
                 {error}
               </Txt>
             </View>
           ) : null}
 
           <Pressable accessibilityRole="link" className="mt-6 items-center" onPress={cancel}>
-            <TxtMed className="text-[12.5px] text-ink-muted">Back to sign in</TxtMed>
+            <TxtMed className="text-[12.5px] text-bone-secondary">Back to sign in</TxtMed>
           </Pressable>
         </View>
       </ScrollView>

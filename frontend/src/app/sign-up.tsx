@@ -155,7 +155,7 @@ export default function SignUp() {
   }
 
   return (
-    <KeyboardAvoidingView className="flex-1 bg-ground" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView className="flex-1 bg-obsidian" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
         contentContainerStyle={{
           flexGrow: 1,
@@ -259,11 +259,11 @@ export default function SignUp() {
             <View className="mt-4 gap-3">
               <View
                 className="rounded-[11px] p-[13px]"
-                style={{ borderWidth: 1, borderColor: 'rgba(0,112,243,0.35)', backgroundColor: 'rgba(0,112,243,0.08)' }}>
-                <Mono className="text-[9px]" style={{ letterSpacing: 1.2, color: C.blue }}>
+                style={{ borderWidth: 1, borderColor: 'rgba(78,168,242,0.35)', backgroundColor: 'rgba(78,168,242,0.08)' }}>
+                <Mono className="text-[9px]" style={{ letterSpacing: 1.2, color: C.info }}>
                   SINGLE SIGN-ON
                 </Mono>
-                <Txt className="mt-2 text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+                <Txt className="mt-2 text-[12.5px] text-bone-secondary" style={{ lineHeight: 19 }}>
                   {emailDomain(email)} uses {sso.displayName}. Sign in with your work account — no new password.
                 </Txt>
               </View>
@@ -280,11 +280,11 @@ export default function SignUp() {
           )}
 
           <Pressable accessibilityRole="link" className="mt-6 items-center" onPress={() => router.replace(SIGN_IN)}>
-            <TxtMed className="text-[12.5px] text-ink-muted">Already have an account? Sign in</TxtMed>
+            <TxtMed className="text-[12.5px] text-bone-secondary">Already have an account? Sign in</TxtMed>
           </Pressable>
         </View>
 
-        <Txt className="text-center text-[11px] text-ink-faint" style={{ lineHeight: 17 }}>
+        <Txt className="text-center text-[11px] text-bone-faint" style={{ lineHeight: 17 }}>
           By continuing you agree that SACI may share your anonymised metrics with vetted investors. You control every
           direct introduction.
         </Txt>
@@ -297,7 +297,7 @@ function ErrorNote({ text }: { text: string }) {
   return (
     <View
       className="mt-4 rounded-[9px] px-[13px] py-[11px]"
-      style={{ borderWidth: 1, borderColor: '#4a1d1d', backgroundColor: 'rgba(255,77,79,0.07)' }}>
+      style={{ borderWidth: 1, borderColor: '#4A1F1E', backgroundColor: 'rgba(242,85,78,0.07)' }}>
       <Txt className="text-[12px]" style={{ color: '#ff8a8c', lineHeight: 18 }}>
         {text}
       </Txt>

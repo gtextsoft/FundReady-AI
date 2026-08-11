@@ -108,7 +108,7 @@ export function DealflowScreen({ mode }: { mode: 'deal' | 'watch' }) {
   const title = mode === 'watch' ? 'Watchlist' : 'Dealflow';
 
   return (
-    <View className="flex-1 bg-ground" style={{ paddingTop: insets.top + 4 }}>
+    <View className="flex-1 bg-obsidian" style={{ paddingTop: insets.top + 4 }}>
       {/* header */}
       <View className="px-[18px] pb-3">
         <View className="h-[34px] flex-row items-center justify-between">
@@ -123,18 +123,18 @@ export function DealflowScreen({ mode }: { mode: 'deal' | 'watch' }) {
               accessibilityRole="button"
               accessibilityLabel={unread ? `Alerts, ${unread} unread` : 'Alerts'}
               onPress={() => router.push(route('/investor/alerts'))}
-              className="h-[30px] w-[30px] items-center justify-center rounded-[8px] border border-line">
-              <Txt className="text-[12px] text-ink-muted">◔</Txt>
+              className="h-[30px] w-[30px] items-center justify-center rounded-[8px] border border-graphite">
+              <Txt className="text-[12px] text-bone-secondary">◔</Txt>
               {unread > 0 ? (
                 <View
                   className="absolute -right-[3px] -top-[3px] h-[13px] min-w-[13px] items-center justify-center rounded-full px-[3px]"
-                  style={{ backgroundColor: C.blue }}>
-                  <Mono className="text-[8px] text-white">{unread > 9 ? '9+' : unread}</Mono>
+                  style={{ backgroundColor: C.flag }}>
+                  <Mono className="text-[8px] text-obsidian">{unread > 9 ? '9+' : unread}</Mono>
                 </View>
               ) : null}
             </Pressable>
-            <View className="h-[28px] w-[28px] items-center justify-center rounded-full bg-line">
-              <TxtSemi className="text-[10px] text-ink-muted">
+            <View className="h-[28px] w-[28px] items-center justify-center rounded-full bg-graphite">
+              <TxtSemi className="text-[10px] text-bone-secondary">
                 {(session?.displayName ?? 'I').slice(0, 2).toUpperCase()}
               </TxtSemi>
             </View>
@@ -142,12 +142,12 @@ export function DealflowScreen({ mode }: { mode: 'deal' | 'watch' }) {
         </View>
 
         {/* search */}
-        <View className="mt-[10px] h-[38px] flex-row items-center gap-[9px] rounded-[9px] border border-line bg-surface-1 px-3">
-          <Txt className="text-[13px] text-ink-faint">⌕</Txt>
+        <View className="mt-[10px] h-[38px] flex-row items-center gap-[9px] rounded-[9px] border border-graphite bg-carbon-low px-3">
+          <Txt className="text-[13px] text-bone-faint">⌕</Txt>
           <TextInput
-            className="min-w-0 flex-1 text-[13.5px] text-ink"
+            className="min-w-0 flex-1 text-[13.5px] text-bone"
             placeholder="Search company, sector, founder"
-            placeholderTextColor={C.inkFaint}
+            placeholderTextColor={C.boneFaint}
             value={query}
             onChangeText={setQuery}
             autoCapitalize="none"
@@ -171,7 +171,7 @@ export function DealflowScreen({ mode }: { mode: 'deal' | 'watch' }) {
                 onPress={() => setSheetOpen(true)}
                 badge={filterCount || undefined}
               />
-              <View className="h-[18px] w-[1px] bg-line" />
+              <View className="h-[18px] w-[1px] bg-graphite" />
             </View>
           }
           renderItem={({ item }) => (
@@ -198,7 +198,7 @@ export function DealflowScreen({ mode }: { mode: 'deal' | 'watch' }) {
         )}
         ListFooterComponent={
           rows.length ? (
-            <Txt className="py-2 text-center text-[11.5px] text-ink-faint">
+            <Txt className="py-2 text-center text-[11.5px] text-bone-faint">
               {`1–${rows.length} of ${total}`}
             </Txt>
           ) : null
@@ -215,13 +215,13 @@ export function DealflowScreen({ mode }: { mode: 'deal' | 'watch' }) {
             <View className="items-center justify-center gap-[11px] px-6 py-[70px]">
               <View
                 className="h-[42px] w-[42px] items-center justify-center rounded-[11px]"
-                style={{ borderWidth: 1, borderStyle: 'dashed', borderColor: C.lineDash }}>
-                <Txt className="text-[16px] text-ink-ghost">⌕</Txt>
+                style={{ borderWidth: 1, borderStyle: 'dashed', borderColor: C.graphiteBright }}>
+                <Txt className="text-[16px] text-bone-ghost">⌕</Txt>
               </View>
               <TxtSemi className="text-center text-[14px]">
                 {mode === 'watch' ? 'Your watchlist is empty' : 'No companies match these filters'}
               </TxtSemi>
-              <Txt className="text-center text-[12.5px] text-ink-dim" style={{ lineHeight: 19 }}>
+              <Txt className="text-center text-[12.5px] text-bone-muted" style={{ lineHeight: 19 }}>
                 {mode === 'watch'
                   ? 'Star a company from the dealflow table and it will be tracked here with score-change alerts.'
                   : 'Widen the score range or clear a sector to see more of the companies currently listed.'}
