@@ -40,7 +40,9 @@ from app.modules.identity import service as identity_service
 from app.modules.intake import router as intake_router
 from app.modules.investor import router as investor_router
 from app.modules.mentor import router as mentor_router
+from app.modules.notifications import router as notifications_router
 from app.modules.readiness import router as readiness_router
+from app.modules.recommendation import router as recommendation_router
 
 API_V1_PREFIX = "/v1"
 
@@ -166,3 +168,5 @@ app.include_router(readiness_router.router, prefix=API_V1_PREFIX)
 app.include_router(investor_router.router, prefix=API_V1_PREFIX)
 app.include_router(brokerage_router.router, prefix=API_V1_PREFIX)
 app.include_router(commerce_router.router, prefix=API_V1_PREFIX)
+app.include_router(recommendation_router.router, prefix=API_V1_PREFIX)
+app.include_router(notifications_router.router, prefix=API_V1_PREFIX)

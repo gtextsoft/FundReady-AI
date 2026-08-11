@@ -37,6 +37,22 @@ class DocumentKind(StrEnum):
     OTHER = "other"
 
 
+class CompanyVerificationStatus(StrEnum):
+    """SACI admin review of an uploaded registration certificate.
+
+    **This is not registry KYC** (`DECISIONS.md` D7). A founder uploads a
+    certificate; a SACI admin accepts or rejects that document. Nothing here
+    calls a company register or proves the company exists at law — only that
+    an admin reviewed the file the founder submitted.
+    """
+
+    NONE = "none"
+    SUBMITTED = "submitted"
+    IN_REVIEW = "in_review"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+
+
 class DocumentStatus(StrEnum):
     """Where an upload has got to."""
 
@@ -119,6 +135,7 @@ def is_allowed_content_type(content_type: str) -> bool:
 __all__ = [
     "ALLOWED_CONTENT_TYPES",
     "MAX_UPLOAD_BYTES",
+    "CompanyVerificationStatus",
     "DocumentKind",
     "DocumentPayload",
     "DocumentStatus",

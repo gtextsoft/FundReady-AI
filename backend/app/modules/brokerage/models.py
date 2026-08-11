@@ -4,24 +4,41 @@ Layer: **models** (ARCHITECTURE.md section 3) -- SQLAlchemy table definitions
 only. Every schema change also requires an Alembic migration under
 `migrations/`; the database is never hand-edited.
 
-**SACI is the broker, and these two tables are what that means in code.** An
+**SACI is the broker, and these tables are what that means in code.** An
 investor never reaches a founder's full report by their own entitlement. They
 express interest; a SACI admin decides; and only a deliberate reveal opens one
-full report to one investor. Every step is a row here, which is what makes the
-brokerage auditable after the fact rather than a policy nobody can check.
+full report to one investor. Meetings are the SACI-scheduled introduction;
+call requests are the investor proposing a slot the founder answers. Every
+step is a row here, which is what makes the brokerage auditable after the fact
+rather than a policy nobody can check.
 """
 
 import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
 
-__all__ = ["Interest", "InterestStatus", "ReportReveal"]
+__all__ = [
+    "CallRequest",
+    "CallRequestStatus",
+    "Interest",
+    "InterestStatus",
+    "Meeting",
+    "MeetingStatus",
+    "ReportReveal",
+]
 
 
 class InterestStatus(StrEnum):
@@ -42,6 +59,22 @@ class InterestStatus(StrEnum):
 
     WITHDRAWN = "withdrawn"
     """The investor changed their mind. Terminal, and set by the investor."""
+
+
+class MeetingStatus(StrEnum):
+    """Lifecycle of one SACI-scheduled introduction meeting."""
+
+    SCHEDULED = "scheduled"
+    CANCELLED = "cancelled"
+    COMPLETED = "completed"
+
+
+class CallRequestStatus(StrEnum):
+    """Lifecycle of one investor-proposed virtual call."""
+
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    DECLINED = "declined"
 
 
 class Interest(Base):
@@ -144,3 +177,88 @@ class ReportReveal(Base):
 
     def __repr__(self) -> str:
         return f"<ReportReveal {self.id} run={self.audit_run_id}>"
+
+
+class Meeting(Base):
+    """One SACI-scheduled introduction for an approved interest.
+
+    **One meeting per interest** (`uq_meetings_interest`). Scheduling is an
+    admin action; the investor and founder are parties to the slot, not the
+    ones who create it.
+    """
+
+    __tablename__ = "meetings"
+    __table_args__ = (UniqueConstraint("interest_id", name="uq_meetings_interest"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+
+    interest_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("interests.id", ondelete="CASCADE")
+    )
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    duration_minutes: Mapped[int] = mapped_column(Integer)
+    location: Mapped[str | None] = mapped_column(String(500))
+    notes: Mapped[str | None] = mapped_column(String(2000))
+
+    status: Mapped[MeetingStatus] = mapped_column(
+        SAEnum(
+            MeetingStatus,
+            native_enum=False,
+            length=16,
+            name="meeting_status",
+            values_callable=lambda enum: [member.value for member in enum],
+        ),
+        default=MeetingStatus.SCHEDULED,
+        server_default=MeetingStatus.SCHEDULED.value,
+    )
+
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"<Meeting {self.id} status={self.status.value}>"
+
+
+class CallRequest(Base):
+    """One investor proposing a virtual-call slot to a founder.
+
+    Distinct from a SACI `Meeting`: the investor proposes, the founder accepts
+    or declines. KYC is enforced in the service before insert.
+    """
+
+    __tablename__ = "call_requests"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+
+    interest_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("interests.id", ondelete="CASCADE"), index=True
+    )
+    requested_by_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE")
+    )
+    proposed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    message: Mapped[str | None] = mapped_column(String(1000))
+
+    status: Mapped[CallRequestStatus] = mapped_column(
+        SAEnum(
+            CallRequestStatus,
+            native_enum=False,
+            length=16,
+            name="call_request_status",
+            values_callable=lambda enum: [member.value for member in enum],
+        ),
+        default=CallRequestStatus.PENDING,
+        server_default=CallRequestStatus.PENDING.value,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    responded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    def __repr__(self) -> str:
+        return f"<CallRequest {self.id} status={self.status.value}>"

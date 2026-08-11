@@ -85,21 +85,17 @@ SchemaT = TypeVar("SchemaT", bound=StructuredOutput)
 # deliberately ships them blank so a model choice is not smuggled in as
 # configuration. T2.1 owns the choice; config overrides it per environment.
 #
-# Fallbacks are still not wired up, but the reason has changed. A cyber-category
-# refusal is a real possibility here -- auditing a cybersecurity startup means
-# feeding a security product's own description to a classifier trained to
-# decline that material -- and the server-side `fallbacks` parameter is the fix.
-#
-# The original excuse (its wire shape could not be verified without a live call)
-# expired when the key arrived: the shape is `fallbacks="default"` with the
-# `server-side-fallback-2026-07-01` beta, and cyber-category refusals route to
-# `claude-opus-4-8`. What still blocks it is scope, not knowledge -- it needs the
-# beta messages namespace (`client.beta.messages.stream`) plus a beta header, on
-# the single chokepoint every model call in the platform passes through. Tracked
-# as its own open follow-up in TASKS.md; do not treat this comment as the ticket.
+# Server-side fallbacks: a cyber-category refusal is a real possibility when
+# auditing a cybersecurity startup. The SDK shape is
+# `client.beta.messages.stream(..., fallbacks="default",
+# betas=["server-side-fallback-2026-07-01"])`. Wired behind
+# `Settings.ai_server_side_fallbacks_enabled` (default off) so the stable
+# `messages.stream` path — and the fake clients tests inject — stay untouched
+# until an environment opts in.
 
 DEFAULT_AUDIT_MODEL: Final = "claude-opus-5"
 DEFAULT_CHAT_MODEL: Final = "claude-sonnet-5"
+_SERVER_SIDE_FALLBACK_BETA: Final = "server-side-fallback-2026-07-01"
 
 # Per-tier output ceilings. `AI_MAX_OUTPUT_TOKENS`, when set, caps both: one
 # global number cannot serve both tiers, so it is a ceiling rather than a value.
@@ -384,15 +380,26 @@ class AiClient:
         # Streamed even though nothing consumes the increments: a non-streaming
         # request with a large `max_tokens` risks an HTTP timeout, and the audit
         # tier runs near the top of its budget by design.
-        async with self._client.messages.stream(
-            model=profile.model,
-            max_tokens=profile.max_output_tokens,
-            system=system,
-            messages=messages,
-            output_config=output_config,
-            thinking={"type": "adaptive"},
-        ) as stream:
-            message = await stream.get_final_message()
+        stream_kwargs: dict[str, Any] = {
+            "model": profile.model,
+            "max_tokens": profile.max_output_tokens,
+            "system": system,
+            "messages": messages,
+            "output_config": output_config,
+            "thinking": {"type": "adaptive"},
+        }
+        if self._settings.ai_server_side_fallbacks_enabled:
+            # Beta namespace only — keeps the default path on `messages.stream`
+            # so injected test doubles that lack `.beta` continue to work.
+            async with self._client.beta.messages.stream(
+                **stream_kwargs,
+                fallbacks="default",
+                betas=[_SERVER_SIDE_FALLBACK_BETA],
+            ) as stream:
+                message = await stream.get_final_message()
+        else:
+            async with self._client.messages.stream(**stream_kwargs) as stream:
+                message = await stream.get_final_message()
 
         usage = AiUsage(
             input_tokens=message.usage.input_tokens,

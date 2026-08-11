@@ -25,29 +25,48 @@ from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import ConflictError, NotFoundError
+from app.core.errors import ConflictError, ForbiddenError, NotFoundError
 from app.core.security import CurrentUser, Role, assert_admin
 from app.modules.audit.models import AuditRun
 from app.modules.audit.reports import AdminReport, admin_report
 from app.modules.audit.repository import AuditRunRepository
 from app.modules.audit.runs import AuditStatus
-from app.modules.brokerage.models import Interest, InterestStatus
-from app.modules.brokerage.repository import InterestRepository, RevealRepository
-from app.modules.brokerage.schemas import InterestResponse, RevealResponse
+from app.modules.brokerage.models import CallRequestStatus, Interest, InterestStatus
+from app.modules.brokerage.repository import (
+    CallRequestRepository,
+    InterestRepository,
+    MeetingRepository,
+    RevealRepository,
+)
+from app.modules.brokerage.schemas import (
+    CallRequestResponse,
+    InterestResponse,
+    MeetingCreate,
+    MeetingResponse,
+    RevealResponse,
+)
 from app.modules.identity import service as identity
 from app.modules.identity.models import AuditAction
+from app.modules.intake import service as intake
 from app.modules.investor import service as investor
 
 __all__ = [
     "decide_interest",
     "express_interest",
+    "list_call_requests",
     "list_interests",
+    "list_meetings",
     "read_revealed_report",
+    "request_call",
+    "respond_to_call",
     "reveal_report",
+    "schedule_meeting",
 ]
 
 _NOT_FOUND = "No such interest."
 """One wording for "no such row" and "not yours" -- see `core.ownership`."""
+
+_CALL_NOT_FOUND = "No such call request."
 
 
 def _require_admin(actor: CurrentUser) -> None:
@@ -58,13 +77,41 @@ def _require_admin(actor: CurrentUser) -> None:
 async def _owned_interest(
     session: AsyncSession, actor: CurrentUser, interest_id: uuid.UUID
 ) -> Interest:
-    """The interest, if this caller may see it. Admins may see any."""
+    """The interest, if this caller may see it. Admins may see any (MFA)."""
     interest = await InterestRepository(session).get(interest_id)
     if interest is None:
         raise NotFoundError(_NOT_FOUND)
-    if actor.role is not Role.ADMIN and interest.investor_id != actor.id:
+    if actor.role is Role.ADMIN:
+        assert_admin(actor)
+        return interest
+    if interest.investor_id != actor.id:
         raise NotFoundError(_NOT_FOUND)
     return interest
+
+
+async def _party_interest(
+    session: AsyncSession, actor: CurrentUser, interest_id: uuid.UUID
+) -> Interest:
+    """Interest visible to investor party, founding owner, or admin.
+
+    Meetings and call lists are shared among the parties to the introduction;
+    a founder who could not see the interest their startup sits on could not
+    prepare for a scheduled slot. Same 404 wording as `_owned_interest` so an
+    id is never confirmed to a stranger. Admin cross-tenant reads require MFA.
+    """
+    interest = await InterestRepository(session).get(interest_id)
+    if interest is None:
+        raise NotFoundError(_NOT_FOUND)
+    if actor.role is Role.ADMIN:
+        assert_admin(actor)
+        return interest
+    if actor.role is Role.INVESTOR and interest.investor_id == actor.id:
+        return interest
+    if actor.role is Role.FOUNDER:
+        profile = await intake.get_own_profile(session, actor)
+        if profile.id == interest.startup_id:
+            return interest
+    raise NotFoundError(_NOT_FOUND)
 
 
 async def express_interest(
@@ -118,6 +165,8 @@ async def list_interests(
     reveals = RevealRepository(session)
 
     if actor.role is Role.ADMIN:
+        # Cross-tenant work queue — MFA required (AUTH.md section 9).
+        assert_admin(actor)
         rows = await repository.list_all(status=status)
     else:
         investor.require_investor(actor)
@@ -272,3 +321,174 @@ async def read_revealed_report(
         raise NotFoundError("That report is no longer available.")
 
     return admin_report(run.report)
+
+
+async def schedule_meeting(
+    session: AsyncSession,
+    actor: CurrentUser,
+    interest_id: uuid.UUID,
+    payload: MeetingCreate,
+) -> MeetingResponse:
+    """SACI books one introduction against an approved interest. **Admins only.**
+
+    Requires approval first: a meeting on a pending or declined interest would
+    make the decision queue decorative. One meeting per interest
+    (`uq_meetings_interest`); a second schedule is a conflict, not a replace.
+    """
+    _require_admin(actor)
+    interest = await _owned_interest(session, actor, interest_id)
+
+    if interest.status is not InterestStatus.APPROVED:
+        raise ConflictError("Approve this interest before scheduling a meeting.")
+
+    meetings = MeetingRepository(session)
+    if await meetings.for_interest(interest.id) is not None:
+        raise ConflictError("A meeting is already scheduled for this interest.")
+
+    meeting = await meetings.create(
+        interest_id=interest.id,
+        scheduled_at=payload.scheduled_at,
+        duration_minutes=payload.duration_minutes,
+        location=payload.location,
+        notes=payload.notes,
+        created_by_id=actor.id,
+    )
+    await identity.record_action(
+        session,
+        AuditAction.MEETING_SCHEDULED,
+        actor_id=actor.id,
+        target_type="meeting",
+        target_id=meeting.id,
+        details={
+            "interest_id": str(interest.id),
+            "investor_id": str(interest.investor_id),
+            "startup_id": str(interest.startup_id),
+            "scheduled_at": meeting.scheduled_at.isoformat(),
+        },
+    )
+    return MeetingResponse.of(meeting)
+
+
+async def list_meetings(
+    session: AsyncSession,
+    actor: CurrentUser,
+    interest_id: uuid.UUID,
+) -> list[MeetingResponse]:
+    """Meetings for one interest, visible to investor, founding owner, or admin."""
+    interest = await _party_interest(session, actor, interest_id)
+    rows = await MeetingRepository(session).list_for_interest(interest.id)
+    return [MeetingResponse.of(row) for row in rows]
+
+
+async def request_call(
+    session: AsyncSession,
+    actor: CurrentUser,
+    interest_id: uuid.UUID,
+    *,
+    proposed_at: datetime,
+    message: str | None = None,
+) -> CallRequestResponse:
+    """An investor proposes a virtual-call slot on their interest.
+
+    KYC is required (`investor.require_kyc`). Terminal interests cannot host a
+    new call — declined or withdrawn means SACI (or the investor) closed the
+    path.
+    """
+    investor.require_investor(actor)
+    investor.require_kyc(actor)
+    interest = await _owned_interest(session, actor, interest_id)
+
+    if interest.status in (InterestStatus.DECLINED, InterestStatus.WITHDRAWN):
+        raise ConflictError(
+            f"Cannot request a call on a {interest.status.value} interest."
+        )
+
+    call = await CallRequestRepository(session).create(
+        interest_id=interest.id,
+        requested_by_id=actor.id,
+        proposed_at=proposed_at,
+        message=message,
+    )
+    await identity.record_action(
+        session,
+        AuditAction.CALL_REQUESTED,
+        actor_id=actor.id,
+        target_type="call_request",
+        target_id=call.id,
+        details={
+            "interest_id": str(interest.id),
+            "startup_id": str(interest.startup_id),
+            "proposed_at": call.proposed_at.isoformat(),
+        },
+    )
+    return CallRequestResponse.of(call)
+
+
+async def list_call_requests(
+    session: AsyncSession, actor: CurrentUser
+) -> list[CallRequestResponse]:
+    """Call inbox for the actor.
+
+    * investor — calls on their own interests;
+    * founder — calls against interests on their startup;
+    * admin — every call.
+    """
+    repository = CallRequestRepository(session)
+
+    if actor.role is Role.ADMIN:
+        assert_admin(actor)
+        rows = await repository.list_all()
+    elif actor.role is Role.INVESTOR:
+        rows = await repository.list_for_investor(actor.id)
+    elif actor.role is Role.FOUNDER:
+        profile = await intake.get_own_profile(session, actor)
+        rows = await repository.list_for_startup(profile.id)
+    else:
+        raise ForbiddenError
+
+    return [CallRequestResponse.of(row) for row in rows]
+
+
+async def respond_to_call(
+    session: AsyncSession,
+    actor: CurrentUser,
+    call_id: uuid.UUID,
+    *,
+    accept: bool,
+) -> CallRequestResponse:
+    """Founder accepts or declines a pending call. **One answer; then terminal.**"""
+    if actor.role is not Role.FOUNDER:
+        raise ForbiddenError
+
+    call = await CallRequestRepository(session).get(call_id)
+    if call is None:
+        raise NotFoundError(_CALL_NOT_FOUND)
+
+    interest = await InterestRepository(session).get(call.interest_id)
+    if interest is None:
+        raise NotFoundError(_CALL_NOT_FOUND)
+
+    profile = await intake.get_own_profile(session, actor)
+    if profile.id != interest.startup_id:
+        raise NotFoundError(_CALL_NOT_FOUND)
+
+    if call.status is not CallRequestStatus.PENDING:
+        raise ConflictError(f"This call request is already {call.status.value}.")
+
+    call.status = CallRequestStatus.ACCEPTED if accept else CallRequestStatus.DECLINED
+    call.responded_at = datetime.now(UTC)
+    await session.flush()
+
+    await identity.record_action(
+        session,
+        AuditAction.CALL_RESPONDED,
+        actor_id=actor.id,
+        target_type="call_request",
+        target_id=call.id,
+        details={
+            "interest_id": str(interest.id),
+            "accept": accept,
+            "status": call.status.value,
+        },
+    )
+    return CallRequestResponse.of(call)

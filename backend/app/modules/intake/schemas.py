@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.modules.intake.documents import (
     MAX_UPLOAD_BYTES,
+    CompanyVerificationStatus,
     DocumentKind,
     DocumentStatus,
     ScanStatus,
@@ -26,6 +27,8 @@ from app.modules.intake.fields import (
 )
 
 __all__ = [
+    "CompanyVerificationDecision",
+    "CompanyVerificationStatus",
     "DocumentKind",
     "DocumentResponse",
     "DocumentStatus",
@@ -299,8 +302,27 @@ class ProfileResponse(BaseModel):
     published_at: datetime | None = Field(
         default=None, description="When discovery was last opted in to."
     )
+    company_verification_status: CompanyVerificationStatus = Field(
+        default=CompanyVerificationStatus.NONE,
+        description=(
+            "SACI admin review of the uploaded registration certificate. "
+            "**Not registry KYC** (`DECISIONS.md` D7) — an accepted status "
+            "means an admin reviewed the file, not that a company register "
+            "confirmed the entity."
+        ),
+    )
     created_at: datetime
     updated_at: datetime
+
+
+class CompanyVerificationDecision(BaseModel):
+    """SACI admin accept/reject of a submitted registration certificate."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    accept: bool = Field(
+        description="True to accept the certificate; false to reject it."
+    )
 
 
 class ProfileConflict(BaseModel):

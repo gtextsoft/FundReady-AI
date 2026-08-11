@@ -62,6 +62,7 @@ async def _founder(session: AsyncSession) -> User:
 def _checkout_event(user_id: uuid.UUID, session_id: str = "cs_test_1") -> dict:
     return {
         "id": f"evt_{uuid.uuid4().hex}",
+        "object": "event",
         "type": "checkout.session.completed",
         "data": {
             "object": {
@@ -125,3 +126,70 @@ async def test_duplicate_event_is_idempotent(db_session: AsyncSession) -> None:
     refreshed = await UserRepository(db_session).get_by_id(user.id)
     assert refreshed is not None
     assert refreshed.subscription_status is SubscriptionStatus.ACTIVE
+
+
+def _product_checkout_event(
+    user_id: uuid.UUID, product_id: uuid.UUID, session_id: str = "cs_test_product"
+) -> dict:
+    return {
+        "id": f"evt_{uuid.uuid4().hex}",
+        "object": "event",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": session_id,
+                "object": "checkout.session",
+                "amount_total": 9900,
+                "currency": "usd",
+                "customer": "cus_test_product",
+                "payment_intent": "pi_test_product",
+                "client_reference_id": str(user_id),
+                "metadata": {
+                    "user_id": str(user_id),
+                    "kind": "product",
+                    "product_id": str(product_id),
+                },
+            }
+        },
+    }
+
+
+async def test_product_checkout_marks_enrolment(db_session: AsyncSession) -> None:
+    from app.modules.commerce.models import Product, ProductKind
+    from app.modules.commerce.repository import ProductEnrolmentRepository
+
+    user = await _founder(db_session)
+    product = Product(
+        kind=ProductKind.PROGRAM,
+        slug=f"paid-program-{uuid.uuid4().hex[:8]}",
+        title="Paid Programme",
+        description="A paid catalogue item for webhook tests.",
+        regions=["*"],
+        gap_tags=["unit_economics"],
+        stripe_price_id="price_test_product",
+        amount_minor=9900,
+        currency="USD",
+        active=True,
+    )
+    db_session.add(product)
+    await db_session.flush()
+
+    event = _product_checkout_event(user.id, product.id)
+    payload = json.dumps(event).encode()
+    result = await service.handle_stripe_webhook(
+        db_session, payload=payload, signature=_sign(payload)
+    )
+    assert result["status"] == "ok"
+
+    enrolment = await ProductEnrolmentRepository(db_session).get(user.id, product.id)
+    assert enrolment is not None
+
+    purchase = await PurchaseRepository(db_session).get_by_session_id("cs_test_product")
+    assert purchase is not None
+    assert purchase.kind is PurchaseKind.PRODUCT
+    assert purchase.status is PurchaseStatus.COMPLETED
+    assert purchase.product_id == product.id
+
+    # Product Checkout must not grant the founder unlock entitlement.
+    await db_session.refresh(user)
+    assert user.subscription_status is SubscriptionStatus.NONE

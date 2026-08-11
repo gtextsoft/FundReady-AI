@@ -1,11 +1,9 @@
-"""Notifications business logic.
+"""Notifications business logic (T1.2a + T5.3).
 
 Layer: **service** (ARCHITECTURE.md section 3) -- business logic and
 orchestration. Performs authorization and ownership checks (AUTH.md sections
-5-6), calls this module's `repository`, `app.ai`, and other modules' public
-service functions only (never their internals). Enqueues background jobs.
-Selects the tier serializer for every response carrying report data
-(DECISIONS.md D8).
+5-6), calls this module's `repository`, and other modules' public service
+functions only (never their internals).
 
 Transactional email over Resend's HTTP API. Two rules shape everything here:
 
@@ -26,24 +24,61 @@ inline. When Redis is unavailable the send falls back to the request thread
 rather than dropping the message.
 """
 
+from __future__ import annotations
+
 import logging
+import uuid
 from typing import Any, Final
 
 import httpx
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
+from app.core.security import CurrentUser
+from app.modules.identity import service as identity
+from app.modules.notifications.models import Notification
+from app.modules.notifications.repository import NotificationRepository
+from app.modules.notifications.schemas import NotificationPage, NotificationResponse
 from app.modules.notifications.templates import (
     EmailContent,
     audit_report_email,
+    evidence_result_email,
+    interest_update_email,
+    kyc_verified_email,
+    meeting_booked_email,
     password_reset_email,
+    task_assigned_email,
     verification_email,
     welcome_email,
 )
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "create_notification",
+    "dispatch_email",
+    "list_notifications",
+    "mark_notifications_read",
+    "notify_evidence_result",
+    "notify_interest_update",
+    "notify_kyc_verified",
+    "notify_meeting_booked",
+    "notify_task_assigned",
+    "send_audit_report_email",
+    "send_email",
+    "send_password_reset_email",
+    "send_verification_email",
+    "send_welcome_email",
+]
+
 RESEND_ENDPOINT: Final = "https://api.resend.com/emails"
 SEND_TIMEOUT_SECONDS: Final = 10.0
+
+KIND_TASK_ASSIGNED: Final = "task_assigned"
+KIND_EVIDENCE_RESULT: Final = "evidence_result"
+KIND_MEETING_BOOKED: Final = "meeting_booked"
+KIND_INTEREST_UPDATE: Final = "interest_update"
+KIND_KYC_VERIFIED: Final = "kyc_verified"
 
 
 def _is_configured(settings: Settings) -> bool:
@@ -196,3 +231,198 @@ async def send_audit_report_email(
     return await dispatch_email(
         to, audit_report_email(report, app_url), settings=settings
     )
+
+
+# ---------------------------------------------------------------------------
+# In-app notifications
+# ---------------------------------------------------------------------------
+
+
+async def create_notification(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    kind: str,
+    title: str,
+    body: str,
+    payload: dict[str, Any] | None = None,
+) -> Notification:
+    """Persist one inbox row. Other modules call this for product events."""
+    return await NotificationRepository(session).create(
+        user_id=user_id,
+        kind=kind,
+        title=title,
+        body=body,
+        payload=payload,
+    )
+
+
+async def list_notifications(
+    session: AsyncSession,
+    actor: CurrentUser,
+    *,
+    limit: int = 50,
+    offset: int = 0,
+) -> NotificationPage:
+    """The caller's inbox, newest first."""
+    rows, total = await NotificationRepository(session).list_for_user(
+        actor.id, limit=limit, offset=offset
+    )
+    return NotificationPage(
+        items=[NotificationResponse.model_validate(row) for row in rows],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+async def mark_notifications_read(
+    session: AsyncSession,
+    actor: CurrentUser,
+    ids: list[uuid.UUID],
+) -> int:
+    """Mark the caller's notifications read. Foreign ids are ignored."""
+    return await NotificationRepository(session).mark_read(actor.id, ids)
+
+
+async def _email_user(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    content: EmailContent,
+    *,
+    settings: Settings | None = None,
+) -> bool:
+    """Resolve the mailbox and dispatch. Missing users are a quiet no-op."""
+    to = await identity.get_user_email(session, user_id)
+    if to is None:
+        return False
+    return await dispatch_email(to, content, settings=settings)
+
+
+async def notify_task_assigned(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    task_summary: str,
+    app_url: str,
+    payload: dict[str, Any] | None = None,
+    settings: Settings | None = None,
+) -> Notification:
+    """Inbox + email when a readiness task is raised."""
+    row = await create_notification(
+        session,
+        user_id=user_id,
+        kind=KIND_TASK_ASSIGNED,
+        title="New readiness task",
+        body=task_summary,
+        payload=payload,
+    )
+    await _email_user(
+        session,
+        user_id,
+        task_assigned_email(task_summary, app_url),
+        settings=settings,
+    )
+    return row
+
+
+async def notify_evidence_result(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    outcome: str,
+    app_url: str,
+    payload: dict[str, Any] | None = None,
+    settings: Settings | None = None,
+) -> Notification:
+    """Inbox + email when evidence assessment finishes."""
+    row = await create_notification(
+        session,
+        user_id=user_id,
+        kind=KIND_EVIDENCE_RESULT,
+        title="Evidence assessment result",
+        body=f"Your evidence was assessed as {outcome}.",
+        payload=payload,
+    )
+    await _email_user(
+        session,
+        user_id,
+        evidence_result_email(outcome, app_url),
+        settings=settings,
+    )
+    return row
+
+
+async def notify_meeting_booked(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    when_label: str,
+    app_url: str,
+    payload: dict[str, Any] | None = None,
+    settings: Settings | None = None,
+) -> Notification:
+    """Inbox + email when SACI books a meeting."""
+    row = await create_notification(
+        session,
+        user_id=user_id,
+        kind=KIND_MEETING_BOOKED,
+        title="Meeting booked",
+        body=f"A meeting has been scheduled for {when_label}.",
+        payload=payload,
+    )
+    await _email_user(
+        session,
+        user_id,
+        meeting_booked_email(when_label, app_url),
+        settings=settings,
+    )
+    return row
+
+
+async def notify_interest_update(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    status: str,
+    app_url: str,
+    payload: dict[str, Any] | None = None,
+    settings: Settings | None = None,
+) -> Notification:
+    """Inbox + email when an interest expression changes state."""
+    row = await create_notification(
+        session,
+        user_id=user_id,
+        kind=KIND_INTEREST_UPDATE,
+        title="Interest update",
+        body=f"An introduction request is now {status}.",
+        payload=payload,
+    )
+    await _email_user(
+        session,
+        user_id,
+        interest_update_email(status, app_url),
+        settings=settings,
+    )
+    return row
+
+
+async def notify_kyc_verified(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    app_url: str,
+    payload: dict[str, Any] | None = None,
+    settings: Settings | None = None,
+) -> Notification:
+    """Inbox + email when investor KYC succeeds."""
+    row = await create_notification(
+        session,
+        user_id=user_id,
+        kind=KIND_KYC_VERIFIED,
+        title="Identity verified",
+        body="Your identity check is complete. You can browse dealflow.",
+        payload=payload,
+    )
+    await _email_user(session, user_id, kyc_verified_email(app_url), settings=settings)
+    return row

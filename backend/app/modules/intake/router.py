@@ -12,7 +12,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
 
-from app.core.deps import CurrentUserDep, FounderWithAccess, SessionDep, SettingsDep, require_role
+from app.core.deps import (
+    CurrentAdmin,
+    CurrentUserDep,
+    FounderWithAccess,
+    SessionDep,
+    SettingsDep,
+    require_role,
+)
 from app.core.errors import error_responses
 from app.core.security import CurrentUser, Role
 from app.modules.intake import service
@@ -20,6 +27,7 @@ from app.modules.intake.documents import MAX_UPLOAD_BYTES
 from app.modules.intake.models import StartupProfile
 from app.modules.intake.registries import REGISTRIES
 from app.modules.intake.schemas import (
+    CompanyVerificationDecision,
     DocumentResponse,
     DownloadTicket,
     ProfileResponse,
@@ -61,6 +69,7 @@ def _serialise(profile: StartupProfile) -> ProfileResponse:
         missing_fields=service.missing_fields(profile),
         investor_visible=profile.investor_visible,
         published_at=profile.published_at,
+        company_verification_status=profile.company_verification_status,
         created_at=profile.created_at,
         updated_at=profile.updated_at,
     )
@@ -210,6 +219,57 @@ async def unpublish_profile(
 ) -> ProfileResponse:
     profile = await service.set_discoverability(
         session, actor, profile_id, visible=False
+    )
+    return _serialise(profile)
+
+
+# ---------------------------------------------------------------------------
+# Company verification (uploaded cert review — not registry KYC, D7)
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/startups/{startup_id}/company-verification/submit",
+    response_model=ProfileResponse,
+    summary="Submit company verification for SACI review",
+    description=(
+        "Submits the startup's uploaded registration certificate for SACI "
+        "admin review. Status moves submitted → in_review.\n\n"
+        "**This is SACI admin review of an uploaded certificate, NOT "
+        "registry KYC** (`DECISIONS.md` D7). Nothing calls a company "
+        "register; an accepted status only means an admin reviewed the file.\n\n"
+        "Requires a ready `registration_certificate` document."
+        + OWNERSHIP_NOTE
+    ),
+    responses=error_responses(401, 403, 404, 409, 422),
+)
+async def submit_company_verification(
+    startup_id: uuid.UUID, actor: FounderOrAdmin, session: SessionDep
+) -> ProfileResponse:
+    profile = await service.submit_company_verification(session, actor, startup_id)
+    return _serialise(profile)
+
+
+@router.post(
+    "/admin/startups/{startup_id}/company-verification",
+    response_model=ProfileResponse,
+    summary="Decide company verification",
+    description=(
+        "**SACI admins only (MFA required).** Accept or reject a submitted "
+        "registration certificate.\n\n"
+        "**Not registry KYC** (`DECISIONS.md` D7) — records an admin's review "
+        "of the uploaded file only."
+    ),
+    responses=error_responses(401, 403, 404, 409, 422),
+)
+async def decide_company_verification(
+    startup_id: uuid.UUID,
+    payload: CompanyVerificationDecision,
+    actor: CurrentAdmin,
+    session: SessionDep,
+) -> ProfileResponse:
+    profile = await service.decide_company_verification(
+        session, actor, startup_id, accept=payload.accept
     )
     return _serialise(profile)
 

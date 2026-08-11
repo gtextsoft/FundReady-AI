@@ -11,9 +11,25 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.modules.brokerage.models import Interest, InterestStatus
+from app.modules.brokerage.models import (
+    CallRequest,
+    CallRequestStatus,
+    Interest,
+    InterestStatus,
+    Meeting,
+    MeetingStatus,
+)
 
-__all__ = ["InterestCreate", "InterestResponse", "RevealResponse"]
+__all__ = [
+    "CallRequestCreate",
+    "CallRequestResponse",
+    "CallRespond",
+    "InterestCreate",
+    "InterestResponse",
+    "MeetingCreate",
+    "MeetingResponse",
+    "RevealResponse",
+]
 
 
 class InterestCreate(BaseModel):
@@ -115,3 +131,136 @@ class RevealResponse(BaseModel):
     interest_id: uuid.UUID
     audit_run_id: uuid.UUID
     revealed_at: datetime
+
+
+class MeetingCreate(BaseModel):
+    """SACI scheduling an introduction against an approved interest."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "scheduled_at": "2026-08-20T14:00:00Z",
+                "duration_minutes": 45,
+                "location": "https://meet.example.com/saci-room",
+                "notes": "SACI chairs; full report revealed at close.",
+            }
+        },
+    )
+
+    scheduled_at: datetime = Field(description="UTC start of the meeting.")
+    duration_minutes: int = Field(ge=15, le=240, description="Length in minutes.")
+    location: str | None = Field(default=None, max_length=500)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class MeetingResponse(BaseModel):
+    """One SACI-scheduled meeting."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "id": "a1b2c3d4-0000-4000-8000-000000000001",
+                "interest_id": "6b1f0e2a-0000-4000-8000-000000000001",
+                "scheduled_at": "2026-08-20T14:00:00Z",
+                "duration_minutes": 45,
+                "location": "https://meet.example.com/saci-room",
+                "notes": "SACI chairs; full report revealed at close.",
+                "status": "scheduled",
+                "created_at": "2026-08-11T08:00:00Z",
+            }
+        },
+    )
+
+    id: uuid.UUID
+    interest_id: uuid.UUID
+    scheduled_at: datetime
+    duration_minutes: int
+    location: str | None = None
+    notes: str | None = None
+    status: MeetingStatus
+    created_at: datetime
+
+    @classmethod
+    def of(cls, meeting: Meeting) -> "MeetingResponse":
+        return cls(
+            id=meeting.id,
+            interest_id=meeting.interest_id,
+            scheduled_at=meeting.scheduled_at,
+            duration_minutes=meeting.duration_minutes,
+            location=meeting.location,
+            notes=meeting.notes,
+            status=meeting.status,
+            created_at=meeting.created_at,
+        )
+
+
+class CallRequestCreate(BaseModel):
+    """An investor proposing a virtual-call slot."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "proposed_at": "2026-08-18T10:30:00Z",
+                "message": "Happy to walk through traction and ask about runway.",
+            }
+        },
+    )
+
+    proposed_at: datetime = Field(description="UTC proposed start.")
+    message: str | None = Field(default=None, max_length=1000)
+
+
+class CallRequestResponse(BaseModel):
+    """One investor-proposed virtual call."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "id": "c0ffee00-0000-4000-8000-000000000001",
+                "interest_id": "6b1f0e2a-0000-4000-8000-000000000001",
+                "requested_by_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+                "proposed_at": "2026-08-18T10:30:00Z",
+                "message": "Happy to walk through traction and ask about runway.",
+                "status": "pending",
+                "created_at": "2026-08-11T08:00:00Z",
+                "responded_at": None,
+            }
+        },
+    )
+
+    id: uuid.UUID
+    interest_id: uuid.UUID
+    requested_by_id: uuid.UUID
+    proposed_at: datetime
+    message: str | None = None
+    status: CallRequestStatus
+    created_at: datetime
+    responded_at: datetime | None = None
+
+    @classmethod
+    def of(cls, call: CallRequest) -> "CallRequestResponse":
+        return cls(
+            id=call.id,
+            interest_id=call.interest_id,
+            requested_by_id=call.requested_by_id,
+            proposed_at=call.proposed_at,
+            message=call.message,
+            status=call.status,
+            created_at=call.created_at,
+            responded_at=call.responded_at,
+        )
+
+
+class CallRespond(BaseModel):
+    """Founder accept/decline of a pending call request."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"example": {"accept": True}},
+    )
+
+    accept: bool = Field(description="`true` accepts the slot; `false` declines.")

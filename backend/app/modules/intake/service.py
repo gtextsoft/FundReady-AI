@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.email_domains import company_name_from_email
 from app.core.errors import ConflictError, InvalidRequestError, NotFoundError
 from app.core.ownership import owned_or_404
-from app.core.security import CurrentUser, Role
+from app.core.security import CurrentUser, Role, assert_admin
 from app.core.storage import (
     ObjectTooLargeError,
     StoredObject,
@@ -39,8 +39,10 @@ from app.core.storage import (
     signed_upload_url,
 )
 from app.modules.identity import service as identity
+from app.modules.identity.models import AuditAction
 from app.modules.intake.documents import (
     MAX_UPLOAD_BYTES,
+    CompanyVerificationStatus,
     DocumentKind,
     DocumentPayload,
     DocumentStatus,
@@ -214,6 +216,101 @@ async def set_discoverability(
     return profile
 
 
+async def submit_company_verification(
+    session: AsyncSession, actor: CurrentUser, startup_id: uuid.UUID
+) -> StartupProfile:
+    """Founder submits an uploaded registration certificate for SACI review.
+
+    **SACI admin review of an uploaded cert, NOT registry KYC** (`DECISIONS.md`
+    D7). Requires a ready `registration_certificate` document. Moves status
+    through submitted → in_review so the admin queue can pick it up.
+    """
+    profile = _authorise(await StartupProfileRepository(session).get(startup_id), actor)
+
+    if profile.company_verification_status in (
+        CompanyVerificationStatus.SUBMITTED,
+        CompanyVerificationStatus.IN_REVIEW,
+        CompanyVerificationStatus.ACCEPTED,
+    ):
+        raise ConflictError(
+            f"Company verification is already "
+            f"{profile.company_verification_status.value}."
+        )
+
+    documents = await DocumentRepository(session).list_for_startup(profile.id)
+    has_cert = any(
+        document.kind is DocumentKind.REGISTRATION_CERTIFICATE
+        and document.status is DocumentStatus.READY
+        for document in documents
+    )
+    if not has_cert:
+        raise InvalidRequestError(
+            "Upload a registration certificate before submitting for review.",
+            {"reason": "registration_certificate_required"},
+        )
+
+    # submitted → in_review in one step: the founder has submitted, and the
+    # row lands on the admin work queue immediately.
+    profile.company_verification_status = CompanyVerificationStatus.IN_REVIEW
+    await session.flush()
+
+    await identity.record_action(
+        session,
+        AuditAction.COMPANY_VERIFICATION_SUBMITTED,
+        actor_id=actor.id,
+        target_type="startup",
+        target_id=profile.id,
+        details={"status": profile.company_verification_status.value},
+    )
+    return profile
+
+
+async def decide_company_verification(
+    session: AsyncSession,
+    actor: CurrentUser,
+    startup_id: uuid.UUID,
+    *,
+    accept: bool,
+) -> StartupProfile:
+    """SACI admin accepts or rejects a submitted registration certificate.
+
+    **Not registry KYC** (`DECISIONS.md` D7) — this records an admin's review of
+    the uploaded file only.
+    """
+    assert_admin(actor)
+    profile = await StartupProfileRepository(session).get(startup_id)
+    if profile is None:
+        raise NotFoundError(_DENIED)
+
+    if profile.company_verification_status not in (
+        CompanyVerificationStatus.SUBMITTED,
+        CompanyVerificationStatus.IN_REVIEW,
+    ):
+        raise ConflictError(
+            "This startup has no company verification awaiting a decision."
+        )
+
+    profile.company_verification_status = (
+        CompanyVerificationStatus.ACCEPTED
+        if accept
+        else CompanyVerificationStatus.REJECTED
+    )
+    await session.flush()
+
+    await identity.record_action(
+        session,
+        AuditAction.COMPANY_VERIFICATION_DECIDED,
+        actor_id=actor.id,
+        target_type="startup",
+        target_id=profile.id,
+        details={
+            "accepted": accept,
+            "status": profile.company_verification_status.value,
+        },
+    )
+    return profile
+
+
 async def update_profile(
     session: AsyncSession,
     actor: CurrentUser,
@@ -357,11 +454,16 @@ async def scan_document(session: AsyncSession, document: Document) -> None:
     """Magic-byte verification for uploads (`CLAUDE.md` section 4, T5.5).
 
     Reads the object head from R2 and checks it against the declared content
-    type. A mismatch is `INFECTED` (refused by `_is_auditable`); a match is
-    `CLEAN`. Full antivirus remains a future plug-in at this same seam.
+    type. A mismatch is `INFECTED` (refused by `_is_auditable`); a match that
+    also carries a PE (`MZ`) marker is `INFECTED` as well. Full antivirus
+    remains an external plug-in at this same seam — this is fingerprinting,
+    not malware detection.
     """
     from app.core.storage import get_object
-    from app.modules.intake.scanning import content_type_matches_bytes
+    from app.modules.intake.scanning import (
+        content_type_matches_bytes,
+        head_contains_pe_executable,
+    )
 
     try:
         stored = get_object(
@@ -384,7 +486,9 @@ async def scan_document(session: AsyncSession, document: Document) -> None:
 
     head = stored[:8192]
     declared = document.content_type or ""
-    if content_type_matches_bytes(declared, head):
+    if content_type_matches_bytes(declared, head) and not head_contains_pe_executable(
+        head
+    ):
         document.scan_status = ScanStatus.CLEAN
     else:
         document.scan_status = ScanStatus.INFECTED

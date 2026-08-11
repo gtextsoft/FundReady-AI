@@ -106,6 +106,8 @@ class CurrentUser:
     # Founder entitlement inputs (DECISIONS.md D21). Investors leave defaults.
     subscription_status: SubscriptionStatus = SubscriptionStatus.NONE
     created_at: datetime | None = None
+    # Investor entitlement (AUTH.md §8). Founders leave the default.
+    kyc_status: KycStatus = KycStatus.NONE
 
 
 def assert_admin(actor: CurrentUser, *, message: str | None = None) -> None:
@@ -352,6 +354,70 @@ def verify_dummy_password(settings: Settings | None = None) -> None:
     if _dummy_hash is None:
         _dummy_hash = hash_password("dummy-password-for-timing-parity", settings)
     verify_password(_dummy_hash, "not-the-dummy-password", settings)
+
+
+# ---------------------------------------------------------------------------
+# Breached-password check (Have I Been Pwned, k-anonymity)
+# ---------------------------------------------------------------------------
+
+_HIBP_RANGE_URL: Final = "https://api.pwnedpasswords.com/range/{prefix}"
+_HIBP_TIMEOUT_SECONDS: Final = 3.0
+
+
+async def assert_password_not_breached(
+    password: str, settings: Settings | None = None
+) -> None:
+    """Reject passwords that appear in the HIBP corpus.
+
+    Uses the k-anonymity range API: only the first five hex chars of the SHA-1
+    hash leave the process. Gated by `password_breach_check_enabled`. On
+    network / parse failure, logs and **allows** the password so signup is not
+    bricked when HIBP is unreachable.
+    """
+    from app.core.errors import InvalidRequestError
+
+    settings = settings or get_settings()
+    if not settings.password_breach_check_enabled:
+        return
+
+    digest = hashlib.sha1(password.encode("utf-8")).hexdigest().upper()  # noqa: S324
+    prefix, suffix = digest[:5], digest[5:]
+
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=_HIBP_TIMEOUT_SECONDS) as client:
+            response = await client.get(
+                _HIBP_RANGE_URL.format(prefix=prefix),
+                headers={"Add-Padding": "true", "User-Agent": "FundReady-AI"},
+            )
+            response.raise_for_status()
+            body = response.text
+    except Exception:
+        logger.warning(
+            "password breach check failed open",
+            extra={"context": {"reason": "hibp_unreachable"}},
+            exc_info=True,
+        )
+        return
+
+    for line in body.splitlines():
+        parts = line.split(":")
+        if len(parts) != 2:
+            continue
+        if not hmac.compare_digest(parts[0].strip().upper(), suffix):
+            continue
+        try:
+            count = int(parts[1].strip())
+        except ValueError:
+            continue
+        if count > 0:
+            raise InvalidRequestError(
+                "This password has appeared in a known data breach. "
+                "Please choose a different one.",
+                {"reason": "breached_password"},
+            )
+        return
 
 
 # ---------------------------------------------------------------------------

@@ -64,6 +64,13 @@ class ReadinessTaskResponse(BaseModel):
             "the report that is asking for it."
         )
     )
+    product_id: uuid.UUID | None = Field(
+        default=None,
+        description=(
+            "Catalogue product that addresses this gap, when one matches "
+            "(T3.2). `null` when no programme is linked."
+        ),
+    )
     dimension: Dimension = Field(description="Which rubric dimension raised this gap.")
     action: str = Field(
         description="What to do, in the rubric's own wording, as issued."

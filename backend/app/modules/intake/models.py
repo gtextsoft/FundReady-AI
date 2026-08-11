@@ -15,7 +15,12 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
-from app.modules.intake.documents import DocumentKind, DocumentStatus, ScanStatus
+from app.modules.intake.documents import (
+    CompanyVerificationStatus,
+    DocumentKind,
+    DocumentStatus,
+    ScanStatus,
+)
 from app.modules.intake.fields import Stage
 
 
@@ -97,6 +102,21 @@ class StartupProfile(Base):
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     """When the founder last opted in. Cleared on unpublish, so the column also
     answers "has this ever been discoverable" for a support conversation."""
+
+    # SACI review of an uploaded registration certificate — not registry KYC
+    # (DECISIONS.md D7). Column added in migration 0017; values are the
+    # `CompanyVerificationStatus` string enum.
+    company_verification_status: Mapped[CompanyVerificationStatus] = mapped_column(
+        SAEnum(
+            CompanyVerificationStatus,
+            native_enum=False,
+            length=16,
+            name="company_verification_status",
+            values_callable=lambda enum: [member.value for member in enum],
+        ),
+        default=CompanyVerificationStatus.NONE,
+        server_default="none",
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

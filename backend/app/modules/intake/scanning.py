@@ -1,14 +1,21 @@
 """Magic-byte verification for uploads (T5.5 seam of CLAUDE.md section 4).
 
-Not a full antivirus product — that needs an external scanner. This checks that
-the declared MIME type matches the file's leading bytes so a renamed executable
-cannot sit behind `application/pdf`. Infected / mismatched files are marked
-`INFECTED` and refused by `_is_auditable`.
+Not a full antivirus product — that remains an external scanner plugged into
+the same `intake.service.scan_document` seam. This checks that the declared
+MIME type matches the file's leading bytes so a renamed executable cannot sit
+behind `application/pdf`, and additionally rejects a PE (`MZ`) marker in the
+head even when the magic bytes otherwise match (polyglot / disguised binary).
+Infected / mismatched files are marked `INFECTED` and refused by `_is_auditable`.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+# DOS/PE executable magic. Checked after content-type match so a polyglot that
+# starts with a legitimate PDF/ZIP signature but also carries an MZ stub is
+# still refused.
+_PE_MARKER = b"MZ"
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,4 +69,13 @@ def content_type_matches_bytes(content_type: str, head: bytes) -> bool:
     return False
 
 
-__all__ = ["content_type_matches_bytes"]
+def head_contains_pe_executable(head: bytes) -> bool:
+    """True when the scanned head carries a DOS/PE `MZ` marker.
+
+    Catches renamed executables and polyglots that also satisfy a declared
+    type's magic (e.g. a PDF stub followed by PE). Full AV remains external.
+    """
+    return _PE_MARKER in head
+
+
+__all__ = ["content_type_matches_bytes", "head_contains_pe_executable"]

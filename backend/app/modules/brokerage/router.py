@@ -18,8 +18,13 @@ from app.modules.audit.reports import AdminReport
 from app.modules.brokerage import service
 from app.modules.brokerage.models import InterestStatus
 from app.modules.brokerage.schemas import (
+    CallRequestCreate,
+    CallRequestResponse,
+    CallRespond,
     InterestCreate,
     InterestResponse,
+    MeetingCreate,
+    MeetingResponse,
     RevealResponse,
 )
 
@@ -167,3 +172,107 @@ async def read_revealed_report(
     session: SessionDep,
 ) -> AdminReport:
     return await service.read_revealed_report(session, actor, interest_id, run_id)
+
+
+@router.post(
+    "/admin/interests/{interest_id}/meetings",
+    status_code=status.HTTP_201_CREATED,
+    response_model=MeetingResponse,
+    summary="Schedule a meeting for an interest",
+    description=(
+        "**SACI admins only.** Books one introduction against an **approved** "
+        "interest. SACI is the required participant; investors and founders do "
+        "not create this row.\n\n"
+        "`409` if the interest is not approved, or if a meeting already exists "
+        "for it (one meeting per interest)." + BROKERAGE_NOTE
+    ),
+    responses=error_responses(401, 403, 404, 409, 422),
+)
+async def schedule_meeting(
+    interest_id: uuid.UUID,
+    payload: MeetingCreate,
+    actor: CurrentAdmin,
+    session: SessionDep,
+) -> MeetingResponse:
+    return await service.schedule_meeting(session, actor, interest_id, payload)
+
+
+@router.get(
+    "/interests/{interest_id}/meetings",
+    response_model=list[MeetingResponse],
+    summary="List meetings for an interest",
+    description=(
+        "Visible to the investor on the interest, the founding owner of the "
+        "startup, or a SACI admin. Empty until SACI schedules one." + BROKERAGE_NOTE
+    ),
+    responses=error_responses(401, 403, 404, 422),
+)
+async def list_meetings(
+    interest_id: uuid.UUID,
+    actor: CurrentUserDep,
+    session: SessionDep,
+) -> list[MeetingResponse]:
+    return await service.list_meetings(session, actor, interest_id)
+
+
+@router.post(
+    "/interests/{interest_id}/calls",
+    status_code=status.HTTP_201_CREATED,
+    response_model=CallRequestResponse,
+    summary="Request a virtual call",
+    description=(
+        "**Investors only (KYC required).** Proposes a slot on an interest the "
+        "caller owns. The founder answers via `POST /v1/calls/{id}/respond`.\n\n"
+        "`403` with `reason: kyc_required` when identity verification is "
+        "incomplete. `409` if the interest is declined or withdrawn." + BROKERAGE_NOTE
+    ),
+    responses=error_responses(401, 403, 404, 409, 422),
+)
+async def request_call(
+    interest_id: uuid.UUID,
+    payload: CallRequestCreate,
+    actor: CurrentUserDep,
+    session: SessionDep,
+) -> CallRequestResponse:
+    return await service.request_call(
+        session,
+        actor,
+        interest_id,
+        proposed_at=payload.proposed_at,
+        message=payload.message,
+    )
+
+
+@router.get(
+    "/calls",
+    response_model=list[CallRequestResponse],
+    summary="List call requests for the caller",
+    description=(
+        "Investors see calls on their interests; founders see calls against "
+        "their startup; SACI admins see every call. Newest first."
+    ),
+    responses=error_responses(401, 403, 404, 422),
+)
+async def list_call_requests(
+    actor: CurrentUserDep, session: SessionDep
+) -> list[CallRequestResponse]:
+    return await service.list_call_requests(session, actor)
+
+
+@router.post(
+    "/calls/{call_id}/respond",
+    response_model=CallRequestResponse,
+    summary="Accept or decline a call request",
+    description=(
+        "**Founders only.** Answers a pending call on their own startup. "
+        "`409` if the call was already answered — one decision, then terminal."
+    ),
+    responses=error_responses(401, 403, 404, 409, 422),
+)
+async def respond_to_call(
+    call_id: uuid.UUID,
+    payload: CallRespond,
+    actor: CurrentUserDep,
+    session: SessionDep,
+) -> CallRequestResponse:
+    return await service.respond_to_call(session, actor, call_id, accept=payload.accept)

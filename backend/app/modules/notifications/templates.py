@@ -1,16 +1,20 @@
-"""Transactional email bodies.
+"""Transactional email bodies (T1.2a + T5.3).
 
-Verification and password reset only -- the full templated set (audit ready,
-task assigned, evidence result, meeting booked) is T5.3.
+Security messages (verification, password reset) and product events (audit
+ready, task assigned, evidence result, meeting booked, interest update, KYC).
 
 Every message goes out as both HTML and plain text. Plain text is not a
 courtesy: some clients render it by preference, and a security email that
 arrives as a blank body is a support incident.
 
-**Templates never take the recipient's address or name.** They render one
-secret -- a verification or password-reset code -- and nothing else, so a
-template cannot accidentally place personal data somewhere it will be logged.
-The caller supplies the recipient separately.
+**Templates never take the recipient's address or name.** Security templates
+render a code and nothing else, so they cannot accidentally place credentials
+somewhere they will be logged. Product templates may name event types and
+non-secret context (task summary, assessment outcome) but still never receive
+the mailbox. The caller supplies the recipient separately.
+
+**Subjects that carry secrets stay free of those secrets.** Product subjects
+may name the event type so a lock-screen preview is useful.
 """
 
 from dataclasses import dataclass
@@ -252,4 +256,91 @@ def audit_report_email(report: Any, app_url: str) -> EmailContent:
         subject=f"Your {PRODUCT_NAME} assessment is ready",
         html=_wrap(f"Your {PRODUCT_NAME} assessment", "".join(sections)),
         text="\n\n".join(text_parts),
+    )
+
+
+def task_assigned_email(task_summary: str, app_url: str) -> EmailContent:
+    """A readiness task was raised for the founder."""
+    return EmailContent(
+        subject=f"New readiness task on {PRODUCT_NAME}",
+        html=_wrap(
+            "New readiness task",
+            f"<p>Your assessment raised something to work on:</p>"
+            f'<p style="margin:16px 0"><strong>{task_summary}</strong></p>'
+            f'<p><a href="{app_url}">Open it in {PRODUCT_NAME}</a></p>',
+        ),
+        text=(
+            f"Your assessment raised something to work on:\n\n"
+            f"{task_summary}\n\n"
+            f"Open it in {PRODUCT_NAME}: {app_url}"
+        ),
+    )
+
+
+def evidence_result_email(outcome: str, app_url: str) -> EmailContent:
+    """Evidence for a readiness task was assessed."""
+    return EmailContent(
+        subject=f"Evidence assessment result on {PRODUCT_NAME}",
+        html=_wrap(
+            "Evidence assessment result",
+            f"<p>Your uploaded evidence was assessed as "
+            f"<strong>{outcome}</strong>.</p>"
+            f'<p><a href="{app_url}">Review it in {PRODUCT_NAME}</a></p>',
+        ),
+        text=(
+            f"Your uploaded evidence was assessed as {outcome}.\n\n"
+            f"Review it in {PRODUCT_NAME}: {app_url}"
+        ),
+    )
+
+
+def meeting_booked_email(when_label: str, app_url: str) -> EmailContent:
+    """SACI booked a meeting between founder and investor."""
+    return EmailContent(
+        subject=f"Meeting booked on {PRODUCT_NAME}",
+        html=_wrap(
+            "Meeting booked",
+            f"<p>A meeting has been scheduled for "
+            f"<strong>{when_label}</strong>.</p>"
+            f'<p><a href="{app_url}">See details in {PRODUCT_NAME}</a></p>',
+        ),
+        text=(
+            f"A meeting has been scheduled for {when_label}.\n\n"
+            f"See details in {PRODUCT_NAME}: {app_url}"
+        ),
+    )
+
+
+def interest_update_email(status: str, app_url: str) -> EmailContent:
+    """An interest expression changed state (approved, declined, …)."""
+    return EmailContent(
+        subject=f"Interest update on {PRODUCT_NAME}",
+        html=_wrap(
+            "Interest update",
+            f"<p>An introduction request is now "
+            f"<strong>{status}</strong>.</p>"
+            f'<p><a href="{app_url}">Open {PRODUCT_NAME}</a></p>',
+        ),
+        text=(
+            f"An introduction request is now {status}.\n\n"
+            f"Open {PRODUCT_NAME}: {app_url}"
+        ),
+    )
+
+
+def kyc_verified_email(app_url: str) -> EmailContent:
+    """Investor identity verification succeeded (Stripe Identity)."""
+    return EmailContent(
+        subject=f"Identity verified on {PRODUCT_NAME}",
+        html=_wrap(
+            "Identity verified",
+            "<p>Your identity check is complete. You can now browse dealflow "
+            "and express interest.</p>"
+            f'<p><a href="{app_url}">Open {PRODUCT_NAME}</a></p>',
+        ),
+        text=(
+            "Your identity check is complete. You can now browse dealflow "
+            "and express interest.\n\n"
+            f"Open {PRODUCT_NAME}: {app_url}"
+        ),
     )

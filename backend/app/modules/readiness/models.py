@@ -59,11 +59,9 @@ class ReadinessTask(Base):
     evidence assessment (T3.5) writes to it. A founder-settable status would let
     anyone clear the investor-visibility gate by tapping a button eleven times.
 
-    **No product link yet.** T3.1 asks for tasks to link to products "where
-    relevant" and T3.2 is what creates the catalogue; a foreign key cannot point
-    at a table that does not exist, and a loose text column would be a second
-    format to migrate away from later. It arrives as one additive nullable column
-    with T3.2.
+    **`product_id` links a task to the catalogue when a programme covers the
+    gap** (T3.2 / D18). Nullable — not every gap has a matching product, and
+    retiring a product must not strand the task (`ON DELETE SET NULL`).
     """
 
     __tablename__ = "readiness_tasks"
@@ -94,6 +92,11 @@ class ReadinessTask(Base):
     # whether or not the run that prompted it still exists.
     audit_run_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("audit_runs.id", ondelete="SET NULL"), index=True
+    )
+
+    product_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("products.id", ondelete="SET NULL"),
+        nullable=True,
     )
 
     dimension: Mapped[Dimension] = mapped_column(

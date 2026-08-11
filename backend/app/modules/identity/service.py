@@ -36,6 +36,7 @@ from app.core.security import (
     AccountStatus,
     CurrentUser,
     Role,
+    assert_password_not_breached,
     create_access_token,
     decode_mfa_challenge_token,
     decrypt_mfa_secret,
@@ -127,7 +128,8 @@ def validate_password(password: str, email: str) -> None:
     """Reject the obviously weak (AUTH.md section 12).
 
     Length beats composition rules, so there are no forced symbol classes. The
-    breached-password check belongs with the rest of the rate limiting in T5.5.
+    HIBP breached-password check is async (`assert_password_not_breached`) and
+    runs on the register / reset paths after this.
     """
     if len(password) < MIN_PASSWORD_LENGTH:
         raise InvalidRequestError(
@@ -196,6 +198,7 @@ async def register_user(
         )
 
     validate_password(password, normalised)
+    await assert_password_not_breached(password)
 
     users = UserRepository(session)
     if await users.get_by_email(normalised) is not None:
@@ -447,6 +450,7 @@ async def load_current_user(
         session_valid_after=user.session_valid_after,
         subscription_status=user.subscription_status,
         created_at=user.created_at,
+        kyc_status=user.kyc_status,
     )
 
 
@@ -813,6 +817,7 @@ async def reset_password(
         raise _invalid_code()
 
     validate_password(new_password, user.email)
+    await assert_password_not_breached(new_password, settings)
 
     user.password_hash = hash_password(new_password)
     user.session_valid_after = now

@@ -1,56 +1,79 @@
-"""Investor HTTP endpoints (T4.3).
-
-Investor profiles, thesis, discovery/ranking, and the investor AI analyst chat.
-
-Layer: **router** (ARCHITECTURE.md section 3) -- HTTP only. Validate the request
-with `schemas`, call exactly one `service` method, return a response schema.
-No business logic, no database access, no LLM calls.
-"""
+"""Investor HTTP endpoints (T4.1, T4.3, T4.4)."""
 
 import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Query
 
-from app.core.deps import CurrentUserDep, SessionDep
+from app.core.deps import CurrentUserDep, SessionDep, VerifiedInvestor
 from app.core.errors import error_responses
 from app.modules.intake.fields import Stage
 from app.modules.investor import service
-from app.modules.investor.schemas import DiscoveryFilters, DiscoveryPage, StartupCard
+from app.modules.investor.schemas import (
+    DiscoveryFilters,
+    DiscoveryPage,
+    IdentitySessionResponse,
+    InvestorProfileResponse,
+    InvestorProfileUpsert,
+    StartupCard,
+    WatchlistResponse,
+)
+from app.modules.mentor.schemas import MentorChatRequest, MentorChatResponse
 
 router = APIRouter(tags=["investor"])
 
 DISCOVERY_NOTE = (
-    "\n\n**Investors and SACI admins only; `403` for a founder.**\n\n"
-    "Every startup here opted in explicitly — running an audit does not make a "
-    "founder discoverable, publishing does. Results carry the **summary tier** "
-    "only: the two verdicts and the four discovery columns. There is no "
-    "founder name, no contact detail, and none of the submitted figures. That "
-    "is the brokerage: the verdict is enough to decide whether to ask for an "
-    "introduction, and not enough to skip one."
+    "\n\n**KYC-verified investors and SACI admins only.** "
+    "`403` with `kyc_required` until Stripe Identity verifies the investor.\n\n"
+    "Results carry the **summary tier** only."
 )
+
+
+@router.get(
+    "/investor/me",
+    response_model=InvestorProfileResponse,
+    summary="Read investor profile and thesis",
+    responses=error_responses(401, 403),
+)
+async def read_investor_profile(
+    actor: CurrentUserDep, session: SessionDep
+) -> InvestorProfileResponse:
+    return await service.get_profile(session, actor)
+
+
+@router.put(
+    "/investor/me",
+    response_model=InvestorProfileResponse,
+    summary="Upsert investor thesis and credentials",
+    responses=error_responses(401, 403, 422),
+)
+async def upsert_investor_profile(
+    payload: InvestorProfileUpsert, actor: CurrentUserDep, session: SessionDep
+) -> InvestorProfileResponse:
+    return await service.upsert_profile(session, actor, payload)
+
+
+@router.post(
+    "/investor/kyc/session",
+    response_model=IdentitySessionResponse,
+    summary="Start Stripe Identity verification",
+    responses=error_responses(401, 403, 422, 500),
+)
+async def start_kyc(
+    actor: CurrentUserDep, session: SessionDep
+) -> IdentitySessionResponse:
+    return await service.start_identity_session(session, actor)
 
 
 @router.get(
     "/discover",
     response_model=DiscoveryPage,
     summary="Browse discoverable startups",
-    description=(
-        "Startups that have published themselves, newest first.\n\n"
-        "Filters are the four indexed columns. `sector` matches "
-        "case-insensitively because sector is free text — a founder who typed "
-        "`Fintech` and a filter of `fintech` mean the same thing.\n\n"
-        "`total` is the count ignoring pagination, so a client can render "
-        '"page N of M".\n\n'
-        "A startup appears only once it has a **succeeded** audit. A published "
-        "profile with no verdict is not listed: a card with nothing on it "
-        "invites a direct approach, which is what the brokerage prevents."
-        + DISCOVERY_NOTE
-    ),
+    description="Ranked against the caller's thesis when one is set." + DISCOVERY_NOTE,
     responses=error_responses(401, 403, 422),
 )
 async def discover(
-    actor: CurrentUserDep,
+    actor: VerifiedInvestor,
     session: SessionDep,
     sector: Annotated[str | None, Query(max_length=120)] = None,
     stage: Annotated[Stage | None, Query()] = None,
@@ -71,15 +94,60 @@ async def discover(
     "/discover/{startup_id}",
     response_model=StartupCard,
     summary="Read one discoverable startup",
-    description=(
-        "The same card the list returns.\n\n"
-        "**`404` for a startup that has not published**, exactly as for one "
-        "that does not exist — a distinguishable answer would turn this into "
-        "an oracle for which startup ids are real." + DISCOVERY_NOTE
-    ),
+    description=DISCOVERY_NOTE,
     responses=error_responses(401, 403, 404, 422),
 )
 async def read_startup_card(
-    startup_id: uuid.UUID, actor: CurrentUserDep, session: SessionDep
+    startup_id: uuid.UUID, actor: VerifiedInvestor, session: SessionDep
 ) -> StartupCard:
     return await service.visible_startup(session, actor, startup_id)
+
+
+@router.post(
+    "/discover/{startup_id}/analyst/chat",
+    response_model=MentorChatResponse,
+    summary="Investor AI analyst chat (summary tier only)",
+    description=(
+        "Answers from **summary-tier** retrieval only. Full-report fields are "
+        "never loaded into context, even if the prompt asks for them."
+        + DISCOVERY_NOTE
+    ),
+    responses=error_responses(401, 403, 404, 422),
+)
+async def analyst_chat(
+    startup_id: uuid.UUID,
+    payload: MentorChatRequest,
+    actor: VerifiedInvestor,
+    session: SessionDep,
+) -> MentorChatResponse:
+    return await service.analyst_chat(
+        session,
+        actor,
+        startup_id,
+        message=payload.message,
+        history=payload.history,
+    )
+
+
+@router.get(
+    "/watchlist",
+    response_model=WatchlistResponse,
+    summary="Synced investor watchlist",
+    responses=error_responses(401, 403),
+)
+async def get_watchlist(
+    actor: VerifiedInvestor, session: SessionDep
+) -> WatchlistResponse:
+    return await service.watchlist(session, actor)
+
+
+@router.post(
+    "/watchlist/{startup_id}",
+    response_model=WatchlistResponse,
+    summary="Toggle a startup on the watchlist",
+    responses=error_responses(401, 403, 404),
+)
+async def toggle_watchlist(
+    startup_id: uuid.UUID, actor: VerifiedInvestor, session: SessionDep
+) -> WatchlistResponse:
+    return await service.toggle_watch(session, actor, startup_id)

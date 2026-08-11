@@ -121,6 +121,7 @@ def actor_for(user: User) -> CurrentUser:
         role=user.role,
         status=AccountStatus.ACTIVE,
         email_verified=True,
+        mfa_enabled=user.mfa_enabled,
     )
 
 
@@ -139,6 +140,8 @@ async def founder_with_profile(
     user.role = role
     user.status = AccountStatus.ACTIVE
     user.email_verified_at = datetime.now(UTC)
+    if role is Role.ADMIN:
+        user.mfa_enabled = True
     await session.flush()
     actor = actor_for(user)
     profile = await service.create_profile(session, actor, {"name": "Kanmi"})

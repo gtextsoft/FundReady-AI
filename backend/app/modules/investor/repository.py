@@ -1,4 +1,4 @@
-"""Investor data access (T4.3).
+"""Investor data access (T4.1, T4.3).
 
 Layer: **repository** (ARCHITECTURE.md section 3) -- database access only.
 Queries in, models/data out. No business rules, no authorization decisions.
@@ -9,28 +9,73 @@ authorization is a service decision (D13) and repositories return unfiltered
 rows -- but visibility here is not a check about *the caller*, it is part of
 what the collection *is*: "startups that opted in to being discovered". A row
 that has not opted in is not a row this query is about.
-
-The practical reason is the one that matters. Discovery is a list endpoint over
-other people's confidential businesses, and a filter applied after the fact is
-one forgotten call away from publishing every founder on the platform. In SQL it
-cannot be forgotten: there is no unfiltered variant of this query to reach for
-by mistake.
 """
 
 import uuid
 from collections.abc import Sequence
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.audit.models import AuditRun
 from app.modules.audit.runs import AuditStatus
 from app.modules.intake.models import StartupProfile
+from app.modules.investor.models import InvestorProfile, WatchlistEntry
 from app.modules.investor.schemas import DiscoveryFilters
 from app.modules.readiness.generation import Requirement, TaskStatus
 from app.modules.readiness.models import ReadinessTask
 
-__all__ = ["DiscoveryRepository"]
+__all__ = ["DiscoveryRepository", "InvestorProfileRepository", "WatchlistRepository"]
+
+
+class InvestorProfileRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_by_user(self, user_id: uuid.UUID) -> InvestorProfile | None:
+        result = await self._session.execute(
+            select(InvestorProfile).where(InvestorProfile.user_id == user_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def add(self, profile: InvestorProfile) -> InvestorProfile:
+        self._session.add(profile)
+        await self._session.flush()
+        return profile
+
+
+class WatchlistRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def list_ids(self, investor_id: uuid.UUID) -> list[uuid.UUID]:
+        result = await self._session.execute(
+            select(WatchlistEntry.startup_id)
+            .where(WatchlistEntry.investor_id == investor_id)
+            .order_by(WatchlistEntry.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def toggle(
+        self, investor_id: uuid.UUID, startup_id: uuid.UUID
+    ) -> list[uuid.UUID]:
+        existing = await self._session.execute(
+            select(WatchlistEntry).where(
+                WatchlistEntry.investor_id == investor_id,
+                WatchlistEntry.startup_id == startup_id,
+            )
+        )
+        row = existing.scalar_one_or_none()
+        if row is None:
+            self._session.add(
+                WatchlistEntry(investor_id=investor_id, startup_id=startup_id)
+            )
+        else:
+            await self._session.execute(
+                delete(WatchlistEntry).where(WatchlistEntry.id == row.id)
+            )
+        await self._session.flush()
+        return await self.list_ids(investor_id)
 
 
 class DiscoveryRepository:
@@ -40,63 +85,12 @@ class DiscoveryRepository:
         self._session = session
 
     def _visible(self) -> Select[tuple[StartupProfile, AuditRun]]:
-        """Opted-in profiles that have cleared the readiness gate (T3.6).
-
-        Three conditions, and all three are in SQL for the reason the module
-        docstring gives: there is no unfiltered variant of this query to reach
-        for by mistake.
-
-        * **Opted in.** `investor_visible` is the founder's consent.
-        * **Audited.** The join is **inner**, so a profile that opted in but has
-          no succeeded audit does not appear. There would be nothing to show but
-          a name, and a card with no verdict invites an investor to go and ask
-          the founder directly -- the one thing the brokerage exists to prevent.
-        * **No required task outstanding.** PRD section 4.2: a startup becomes
-          investor-visible when the audit clears **and** all required tasks
-          pass.
-
-        **The gate is enforced at the read, not at `publish`.** Consent and
-        eligibility are different questions and go stale on different schedules:
-        a founder who was eligible when they published is not eligible after a
-        re-audit raises a new required gap, and a check written at publish time
-        would keep them discoverable anyway. Deciding it here means the answer
-        cannot be out of date, and `intake.set_discoverability` stays what it
-        already documents itself to be -- consent, unconditional to give and to
-        withdraw.
-
-        **Outstanding is scoped to the tasks the *latest* run raised**, which is
-        what `audit_run_id` is maintained for: `readiness` refreshes it to the
-        newest run on every regeneration, so matching `latest.c.id` means
-        "outstanding according to the report an investor would actually be
-        shown". Counting every task ever raised instead would strand founders
-        permanently -- a task that was graded `failed` keeps that status even
-        after a later audit stops raising the gap (`UNTOUCHED_STATUSES` retires
-        only untouched rows, deliberately, so evidence is never erased), and a
-        gap absent from the current report is one no new evidence can address.
-        That founder would have no self-service path back to visibility.
-
-        `obsolete` is excluded as well as `passed`, which is belt-and-braces: a
-        task the latest run raised is reopened out of `obsolete` by `_refresh`,
-        so the two cannot co-occur today. If that invariant ever breaks, the
-        safe direction is not blocking a founder over a retired task.
-
-        `DISTINCT ON` picks the newest run per startup in a single pass. The
-        alternative reads every audit of every visible startup to render one
-        row each.
-        """
+        """Opted-in profiles that have cleared the readiness gate (T3.6)."""
         latest = (
             select(AuditRun)
             .where(AuditRun.status == AuditStatus.SUCCEEDED)
             .where(AuditRun.report.isnot(None))
             .distinct(AuditRun.startup_id)
-            # `id` breaks the tie, and it is not decoration. Postgres `now()`
-            # is the **transaction** timestamp, so two runs written in one
-            # transaction share `created_at` to the microsecond -- and with no
-            # tiebreaker `DISTINCT ON` then picks between them arbitrarily and
-            # not necessarily the same way twice. The gate here and
-            # `AuditRunRepository.latest_succeeded` must resolve to the *same*
-            # run or a founder is told they have cleared while discovery says
-            # otherwise, so both order identically.
             .order_by(
                 AuditRun.startup_id, AuditRun.created_at.desc(), AuditRun.id.desc()
             )
@@ -126,9 +120,6 @@ class DiscoveryRepository:
         filters: DiscoveryFilters,
     ) -> Select[tuple[StartupProfile, AuditRun]]:
         if filters.sector:
-            # Case-insensitive because sector is free text (D11). A founder who
-            # typed "Fintech" and an investor who filtered "fintech" mean the
-            # same thing; an exact match would silently return nothing.
             statement = statement.where(
                 func.lower(StartupProfile.sector) == filters.sector.strip().lower()
             )
@@ -161,12 +152,6 @@ class DiscoveryRepository:
     async def visible_run(
         self, startup_id: uuid.UUID
     ) -> tuple[StartupProfile, AuditRun] | None:
-        """One discoverable startup and the audit its card was built from.
-
-        Reusing `_visible()` is the point: an investor cannot act on a startup
-        that is not discoverable by pasting its id, because the same filter
-        guards the read and every write that follows from it.
-        """
         result = await self._session.execute(
             self._visible().where(StartupProfile.id == startup_id)
         )

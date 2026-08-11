@@ -52,6 +52,7 @@ _SETTINGS_ENV_VARS = (
     "ARGON2_TIME_COST",
     "ARGON2_PARALLELISM",
     "MFA_SECRET_ENCRYPTION_KEY",
+    "PASSWORD_BREACH_CHECK_ENABLED",
     "R2_ACCOUNT_ID",
     "R2_ENDPOINT_URL",
     "R2_ACCESS_KEY_ID",
@@ -66,6 +67,7 @@ _SETTINGS_ENV_VARS = (
     "AI_MODEL_CHAT",
     "AI_MAX_OUTPUT_TOKENS",
     "AI_DAILY_BUDGET_TOKENS_PER_USER",
+    "AI_SERVER_SIDE_FALLBACKS_ENABLED",
     "STRIPE_SECRET_KEY",
     "STRIPE_WEBHOOK_SECRET",
     "STRIPE_PUBLISHABLE_KEY",
@@ -80,6 +82,8 @@ def isolated_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Give each test a clean environment and a fresh settings cache."""
     for name in _SETTINGS_ENV_VARS:
         monkeypatch.delenv(name, raising=False)
+    # Fixture passwords are intentionally well-known; do not call HIBP in CI.
+    monkeypatch.setenv("PASSWORD_BREACH_CHECK_ENABLED", "false")
     get_settings.cache_clear()
     db.reset_engine_cache()
     yield

@@ -28,7 +28,11 @@ from app.modules.intake.models import StartupProfile
 __all__ = [
     "DiscoveryFilters",
     "DiscoveryPage",
+    "IdentitySessionResponse",
+    "InvestorProfileResponse",
+    "InvestorProfileUpsert",
     "StartupCard",
+    "WatchlistResponse",
 ]
 
 
@@ -155,3 +159,52 @@ class DiscoveryPage(BaseModel):
     total: int = Field(description="Total matching startups, ignoring pagination.")
     limit: int
     offset: int
+
+
+class InvestorProfileUpsert(BaseModel):
+    """Thesis + firm details an investor may set before or after KYC."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    firm: str | None = Field(default=None, max_length=200)
+    investor_type: str | None = Field(default=None, max_length=64)
+    country: str | None = Field(default=None, min_length=2, max_length=2)
+    linkedin_url: str | None = Field(default=None, max_length=500)
+    thesis_sectors: list[str] = Field(default_factory=list, max_length=20)
+    thesis_stages: list[Stage] = Field(default_factory=list, max_length=10)
+    thesis_geographies: list[str] = Field(default_factory=list, max_length=20)
+    ticket_min_minor: int | None = Field(default=None, ge=0)
+    ticket_max_minor: int | None = Field(default=None, ge=0)
+    ticket_currency: str | None = Field(default=None, min_length=3, max_length=3)
+    risk_notes: str | None = Field(default=None, max_length=2000)
+
+
+class InvestorProfileResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    firm: str | None = None
+    investor_type: str | None = None
+    country: str | None = None
+    linkedin_url: str | None = None
+    thesis_sectors: list[str] = Field(default_factory=list)
+    thesis_stages: list[str] = Field(default_factory=list)
+    thesis_geographies: list[str] = Field(default_factory=list)
+    ticket_min_minor: int | None = None
+    ticket_max_minor: int | None = None
+    ticket_currency: str | None = None
+    risk_notes: str | None = None
+    kyc_status: str
+
+
+class IdentitySessionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    url: str
+    session_id: str
+    kyc_status: str
+
+
+class WatchlistResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    startup_ids: list[UUID]

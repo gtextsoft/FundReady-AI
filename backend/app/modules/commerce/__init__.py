@@ -1,5 +1,5 @@
 """Commerce module.
 
-Stripe Checkout for the founder unlock, purchase ledger, and webhooks
-(DECISIONS.md D21). Catalogue programmes (D18) are additive later.
+Stripe Checkout for the founder unlock, purchase ledger, webhooks
+(DECISIONS.md D21), and the product / event catalogue (D18 / T3.2).
 """

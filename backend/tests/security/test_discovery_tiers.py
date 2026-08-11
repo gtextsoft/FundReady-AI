@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.schemas import Citation, DataSufficiency
 from app.core.config import get_settings
 from app.core.errors import ForbiddenError, NotFoundError
-from app.core.security import AccountStatus, CurrentUser, Role
+from app.core.security import AccountStatus, CurrentUser, KycStatus, Role
 from app.modules.audit import service as audit
 from app.modules.audit.rubric.v1 import Dimension, DimensionScore
 from app.modules.audit.runs import AuditStatus
@@ -72,6 +72,7 @@ def _actor(user: User) -> CurrentUser:
         status=AccountStatus.ACTIVE,
         email_verified=True,
         mfa_enabled=user.mfa_enabled,
+        kyc_status=user.kyc_status,
     )
 
 
@@ -89,6 +90,11 @@ async def _user(
     assert user is not None
     user.role = role
     user.status = AccountStatus.ACTIVE
+    if role is Role.ADMIN:
+        user.mfa_enabled = True
+    if role is Role.INVESTOR:
+        # Discovery is KYC-gated; fixtures that browse need a verified actor.
+        user.kyc_status = KycStatus.VERIFIED
     await session.flush()
     return user, _actor(user)
 

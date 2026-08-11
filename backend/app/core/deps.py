@@ -26,6 +26,7 @@ from app.core.errors import ForbiddenError, UnauthenticatedError
 from app.core.security import (
     AccountStatus,
     CurrentUser,
+    KycStatus,
     Role,
     resolve_current_user,
 )
@@ -156,6 +157,33 @@ FounderWithAccess = Annotated[CurrentUser, Depends(require_founder_access)]
 PaidFounder = Annotated[CurrentUser, Depends(require_active_subscription)]
 """Founder with a completed Stripe unlock only."""
 
+
+async def require_kyc_verified(user: CurrentUserDep) -> CurrentUser:
+    """Investor (or admin) with Stripe Identity verified (AUTH.md §8, T4.1).
+
+    Admins with MFA pass through so SACI can inspect discovery as an investor
+    would. Unverified investors get a machine-readable reason the client can
+    route to the Identity flow.
+    """
+    if user.role is Role.ADMIN:
+        if not user.mfa_enabled:
+            raise ForbiddenError(
+                "Admin accounts must enrol in two-factor authentication first."
+            )
+        return user
+    if user.role is not Role.INVESTOR:
+        raise ForbiddenError
+    if user.kyc_status is not KycStatus.VERIFIED:
+        raise ForbiddenError(
+            "Complete investor identity verification to continue.",
+            {"reason": "kyc_required", "kyc_status": user.kyc_status.value},
+        )
+    return user
+
+
+VerifiedInvestor = Annotated[CurrentUser, Depends(require_kyc_verified)]
+"""Investor with verified KYC (admins with MFA also allowed)."""
+
 __all__ = [
     "AuthenticatedUserDep",
     "CurrentAdmin",
@@ -166,10 +194,12 @@ __all__ = [
     "PaidFounder",
     "SessionDep",
     "SettingsDep",
+    "VerifiedInvestor",
     "bearer_scheme",
     "get_authenticated_user",
     "get_current_user",
     "require_active_subscription",
     "require_founder_access",
+    "require_kyc_verified",
     "require_role",
 ]

@@ -35,12 +35,19 @@ class Owned:
     owner_id: uuid.UUID
 
 
-def actor(role: Role = Role.FOUNDER, user_id: uuid.UUID | None = None) -> CurrentUser:
+def actor(
+    role: Role = Role.FOUNDER,
+    user_id: uuid.UUID | None = None,
+    *,
+    mfa_enabled: bool | None = None,
+) -> CurrentUser:
     return CurrentUser(
         id=user_id or uuid.uuid4(),
         role=role,
         status=AccountStatus.ACTIVE,
         email_verified=True,
+        # Cross-tenant admin reads require MFA (`owned_or_404` → `assert_admin`).
+        mfa_enabled=(role is Role.ADMIN) if mfa_enabled is None else mfa_enabled,
     )
 
 
@@ -128,12 +135,23 @@ class TestTheTwoDenialsAreIndistinguishable:
 
 class TestAdmin:
     def test_an_admin_reads_any_row(self) -> None:
-        """SACI sees everything (AUTH.md section 2)."""
+        """SACI sees everything (AUTH.md section 2), with MFA."""
         resource = Owned(owner_id=uuid.uuid4())
 
         assert owned_or_404(resource, actor(role=Role.ADMIN), message=MESSAGE) is (
             resource
         )
+
+    def test_an_unenrolled_admin_is_refused(self) -> None:
+        """Cross-tenant reads still require MFA (AUTH.md section 9)."""
+        resource = Owned(owner_id=uuid.uuid4())
+
+        with pytest.raises(ForbiddenError):
+            owned_or_404(
+                resource,
+                actor(role=Role.ADMIN, mfa_enabled=False),
+                message=MESSAGE,
+            )
 
     def test_an_admin_still_gets_404_for_a_row_that_is_not_there(self) -> None:
         """Exempt from ownership, not from existence."""

@@ -143,6 +143,10 @@ class Settings(BaseSettings):
     # Encrypts TOTP secrets at rest, so a database leak does not defeat MFA.
     mfa_secret_encryption_key: SecretStr | None = None
 
+    # Have I Been Pwned range API on register / password reset. Fail-open on
+    # network errors so signup is not bricked when the service is unreachable.
+    password_breach_check_enabled: bool = True
+
     # -- Object storage (Cloudflare R2 -- never Postgres) -------------------
     r2_account_id: str = ""
     r2_endpoint_url: str = ""
@@ -168,6 +172,11 @@ class Settings(BaseSettings):
     ai_max_output_tokens: OptionalInt = None
     # Enforced in `ai.client` (T5.5). Default caps spend when unset.
     ai_daily_budget_tokens_per_user: OptionalInt = 500_000
+    # When true, structured calls use `client.beta.messages.stream` with
+    # `fallbacks="default"` and the server-side-fallback beta header so a
+    # cyber-category refusal can route to an alternate model. Off by default:
+    # the beta path is a different SDK surface than the one tests mock.
+    ai_server_side_fallbacks_enabled: bool = False
 
     # -- Stripe -------------------------------------------------------------
     stripe_secret_key: SecretStr | None = None

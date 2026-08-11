@@ -36,7 +36,7 @@ import uuid
 from typing import Protocol, TypeVar
 
 from app.core.errors import NotFoundError
-from app.core.security import CurrentUser, Role
+from app.core.security import CurrentUser, Role, assert_admin
 
 logger = logging.getLogger(__name__)
 
@@ -72,18 +72,21 @@ def owned_or_404(
     actually sees, and every message for a given resource must be identical
     whether the row is missing or merely someone else's.
 
-    SACI admins are exempt (`AUTH.md` section 2) -- the role that reveals full
-    reports necessarily reads across tenants. Investors are not exempt; they
+    SACI admins are exempt from the ownership match (`AUTH.md` section 2) --
+    the role that reveals full reports necessarily reads across tenants -- but
+    only with MFA enrolled (`assert_admin`). Investors are not exempt; they
     reach startups through the summary serializer in T4.2, never through an
     owned-object read.
 
     Raises:
         NotFoundError: the resource does not exist, or does not belong to this
             caller. Indistinguishable by design.
+        ForbiddenError: the caller is an admin without MFA enrolled.
     """
     if resource is None:
         raise NotFoundError(message)
     if actor.role is Role.ADMIN:
+        assert_admin(actor)
         return resource
     if resource.owner_id != actor.id:
         # Role only. Logging the actor id, the resource id, or the owner id

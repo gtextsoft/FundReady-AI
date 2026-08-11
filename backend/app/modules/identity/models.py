@@ -82,6 +82,21 @@ class AuditAction(StrEnum):
     # Commerce
     PURCHASE_COMPLETED = "commerce.purchase_completed"
     SUBSCRIPTION_CHANGED = "commerce.subscription_changed"
+    PRODUCT_CREATED = "admin.product_created"
+    PRODUCT_UPDATED = "admin.product_updated"
+    PRODUCT_ENROLLED = "commerce.product_enrolled"
+
+    # Investor KYC (T4.1) — status trusted from Stripe Identity only.
+    KYC_STATUS_CHANGED = "investor.kyc_status_changed"
+
+    # Brokerage meetings / calls (T4.5)
+    MEETING_SCHEDULED = "brokerage.meeting_scheduled"
+    CALL_REQUESTED = "brokerage.call_requested"
+    CALL_RESPONDED = "brokerage.call_responded"
+
+    # Company registration review (founder trust; not registry KYC — D7)
+    COMPANY_VERIFICATION_SUBMITTED = "intake.company_verification_submitted"
+    COMPANY_VERIFICATION_DECIDED = "admin.company_verification_decided"
 
 
 class AuditLog(Base):
@@ -208,6 +223,8 @@ class User(Base):
     )
     # Stripe Customer id for Checkout reuse. Trusted from Stripe only.
     stripe_customer_id: Mapped[str | None] = mapped_column(String(255), index=True)
+    # Latest Stripe Identity VerificationSession id. Trusted from Stripe only.
+    stripe_identity_session_id: Mapped[str | None] = mapped_column(String(255))
 
     # Bumping this invalidates every access token issued before it, without
     # waiting for expiry (AUTH.md section 11).

@@ -7,11 +7,7 @@
 # ---------------------------------------------------------------------------
 APP_ENV=development          # development | staging | production
 LOG_LEVEL=INFO               # DEBUG | INFO | WARNING | ERROR
-API_BASE_URL=
-# Base URL for product deep links in email (reports, paywall return URLs, …).
-# Auth secrets are six-digit codes typed into the app — verification and
-# password reset do not go through a link (AUTH.md sections 3.2 and 12).
-APP_LINK_BASE_URL=
+API_BASE_URL=https://fundready-5fkw.onrender.com
 # Comma-separated; restrict to known origins.
 CORS_ALLOWED_ORIGINS=
 
@@ -20,27 +16,14 @@ CORS_ALLOWED_ORIGINS=
 # ---------------------------------------------------------------------------
 # Least-privilege application role. Migrations may use a separate, higher role.
 # The plain postgresql:// form is fine; the async driver is applied for you.
-# Use Neon's POOLED endpoint here (the host containing "-pooler").
-DATABASE_URL=
-
-# Optional. Neon's DIRECT endpoint -- the same host without "-pooler". Alembic
-# uses it for DDL, because the pooled endpoint is PgBouncer in transaction mode
-# and is not the recommended target for schema changes. Falls back to
-# DATABASE_URL when left blank.
-DATABASE_MIGRATION_URL=
-
-# Test-only, never read by the running service. Point it at a throwaway
-# database -- a Neon branch is ideal -- and the suite will use it instead of
-# DATABASE_URL. Database tests roll back everything they write either way.
-TEST_DATABASE_URL=
-
+DATABASE_URL="postgresql://neondb_owner:npg_I49hndjycgCf@ep-restless-tooth-avg6wmc9-pooler.c-11.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 # ---------------------------------------------------------------------------
 # Authentication (self-built -- AUTH.md)
 # ---------------------------------------------------------------------------
 # Signs our access tokens. At least 32 characters; a short secret makes every
 # token forgeable offline. Generate with:
 #   python -c "import secrets; print(secrets.token_urlsafe(48))"
-JWT_SECRET_KEY=
+JWT_SECRET_KEY="BwQnpI6vSguwd68R6Hubr27TCccgSs8SRI_VZK9trU7lzaTxUe1IJsEPKtGVJi7h"
 JWT_ALGORITHM=HS256
 JWT_KEY_ID=k1              # bump when rotating the signing key
 JWT_ISSUER=fundready
@@ -55,75 +38,63 @@ ARGON2_TIME_COST=3
 ARGON2_PARALLELISM=1
 
 # Encrypts TOTP secrets at rest, so a database leak does not defeat MFA.
-MFA_SECRET_ENCRYPTION_KEY=
-
-# Have I Been Pwned k-anonymity check on register / password reset.
-# Network failures fail open (signup proceeds). Set false to disable.
-PASSWORD_BREACH_CHECK_ENABLED=true
+MFA_SECRET_ENCRYPTION_KEY=tUWqfMqB7Rva1zLXz1Ap6norQ6at4QUE-5mYorTG9FlP_de5-77HGrW_EPNHYwM_
 
 # ---------------------------------------------------------------------------
 # Object storage (Cloudflare R2 -- documents + evidence, never in Postgres)
 # ---------------------------------------------------------------------------
-R2_ACCOUNT_ID=
+R2_ACCOUNT_ID="ec8648991366eda522acdd94940b1d02"
 # https://<account-id>.r2.cloudflarestorage.com
-R2_ENDPOINT_URL=
-R2_ACCESS_KEY_ID=
-R2_SECRET_ACCESS_KEY=
-R2_BUCKET_DOCUMENTS=
-R2_BUCKET_EVIDENCE=
+R2_ENDPOINT_URL="https://ec8648991366eda522acdd94940b1d02.r2.cloudflarestorage.com"
+R2_ACCESS_KEY_ID="b57e6a891ae0b307892c8912430d2271"
+R2_SECRET_ACCESS_KEY="5f1fd9a34b54a77ecefd7b95056d1759d328e5c8fdf6664496f63dc42f201d25"
+R2_BUCKET_DOCUMENTS=documents
+R2_BUCKET_EVIDENCE=evidence
 STORAGE_SIGNED_URL_TTL_SECONDS=900
 
 # ---------------------------------------------------------------------------
 # Queue (Redis)
 # ---------------------------------------------------------------------------
-REDIS_URL=
+REDIS_URL="rediss://default:gQAAAAAAAwJOAAIgcDFjOGNmNDNkMzY5N2U0NDI5YWQxOWYxOGFmZjk4NDNmMg@quality-snail-197198.upstash.io:6379"
+# The two REST vars below are read by nothing in this codebase. RQ speaks the
+# Redis wire protocol; they are kept only because Upstash shows them first.
 QUEUE_NAME=fundready
 
 # ---------------------------------------------------------------------------
 # AI (Claude API) - model tiering and budgets per DECISIONS.md D16
 # ---------------------------------------------------------------------------
-#
-# The two model ids are overrides. Leave them blank to use the tier defaults
-# chosen in T2.1 and recorded in `app/ai/client.py` -- audits on claude-opus-5,
-# chat on claude-sonnet-5. Set one only to pin a different model per
-# environment; the choice itself lives in code, next to the tiering logic.
-ANTHROPIC_API_KEY=
-# Override: strongest model - audits, scoring, evidence. Blank uses the code
-# default, `claude-opus-5`.
-AI_MODEL_AUDIT=
-# Override: cheaper model - founder + investor chat. Blank uses the code
-# default, `claude-sonnet-5`.
-AI_MODEL_CHAT=
-# A ceiling on output tokens, not a value: each tier requests its own budget
-# under it (16k audit / 4k chat). Blank means the tier defaults apply as-is.
-AI_MAX_OUTPUT_TOKENS=
-# Per-user daily token cap (input+output, including failed calls). Enforced
-# in `ai.client` via Redis. Blank uses the code default (500000).
-AI_DAILY_BUDGET_TOKENS_PER_USER=
-# When true, AI calls use Anthropic server-side fallbacks (beta). Default off.
-AI_SERVER_SIDE_FALLBACKS_ENABLED=false
+ANTHROPIC_API_KEY="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"
+# Strongest model: audits, scoring, evidence. Blank uses `claude-opus-5`.
+AI_MODEL_AUDIT="claude-opus-5"
+# Cheaper model: founder + investor chat. Blank uses `claude-sonnet-5`.
+AI_MODEL_CHAT="claude-sonnet-5"
+AI_MAX_OUTPUT_TOKENS="16000"
+AI_DAILY_BUDGET_TOKENS_PER_USER="20000"
 
 # ---------------------------------------------------------------------------
 # Stripe (billed through the UK/US entity; no Connect in v1 - DECISIONS.md D5)
-# One-off founder unlock via Checkout (DECISIONS.md D21), not Billing.
 # ---------------------------------------------------------------------------
 STRIPE_SECRET_KEY=
-# Required in production; webhook signatures are always verified.
+# Required; webhook signatures are always verified.
 STRIPE_WEBHOOK_SECRET=
 STRIPE_PUBLISHABLE_KEY=
-# Stripe Price id for the one-time unlock product (mode=payment).
-STRIPE_PRICE_ID_UNLOCK=
-# Optional. Blank falls back to APP_LINK_BASE_URL founder paywall deep links.
-STRIPE_CHECKOUT_SUCCESS_URL=
-STRIPE_CHECKOUT_CANCEL_URL=
 
 # ---------------------------------------------------------------------------
 # Email (transactional)
 # ---------------------------------------------------------------------------
-RESEND_API_KEY=
-EMAIL_FROM_ADDRESS=
+RESEND_API_KEY="re_Ydh9F4ks_5oXYUm45g6aJvxwf3CbWEnZB"
+EMAIL_FROM_ADDRESS=FundReady <noreply@stephenakintayofoundation.org>
 
 # ---------------------------------------------------------------------------
 # Monitoring
 # ---------------------------------------------------------------------------
 SENTRY_DSN=
+APP_LINK_BASE_URL="https://stephenakintayofoundation.org/app"
+
+# Neon's DIRECT endpoint (no `-pooler`): alembic's DDL target.
+DATABASE_MIGRATION_URL="postgresql://neondb_owner:npg_I49hndjycgCf@ep-restless-tooth-avg6wmc9.c-11.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+
+MFA_SECRET_ENCRYPTION_KEY="AuE5KBVItkj1Gg5jh5PACOhZd1tORsQPqkeDt7Ju9u4"
+
+CORS_ALLOWED_ORIGINS=http://localhost:8097,http://127.0.0.1:8097,http://localhost:8081,http://127.0.0.1:8081
+APP_LINK_BASE_URL=http://localhost:8097
