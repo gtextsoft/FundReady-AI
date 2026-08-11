@@ -47,7 +47,7 @@ export function NotificationCentre({ audience }: { audience: Role }) {
       </TxtSemi>
 
       {error ? (
-        <Unavailable title="Alerts will appear here when live" error={error} />
+        <Unavailable title="Could not load alerts" error={error} />
       ) : items.length ? (
         <View className="gap-[9px]">
           {items.map((n) => (
@@ -77,12 +77,12 @@ function NotificationRow({ notification, audience }: { notification: AppNotifica
   const n = notification;
 
   // A call request is answered on the founder's Investors tab; everything with
-  // a company attached opens that company on the investor side.
+  // a startup attached opens that company on the investor side.
   const target =
     n.callRequestId && audience === 'founder'
       ? '/founder/investors'
-      : n.companyId && audience === 'investor'
-        ? `/investor/company/${n.companyId}`
+      : n.startupId && audience === 'investor'
+        ? `/investor/company/${n.startupId}`
         : null;
 
   const body = (

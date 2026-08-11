@@ -107,7 +107,7 @@ export function ScheduleCallSheet({
         </View>
 
         <View className="gap-[10px]">
-          <FieldLabel>Note to the founder</FieldLabel>
+          <FieldLabel>Message (optional)</FieldLabel>
           <View className="rounded-[11px] border border-line-strong bg-surface-1 px-[14px] py-2" style={{ minHeight: 84 }}>
             <TextInput
               className="flex-1 text-[13.5px] text-ink"

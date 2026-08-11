@@ -9,18 +9,8 @@ import type { Role } from '@/api/contract';
  * notification to the founder, and the founder's answer writes one back.
  */
 
-export type NotificationKind =
-  | 'call_requested'
-  | 'call_accepted'
-  | 'call_declined'
-  | 'intro_requested'
-  | 'intro_accepted'
-  | 'verification_approved'
-  | 'verification_rejected'
-  | 'payment_receipt'
-  | 'trial_ending'
-  | 'score_changed'
-  | 'new_matches';
+/** Stable server event type, e.g. `call_requested`, `task_assigned`. */
+export type NotificationKind = string;
 
 export type AppNotification = {
   id: string;
@@ -31,40 +21,45 @@ export type AppNotification = {
   /** ISO timestamp. */
   createdAt: string;
   read: boolean;
-  /** Deep-link target, when the notification is about a specific company. */
-  companyId?: number;
-  /** Set on `call_requested` so the founder can accept or decline in place. */
+  /** Deep-link target when the payload carries a startup id. */
+  startupId?: string;
+  /** Set on call-related alerts so the founder can answer in place. */
   callRequestId?: string;
 };
 
 export type CallRequestStatus = 'pending' | 'accepted' | 'declined';
 
-/** A virtual call an investor has asked a founder for. */
+/** A virtual call an investor has asked a founder for (`GET /v1/calls`). */
 export type CallRequest = {
   id: string;
-  companyId: number;
-  companyName: string;
-  investorName: string;
-  investorFirm: string;
+  interestId: string;
   /** ISO datetime of the proposed slot. */
   proposedAt: string;
-  durationMinutes: number;
-  note: string;
+  message: string | null;
   status: CallRequestStatus;
+  createdAt: string;
+  respondedAt: string | null;
 };
 
-const DOT: Record<NotificationKind, string> = {
+const DOT: Record<string, string> = {
   call_requested: C.blue,
   call_accepted: C.grn,
   call_declined: C.red,
   intro_requested: C.blue,
   intro_accepted: C.grn,
+  interest_received: C.blue,
+  interest_approved: C.grn,
+  interest_declined: C.red,
   verification_approved: C.grn,
   verification_rejected: C.red,
+  kyc_verified: C.grn,
+  kyc_failed: C.red,
   payment_receipt: C.grn,
   trial_ending: C.amb,
   score_changed: C.grn,
   new_matches: C.amb,
+  task_assigned: C.amb,
+  meeting_booked: C.blue,
 };
 
 export function notificationColor(kind: NotificationKind): string {

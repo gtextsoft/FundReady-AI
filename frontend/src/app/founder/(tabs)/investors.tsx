@@ -89,7 +89,7 @@ export default function InvestorInterest() {
                 {answered.map((r) => (
                   <View key={r.id} className="rounded-[12px] border border-line bg-surface-1 p-[14px]">
                     <View className="flex-row items-center justify-between">
-                      <TxtMed className="text-[13px]">{r.investorFirm}</TxtMed>
+                      <TxtMed className="text-[13px]">Investor call</TxtMed>
                       <Mono
                         className="text-[10px]"
                         style={{ color: r.status === 'accepted' ? C.grn : C.inkFaint }}>
@@ -147,9 +147,9 @@ function CallCard({
     <View className="rounded-[12px] border border-line bg-surface-1 p-[14px]">
       <View className="flex-row items-start justify-between gap-3">
         <View className="flex-1">
-          <TxtSemi className="text-[14px]">{request.investorFirm}</TxtSemi>
+          <TxtSemi className="text-[14px]">Virtual call request</TxtSemi>
           <Txt className="mt-[3px] text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
-            wants a {request.durationMinutes}-minute virtual call about {request.companyName}.
+            An investor proposed a slot against interest {request.interestId.slice(0, 8)}…
           </Txt>
         </View>
         <View className="rounded-[5px] border border-line-strong px-2 py-[3px]">
@@ -166,9 +166,9 @@ function CallCard({
         <Mono className="mt-[3px] text-[13px]">{formatSlot(request.proposedAt)}</Mono>
       </View>
 
-      {request.note ? (
+      {request.message ? (
         <Txt className="mt-3 text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
-          “{request.note}”
+          “{request.message}”
         </Txt>
       ) : null}
 

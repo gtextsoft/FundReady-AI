@@ -4,6 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
+import { ScheduleCallSheet } from '@/components/investor/schedule-call-sheet';
 import { Button } from '@/components/ui/button';
 import { MetaPill } from '@/components/ui/controls';
 import { Eyebrow, FieldLabel, Mono, Txt, TxtSemi } from '@/components/ui/text';
@@ -18,6 +19,9 @@ import {
   verdictLabel,
   verdictScoreText,
 } from '@/domain/discovery-format';
+import { investorGate } from '@/domain/access';
+import { gateCopy } from '@/domain/gate-copy';
+import type { Interest } from '@/domain/interest';
 import { initials } from '@/lib/format';
 import { route, VERIFY_EMAIL } from '@/lib/routes';
 import { useInvestor } from '@/store/investor';
@@ -39,15 +43,19 @@ export default function CompanyDetail() {
   const [busy, setBusy] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [justSent, setJustSent] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [callError, setCallError] = useState<string | null>(null);
 
   const watchlist = useInvestor((s) => s.watchlist);
   const toggleWatch = useInvestor((s) => s.toggleWatch);
   const interestedIds = useInvestor((s) => s.interestedIds);
+  const interests = useInvestor((s) => s.interests);
   const expressInterest = useInvestor((s) => s.expressInterest);
   const loadInterests = useInvestor((s) => s.loadInterests);
 
   const account = useSession((s) => s.investorAccount);
-  const emailOk = account?.emailVerified ?? false;
+  const interestGate = account ? investorGate(account, 'expressInterest') : { allowed: false, reason: 'email' as const };
+  const callGate = account ? investorGate(account, 'scheduleCall') : { allowed: false, reason: 'email' as const };
 
   useEffect(() => {
     void loadInterests();
@@ -105,12 +113,22 @@ export default function CompanyDetail() {
   const name = startup.name?.trim() || 'Unnamed startup';
   const watched = watchlist.includes(startup.startupId);
   const already = interestedIds.includes(startup.startupId) || justSent;
+  const interest: Interest | undefined = interests.find((i) => i.startupId === startup.startupId);
+  const canSchedule =
+    Boolean(interest) &&
+    interest!.status !== 'declined' &&
+    interest!.status !== 'withdrawn' &&
+    callGate.allowed;
   const fundColor = verdictColor(startup.fundability.level);
 
   async function sendInterest() {
     if (!startup || already) return;
-    if (!emailOk) {
-      setSubmitError('Confirm your email address before expressing interest.');
+    if (!interestGate.allowed) {
+      setSubmitError(
+        interestGate.reason === 'email'
+          ? 'Confirm your email address before expressing interest.'
+          : 'Verify your identity before expressing interest.',
+      );
       return;
     }
     setBusy(true);
@@ -194,6 +212,42 @@ export default function CompanyDetail() {
             : ''}
         </Txt>
 
+        <Eyebrow className="mb-[10px] mt-6">AI ANALYST</Eyebrow>
+        <View className="rounded-[12px] border border-line bg-surface-1 p-[14px]">
+          <Txt className="mb-3 text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+            Ask about this summary card. Answers stay on the summary tier — full report fields are never loaded.
+          </Txt>
+          <Button
+            label="Open AI analyst"
+            height={40}
+            variant="secondary"
+            onPress={() => router.push(route(`/investor/company/${startup.startupId}/analyst`))}
+          />
+        </View>
+
+        {interest && interest.revealedRunIds.length > 0 ? (
+          <>
+            <Eyebrow className="mb-[10px] mt-6">REVEALED REPORTS</Eyebrow>
+            <View className="gap-[9px]">
+              {interest.revealedRunIds.map((runId) => (
+                <View key={runId} className="rounded-[12px] border border-line bg-surface-1 p-[14px]">
+                  <TxtSemi className="text-[13px]">Full report available</TxtSemi>
+                  <Mono className="mt-1 text-[10px] text-ink-faint">{runId.slice(0, 8)}…</Mono>
+                  <View className="mt-3">
+                    <Button
+                      label="Open revealed report"
+                      height={40}
+                      onPress={() =>
+                        router.push(route(`/investor/report/${interest.id}/${runId}`))
+                      }
+                    />
+                  </View>
+                </View>
+              ))}
+            </View>
+          </>
+        ) : null}
+
         <Eyebrow className="mb-[10px] mt-6">EXPRESS INTEREST</Eyebrow>
         <View className="rounded-[12px] border border-line bg-surface-1 p-[14px]">
           {already ? (
@@ -203,8 +257,22 @@ export default function CompanyDetail() {
               </TxtSemi>
               <Txt className="text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
                 FundReady AI reviews introductions before anyone is connected. Track status on your
-                Profile. This is not a schedule or direct message to the founder.
+                Profile.
               </Txt>
+              {canSchedule ? (
+                <>
+                  <Button label="Propose a call" height={40} onPress={() => setScheduleOpen(true)} />
+                  {callError ? (
+                    <Txt className="text-[12px]" style={{ color: colors.red }}>
+                      {callError}
+                    </Txt>
+                  ) : null}
+                </>
+              ) : interest && !callGate.allowed ? (
+                <Txt className="text-[12px] text-ink-muted" style={{ lineHeight: 18 }}>
+                  {gateCopy(callGate.reason, 'investor').body}
+                </Txt>
+              ) : null}
               <Button
                 label="View my interests"
                 height={40}
@@ -216,7 +284,7 @@ export default function CompanyDetail() {
             <>
               <Txt className="mb-3 text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
                 FundReady AI brokers every introduction. Your note is for FundReady AI only — the founder
-                never sees it. Call scheduling is not available yet.
+                never sees it.
               </Txt>
               <View className="gap-[7px]">
                 <FieldLabel>Note for FundReady AI (optional)</FieldLabel>
@@ -230,9 +298,9 @@ export default function CompanyDetail() {
                   style={{ fontFamily: Font.regular, textAlignVertical: 'top' }}
                 />
               </View>
-              {!emailOk ? (
+              {!interestGate.allowed ? (
                 <Txt className="mt-2 text-[12px]" style={{ color: colors.amb }}>
-                  Confirm your email before expressing interest.
+                  {gateCopy(interestGate.reason, 'investor').body}
                 </Txt>
               ) : null}
               {submitError ? (
@@ -248,12 +316,41 @@ export default function CompanyDetail() {
       <View className="border-t border-line-soft bg-ground px-[18px] pt-3" style={{ paddingBottom: insets.bottom + 14 }}>
         {already ? (
           <Button label="Interest registered ✓" height={46} disabled />
-        ) : !emailOk ? (
-          <Button label="Confirm email to continue" height={46} onPress={() => router.push(VERIFY_EMAIL)} />
+        ) : !interestGate.allowed ? (
+          <Button
+            label={gateCopy(interestGate.reason, 'investor').cta}
+            height={46}
+            onPress={() =>
+              router.push(
+                interestGate.reason === 'email' ? VERIFY_EMAIL : route('/investor/verify'),
+              )
+            }
+          />
         ) : (
           <Button label="Express interest" height={46} loading={busy} onPress={sendInterest} />
         )}
       </View>
+
+      {interest ? (
+        <ScheduleCallSheet
+          visible={scheduleOpen}
+          onClose={() => setScheduleOpen(false)}
+          companyName={name}
+          onSubmit={async ({ proposedAt, note: message }) => {
+            setCallError(null);
+            try {
+              await api.requestCall({
+                interestId: interest.id,
+                proposedAt,
+                message,
+              });
+            } catch (e) {
+              setCallError(e instanceof Error ? e.message : 'Could not send call request.');
+              throw e;
+            }
+          }}
+        />
+      ) : null}
     </Animated.View>
   );
 }

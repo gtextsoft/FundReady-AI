@@ -275,10 +275,60 @@ export type InvestorType = (typeof INVESTOR_TYPES)[number];
 
 /** Deliberately light-touch — enough to establish who someone is, no more. */
 export type InvestorCredentials = {
-  investorType: InvestorType;
+  investorType: InvestorType | string;
   firm: string;
   country: string;
   linkedinUrl: string;
+};
+
+/** Full investor thesis + firm profile (`GET/PUT /v1/investor/me`). */
+export type InvestorProfile = {
+  firm: string;
+  investorType: string;
+  country: string;
+  linkedinUrl: string;
+  thesisSectors: string[];
+  thesisStages: string[];
+  thesisGeographies: string[];
+  ticketMinMinor: number | null;
+  ticketMaxMinor: number | null;
+  ticketCurrency: string | null;
+  riskNotes: string;
+  kycStatus: string;
+};
+
+export type KycSession = {
+  url: string;
+  sessionId: string;
+  kycStatus: string;
+};
+
+export type CatalogueProduct = {
+  id: string;
+  kind: string;
+  slug: string;
+  title: string;
+  description: string;
+  regions: string[];
+  gapTags: string[];
+  amountMinor: number | null;
+  currency: string | null;
+  eventStartsAt: string | null;
+  eventLocation: string | null;
+  active: boolean;
+};
+
+export type Enrolment = {
+  id: string;
+  productId: string;
+  createdAt: string;
+  product: CatalogueProduct | null;
+};
+
+export type EnrolResult = {
+  status: 'enrolled' | 'checkout_required';
+  enrolment: Enrolment | null;
+  checkoutUrl: string | null;
 };
 
 /**
@@ -301,13 +351,18 @@ export type FounderAccount = EmailVerification & {
   companyName: string;
   verification: VerificationStatus;
   registration: CompanyRegistration | null;
-  /** ISO date. Full access until this moment, then the paywall applies. */
+  /** ISO date from the server. Full access until this moment when unpaid. */
   trialEndsAt: string;
   /**
    * Whether access has been paid for. A status rather than a payment date,
    * because the server reports the subscription's state and not when it began.
    */
   subscriptionStatus: SubscriptionStatus;
+  /**
+   * Server-authoritative entitlement (`/v1/users/me.has_access`).
+   * Prefer this over recomputing trial locally when present.
+   */
+  hasAccess?: boolean;
 };
 
 export type InvestorAccount = EmailVerification & {

@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
-import { router } from 'expo-router';
+import { useCallback, useState } from 'react';
+import { ActivityIndicator, Linking, Pressable, ScrollView, View } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -9,56 +9,85 @@ import { Mono, Txt, TxtSemi } from '@/components/ui/text';
 import { C } from '@/theme/tokens';
 import { Unavailable } from '@/components/unavailable';
 import { api } from '@/api';
+import type { CatalogueProduct, Enrolment } from '@/domain/types';
 import { useFounder } from '@/store/founder';
 
-const PROGRAMMES = [
-  {
-    key: 'readiness' as const,
-    badge: 'PRESCRIBED · 6 WEEKS',
-    title: 'The Funding Readiness Challenge',
-    body: 'For scores below the investor screening floor. Rebuilds the pitch narrative and forces clarity on unit economics before you burn warm intros.',
-    bullets: [
-      'Weekly teardown of your deck with an operating partner',
-      'CAC/LTV instrumentation clinic',
-      'Re-score at week 6, free of charge',
-    ],
+const ACCENTS: Record<string, { accent: string; border: string; gradient: [string, string]; variant: 'amber' | 'green' | 'primary' }> = {
+  'funding-readiness-challenge': {
     accent: C.amb,
     border: '#3d2f14',
-    gradient: ['rgba(245,166,35,0.14)', 'rgba(245,166,35,0.02)'] as [string, string],
-    variant: 'amber' as const,
+    gradient: ['rgba(245,166,35,0.14)', 'rgba(245,166,35,0.02)'],
+    variant: 'amber',
   },
-  {
-    key: 'wealth' as const,
-    badge: 'UNLOCKED · 10 WEEKS',
-    title: 'The Wealth Creation Challenge',
-    body: 'For companies already clearing the floor. Compounding what works and building an investor pipeline you actually control.',
-    bullets: [
-      'Warm routing to matched VC and PE mandates',
-      'Scaling playbooks for channel and pricing',
-      'Live listing in the investor dealflow database',
-    ],
+  'wealth-creation-challenge': {
     accent: C.grn,
     border: '#14351f',
-    gradient: ['rgba(12,206,107,0.14)', 'rgba(12,206,107,0.02)'] as [string, string],
-    variant: 'green' as const,
+    gradient: ['rgba(12,206,107,0.14)', 'rgba(12,206,107,0.02)'],
+    variant: 'green',
   },
-];
+};
+
+const DEFAULT_ACCENT = {
+  accent: C.blue,
+  border: '#1a2a3d',
+  gradient: ['rgba(59,130,246,0.14)', 'rgba(59,130,246,0.02)'] as [string, string],
+  variant: 'primary' as const,
+};
+
+function programmeKey(slug: string): 'readiness' | 'wealth' | null {
+  if (slug === 'funding-readiness-challenge') return 'readiness';
+  if (slug === 'wealth-creation-challenge') return 'wealth';
+  return null;
+}
 
 export default function Programmes() {
   const insets = useSafeAreaInsets();
   const assessment = useFounder((s) => s.assessment);
-  const [enrolled, setEnrolled] = useState<string[]>([]);
+  const [products, setProducts] = useState<CatalogueProduct[]>([]);
+  const [enrolments, setEnrolments] = useState<Enrolment[]>([]);
+  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
 
   const recommended = assessment?.route ?? null;
 
-  async function enrol(key: 'readiness' | 'wealth') {
-    setBusy(key);
+  const load = useCallback(async () => {
+    setLoading(true);
     setError(null);
     try {
-      await api.enrol(key);
-      setEnrolled((e) => [...e, key]);
+      const [page, mine] = await Promise.all([api.listProducts({ limit: 50 }), api.listEnrolments()]);
+      setProducts(page.items.filter((p) => p.active));
+      setEnrolments(mine);
+    } catch (e) {
+      setError(e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
+
+  const enrolledIds = new Set(enrolments.map((e) => e.productId));
+
+  async function enrol(product: CatalogueProduct) {
+    setBusy(product.id);
+    setError(null);
+    try {
+      const result = await api.enrolInProduct(product.id);
+      if (result.status === 'checkout_required' && result.checkoutUrl) {
+        await Linking.openURL(result.checkoutUrl);
+      } else {
+        setEnrolments((prev) =>
+          result.enrolment ? [result.enrolment, ...prev.filter((e) => e.id !== result.enrolment!.id)] : prev,
+        );
+      }
+      // Refresh after checkout return / free enrol.
+      const mine = await api.listEnrolments();
+      setEnrolments(mine);
     } catch (e) {
       setError(e);
     } finally {
@@ -82,64 +111,67 @@ export default function Programmes() {
         className="flex-1"
         contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: insets.bottom + 24, gap: 12 }}
         showsVerticalScrollIndicator={false}>
-        {error ? <Unavailable title="Enrolment is not live" error={error} /> : null}
+        {error ? <Unavailable title="Could not load programmes" error={error} onRetry={load} /> : null}
 
-        {PROGRAMMES.map((p) => {
-          const isRecommended = recommended === p.key;
-          const done = enrolled.includes(p.key);
-          return (
-            <View key={p.key} className="overflow-hidden rounded-[14px]" style={{ borderWidth: 1, borderColor: p.border }}>
-              <LinearGradient colors={p.gradient} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} className="p-5">
-                <View className="flex-row items-center gap-2">
-                  <View className="rounded-[4px] px-[7px] py-[3px]" style={{ borderWidth: 1, borderColor: `${p.accent}59` }}>
-                    <Mono className="text-[9.5px]" style={{ letterSpacing: 1.2, color: p.accent }}>
-                      {p.badge}
-                    </Mono>
-                  </View>
-                  {isRecommended ? (
-                    <View className="rounded-[4px] bg-ink px-[7px] py-[3px]">
-                      <Mono className="text-[9.5px] text-ground" style={{ letterSpacing: 1 }}>
-                        RECOMMENDED
+        {loading ? (
+          <View className="items-center py-16">
+            <ActivityIndicator color={C.inkMuted} />
+          </View>
+        ) : products.length === 0 ? (
+          <View className="rounded-[12px] border border-line bg-surface-1 p-[14px]">
+            <Txt className="text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+              No programmes in the catalogue yet. Check back after FundReady AI publishes the next cohort.
+            </Txt>
+          </View>
+        ) : (
+          products.map((p) => {
+            const style = ACCENTS[p.slug] ?? DEFAULT_ACCENT;
+            const key = programmeKey(p.slug);
+            const isRecommended = key != null && recommended === key;
+            const done = enrolledIds.has(p.id);
+            return (
+              <View key={p.id} className="overflow-hidden rounded-[14px]" style={{ borderWidth: 1, borderColor: style.border }}>
+                <LinearGradient colors={style.gradient} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} className="p-5">
+                  <View className="flex-row items-center gap-2">
+                    <View className="rounded-[4px] px-[7px] py-[3px]" style={{ borderWidth: 1, borderColor: `${style.accent}59` }}>
+                      <Mono className="text-[9.5px]" style={{ letterSpacing: 1.2, color: style.accent }}>
+                        {p.kind.toUpperCase()}
                       </Mono>
                     </View>
+                    {isRecommended ? (
+                      <View className="rounded-[4px] bg-ink px-[7px] py-[3px]">
+                        <Mono className="text-[9.5px] text-ground" style={{ letterSpacing: 1 }}>
+                          RECOMMENDED
+                        </Mono>
+                      </View>
+                    ) : null}
+                  </View>
+
+                  <TxtSemi className="mb-[6px] mt-[13px] text-[21px]" style={{ letterSpacing: -0.6 }}>
+                    {p.title}
+                  </TxtSemi>
+                  <Txt className="mb-4 text-[13px] text-ink-muted" style={{ lineHeight: 20 }}>
+                    {p.description}
+                  </Txt>
+
+                  {p.amountMinor != null && p.currency ? (
+                    <Txt className="mb-3 text-[12px] text-ink-dim">
+                      {p.currency} {(p.amountMinor / 100).toLocaleString()}
+                    </Txt>
                   ) : null}
-                </View>
 
-                <TxtSemi className="mb-[6px] mt-[13px] text-[21px]" style={{ letterSpacing: -0.6 }}>
-                  {p.title}
-                </TxtSemi>
-                <Txt className="mb-4 text-[13px] text-ink-muted" style={{ lineHeight: 20 }}>
-                  {p.body}
-                </Txt>
-
-                <View className="mb-[18px] gap-[7px]">
-                  {p.bullets.map((b) => (
-                    <View key={b} className="flex-row gap-[9px]">
-                      <Txt className="text-[12.5px]" style={{ color: p.accent }}>
-                        →
-                      </Txt>
-                      <Txt className="flex-1 text-[12.5px] text-ink" style={{ lineHeight: 19 }}>
-                        {b}
-                      </Txt>
-                    </View>
-                  ))}
-                </View>
-
-                <Button
-                  label={
-                    done
-                      ? 'Enrolled ✓'
-                      : `Enrol in ${p.key === 'readiness' ? 'Funding Readiness' : 'Wealth Creation'} (coming soon)`
-                  }
-                  variant={p.variant}
-                  loading={busy === p.key}
-                  disabled={done}
-                  onPress={() => enrol(p.key)}
-                />
-              </LinearGradient>
-            </View>
-          );
-        })}
+                  <Button
+                    label={done ? 'Enrolled ✓' : p.amountMinor != null ? 'Enrol — pay to confirm' : 'Enrol'}
+                    variant={style.variant}
+                    loading={busy === p.id}
+                    disabled={done || busy !== null}
+                    onPress={() => enrol(p)}
+                  />
+                </LinearGradient>
+              </View>
+            );
+          })
+        )}
       </ScrollView>
     </View>
   );

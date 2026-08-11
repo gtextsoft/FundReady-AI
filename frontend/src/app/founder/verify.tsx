@@ -18,10 +18,8 @@ import { useFounder } from '@/store/founder';
 const MAX_DOC_BYTES = 10 * 1024 * 1024;
 
 /**
- * Store legal registration details + certificate on the startup profile.
- *
- * There is no server "verified company" switch yet — this uploads a
- * `registration_certificate` document for FundReady AI and saves profile fields.
+ * Store legal registration details + certificate, then submit for SACI review.
+ * Status becomes `in_review` server-side (admin cert review — not registry KYC).
  * Publishing still depends on the readiness gate.
  */
 export default function VerifyCompany() {
@@ -119,6 +117,7 @@ export default function VerifyCompany() {
         await api.completeDocumentUpload(ticket.documentId);
       }
 
+      await api.submitCompanyRegistration();
       setDone(true);
     } catch (e) {
       setError(e);

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Linking, Pressable, ScrollView, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -244,7 +244,7 @@ export default function Results() {
           accent={C.amb}
           borderColor="#3d2f14"
           gradient={['rgba(245,166,35,0.14)', 'rgba(245,166,35,0.02)']}
-          cta="Enrol in Funding Readiness (coming soon)"
+          cta="Enrol in Funding Readiness"
           variant="amber"
           programme="readiness"
         />
@@ -261,7 +261,7 @@ export default function Results() {
           accent={C.grn}
           borderColor="#14351f"
           gradient={['rgba(12,206,107,0.14)', 'rgba(12,206,107,0.02)']}
-          cta="Enrol in Wealth Creation (coming soon)"
+          cta="Enrol in Wealth Creation"
           variant="green"
           programme="wealth"
         />
@@ -365,8 +365,12 @@ function ProgrammeCard({
     setBusy(true);
     setError(null);
     try {
-      await api.enrol(programme);
-      setEnrolled(true);
+      const result = await api.enrol(programme);
+      if (result.status === 'checkout_required' && result.checkoutUrl) {
+        await Linking.openURL(result.checkoutUrl);
+      } else {
+        setEnrolled(true);
+      }
     } catch (e) {
       setError(e);
     } finally {
@@ -405,7 +409,7 @@ function ProgrammeCard({
 
         <Button label={enrolled ? 'Enrolled ✓' : cta} variant={variant} loading={busy} disabled={enrolled} onPress={enrol} />
 
-        {error ? <Unavailable title="Enrolment is not live" error={error} className="mt-3" /> : null}
+        {error ? <Unavailable title="Could not enrol" error={error} className="mt-3" /> : null}
       </LinearGradient>
     </View>
   );

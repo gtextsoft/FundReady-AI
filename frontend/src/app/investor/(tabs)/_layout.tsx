@@ -17,6 +17,7 @@ export default function InvestorTabs() {
   const colors = useThemeColors();
   const loadWatchlist = useInvestor((s) => s.loadWatchlist);
   const loadNotifications = useNotifications((s) => s.load);
+  const unread = useNotifications((s) => s.unreadCount());
 
   useEffect(() => {
     loadWatchlist();
@@ -26,12 +27,7 @@ export default function InvestorTabs() {
   return (
     <Tabs
       tabBar={(props) => (
-        <TabBar
-          {...props}
-          glyphs={GLYPHS}
-          // Server notifications are not live — do not show unread badges yet.
-          badges={{ alerts: 0 }}
-        />
+        <TabBar {...props} glyphs={GLYPHS} badges={{ alerts: unread }} />
       )}
       screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: colors.ground } }}>
       <Tabs.Screen name="index" options={{ title: 'Dealflow' }} />

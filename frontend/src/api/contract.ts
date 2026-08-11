@@ -18,13 +18,18 @@ import type { UnmappedAnswer } from './profile-mapping';
 import type { AppNotification, CallRequest } from '@/domain/notifications';
 import type {
   Assessment,
+  CatalogueProduct,
   Company,
   CompanyRegistration,
   DealflowQuery,
+  Enrolment,
+  EnrolResult,
   FounderAccount,
   FounderProfile,
   InvestorAccount,
   InvestorCredentials,
+  InvestorProfile,
+  KycSession,
 } from '@/domain/types';
 
 export type { Interest, InterestStatus };
@@ -267,8 +272,17 @@ export interface FundMeApi {
 
   // ── verification ────────────────────────────────────────
   /** Submits the registration for review; resolves with the new status. */
-  submitCompanyRegistration(registration: CompanyRegistration): Promise<FounderAccount>;
+  /** Submit uploaded registration cert for SACI review (profile fields already saved). */
+  submitCompanyRegistration(registration?: CompanyRegistration): Promise<FounderAccount>;
+  /**
+   * Saves firm/thesis fields via `PUT /v1/investor/me`, then returns the
+   * refreshed investor account (KYC status still comes from `/v1/users/me`).
+   */
   submitInvestorCredentials(credentials: InvestorCredentials): Promise<InvestorAccount>;
+  getInvestorProfile(): Promise<InvestorProfile>;
+  upsertInvestorProfile(profile: Partial<InvestorProfile>): Promise<InvestorProfile>;
+  /** Starts Stripe Identity; open `url` in the system browser. */
+  startInvestorKyc(): Promise<KycSession>;
 
   // ── billing ─────────────────────────────────────────────
   /**
@@ -362,7 +376,24 @@ export interface FundMeApi {
     query?: { limit?: number; offset?: number },
   ): Promise<{ items: EvidenceSubmission[]; total: number; limit: number; offset: number }>;
 
-  enrol(programme: 'readiness' | 'wealth'): Promise<void>;
+  /** Catalogue browse (`GET /v1/products`). */
+  listProducts(query?: {
+    region?: string;
+    kind?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ items: CatalogueProduct[]; total: number; limit: number; offset: number }>;
+  listEnrolments(): Promise<Enrolment[]>;
+  /**
+   * Enrol in a catalogue product by id.
+   * Paid products may return `checkout_required` with a Checkout URL.
+   */
+  enrolInProduct(productId: string): Promise<EnrolResult>;
+  /**
+   * Convenience for the two seeded programmes: resolves slug then enrols.
+   * Prefer `enrolInProduct` when you already have a catalogue id.
+   */
+  enrol(programme: 'readiness' | 'wealth'): Promise<EnrolResult>;
   /**
    * Founder AI mentor (T3.7). Grounded in the caller's own audit/tasks.
    * Prefer `chatMentor` when citations or history matter.
@@ -401,23 +432,24 @@ export interface FundMeApi {
    * Only works when `interest.revealedRunIds` contains `runId`.
    */
   getRevealedReport(interestId: string, runId: string): Promise<AuditReport>;
-  /**
-   * Local device watchlist of startup ids. There is no sync endpoint yet —
-   * the store owns persistence; these stay for callers that still expect them.
-   */
+  /** Investor AI analyst — summary-tier retrieval only. */
+  chatAnalyst(
+    startupId: string,
+    input: { message: string; history?: MentorChatTurn[] },
+  ): Promise<MentorChatResult>;
+  /** Server-synced watchlist of startup ids (`GET/POST /v1/watchlist`). */
   getWatchlist(): Promise<string[]>;
   toggleWatch(startupId: string): Promise<string[]>;
   requestIntroduction(companyId: number): Promise<void>;
 
   // ── virtual calls ───────────────────────────────────────
-  /** Investor proposes a slot; the founder is notified. */
+  /** Investor proposes a slot against an interest they own. */
   requestCall(input: {
-    companyId: number;
+    interestId: string;
     proposedAt: string;
-    durationMinutes: number;
-    note: string;
+    message?: string;
   }): Promise<CallRequest>;
-  /** Founder's inbox of call requests. */
+  /** Calls visible to the caller (founder inbox or investor's own). */
   listCallRequests(): Promise<CallRequest[]>;
   /** Founder answers; the investor is notified either way. */
   respondToCall(id: string, accept: boolean): Promise<CallRequest>;

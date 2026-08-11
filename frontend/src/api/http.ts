@@ -6,6 +6,7 @@ import type { AuditReport, AuditRun, AuditStatus, Verdict } from '@/domain/audit
 import type { DiscoveredStartup } from '@/domain/discovery';
 import type { Interest, InterestStatus } from '@/domain/interest';
 import type { MentorChatResult, MentorCitation, MentorCitationKind } from '@/domain/mentor';
+import type { AppNotification, CallRequest, CallRequestStatus } from '@/domain/notifications';
 import type {
   DocumentKind,
   EvidenceSubmission,
@@ -23,29 +24,30 @@ import {
   type WireProfileResponse,
 } from './profile-mapping';
 import { storage } from '@/lib/storage';
-import type { VerificationStatus } from '@/domain/types';
+import type {
+  CatalogueProduct,
+  Enrolment,
+  EnrolResult,
+  InvestorCredentials,
+  InvestorProfile,
+  KycSession,
+  VerificationStatus,
+} from '@/domain/types';
 import type {
   Credentials,
   DomainLookup,
   FundMeApi,
+  Role,
   Session,
 } from './contract';
 import { ApiFailure } from './contract';
 
-const WATCHLIST_KEY = 'saci.fundme.watchlist';
-
 /**
  * The real backend.
  *
- * Live today: authentication (register, login, refresh, logout,
- * `/v1/users/me`), email verification, password reset, MFA, and the Startup
- * Profile (`/v1/startups`). Every other method on `FundMeApi` has no endpoint
- * behind it yet, so it throws `not_implemented` rather than inventing an
- * answer — screens render an explicit "not available yet" state instead of
- * showing numbers nobody computed.
- *
- * As each backend task lands (TASKS.md), replace the matching `notYet(...)`
- * with a real call. The contract and the screens do not change.
+ * Auth, profile, audit, readiness, discovery, investor KYC/thesis, watchlist,
+ * calls, notifications, and catalogue enrolment are live. Remaining stubs throw
+ * `not_implemented` so screens can show an explicit unavailable state.
  */
 
 /** The API port. Only used when the host is inferred rather than configured. */
@@ -149,7 +151,7 @@ function failureFor(status: number, body: ErrorEnvelope | null): ApiFailure {
 }
 
 type RequestOptions = {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   /** Attach the bearer token and retry once through refresh on a 401. */
   auth?: boolean;
@@ -743,6 +745,181 @@ function toEvidence(wire: WireEvidence): EvidenceSubmission {
   };
 }
 
+// ── investor / commerce / calls / notifications wire ──────
+
+type WireInvestorProfile = {
+  firm: string | null;
+  investor_type: string | null;
+  country: string | null;
+  linkedin_url: string | null;
+  thesis_sectors: string[];
+  thesis_stages: string[];
+  thesis_geographies: string[];
+  ticket_min_minor: number | null;
+  ticket_max_minor: number | null;
+  ticket_currency: string | null;
+  risk_notes: string | null;
+  kyc_status: string;
+};
+
+function toInvestorProfile(wire: WireInvestorProfile): InvestorProfile {
+  return {
+    firm: wire.firm ?? '',
+    investorType: wire.investor_type ?? '',
+    country: wire.country ?? '',
+    linkedinUrl: wire.linkedin_url ?? '',
+    thesisSectors: wire.thesis_sectors ?? [],
+    thesisStages: wire.thesis_stages ?? [],
+    thesisGeographies: wire.thesis_geographies ?? [],
+    ticketMinMinor: wire.ticket_min_minor,
+    ticketMaxMinor: wire.ticket_max_minor,
+    ticketCurrency: wire.ticket_currency,
+    riskNotes: wire.risk_notes ?? '',
+    kycStatus: wire.kyc_status,
+  };
+}
+
+function investorProfileBody(profile: Partial<InvestorProfile>): Record<string, unknown> {
+  const body: Record<string, unknown> = {};
+  if (profile.firm !== undefined) body.firm = profile.firm.trim() || null;
+  if (profile.investorType !== undefined) body.investor_type = profile.investorType.trim() || null;
+  if (profile.country !== undefined) {
+    body.country = profile.country.trim().toUpperCase().slice(0, 2) || null;
+  }
+  if (profile.linkedinUrl !== undefined) body.linkedin_url = profile.linkedinUrl.trim() || null;
+  if (profile.thesisSectors !== undefined) body.thesis_sectors = profile.thesisSectors;
+  if (profile.thesisStages !== undefined) body.thesis_stages = profile.thesisStages;
+  if (profile.thesisGeographies !== undefined) {
+    body.thesis_geographies = profile.thesisGeographies;
+  }
+  if (profile.ticketMinMinor !== undefined) body.ticket_min_minor = profile.ticketMinMinor;
+  if (profile.ticketMaxMinor !== undefined) body.ticket_max_minor = profile.ticketMaxMinor;
+  if (profile.ticketCurrency !== undefined) {
+    body.ticket_currency = profile.ticketCurrency?.trim().toUpperCase() || null;
+  }
+  if (profile.riskNotes !== undefined) body.risk_notes = profile.riskNotes.trim() || null;
+  return body;
+}
+
+type WireProduct = {
+  id: string;
+  kind: string;
+  slug: string;
+  title: string;
+  description: string;
+  regions: string[];
+  gap_tags: string[];
+  amount_minor: number | null;
+  currency: string | null;
+  event_starts_at: string | null;
+  event_location: string | null;
+  active: boolean;
+  created_at: string;
+};
+
+function toProduct(wire: WireProduct): CatalogueProduct {
+  return {
+    id: wire.id,
+    kind: wire.kind,
+    slug: wire.slug,
+    title: wire.title,
+    description: wire.description,
+    regions: wire.regions ?? [],
+    gapTags: wire.gap_tags ?? [],
+    amountMinor: wire.amount_minor,
+    currency: wire.currency,
+    eventStartsAt: wire.event_starts_at,
+    eventLocation: wire.event_location,
+    active: wire.active,
+  };
+}
+
+type WireEnrolment = {
+  id: string;
+  product_id: string;
+  user_id: string;
+  created_at: string;
+  product: WireProduct | null;
+};
+
+function toEnrolment(wire: WireEnrolment): Enrolment {
+  return {
+    id: wire.id,
+    productId: wire.product_id,
+    createdAt: wire.created_at,
+    product: wire.product ? toProduct(wire.product) : null,
+  };
+}
+
+type WireEnrolResult = {
+  status: 'enrolled' | 'checkout_required';
+  enrolment: WireEnrolment | null;
+  checkout: { checkout_url: string; session_id: string } | null;
+};
+
+function toEnrolResult(wire: WireEnrolResult): EnrolResult {
+  return {
+    status: wire.status,
+    enrolment: wire.enrolment ? toEnrolment(wire.enrolment) : null,
+    checkoutUrl: wire.checkout?.checkout_url ?? null,
+  };
+}
+
+const PROGRAMME_SLUG: Record<'readiness' | 'wealth', string> = {
+  readiness: 'funding-readiness-challenge',
+  wealth: 'wealth-creation-challenge',
+};
+
+type WireCall = {
+  id: string;
+  interest_id: string;
+  requested_by_id: string;
+  proposed_at: string;
+  message: string | null;
+  status: CallRequestStatus;
+  created_at: string;
+  responded_at: string | null;
+};
+
+function toCall(wire: WireCall): CallRequest {
+  return {
+    id: wire.id,
+    interestId: wire.interest_id,
+    proposedAt: wire.proposed_at,
+    message: wire.message,
+    status: wire.status,
+    createdAt: wire.created_at,
+    respondedAt: wire.responded_at,
+  };
+}
+
+type WireNotification = {
+  id: string;
+  kind: string;
+  title: string;
+  body: string;
+  payload: Record<string, unknown>;
+  read_at: string | null;
+  created_at: string;
+};
+
+function toNotification(wire: WireNotification, audience: Role): AppNotification {
+  const payload = wire.payload ?? {};
+  const startupRaw = payload.startup_id ?? payload.startupId;
+  const callRaw = payload.call_id ?? payload.call_request_id ?? payload.callRequestId;
+  return {
+    id: wire.id,
+    audience,
+    kind: wire.kind,
+    title: wire.title,
+    body: wire.body,
+    createdAt: wire.created_at,
+    read: Boolean(wire.read_at),
+    startupId: typeof startupRaw === 'string' ? startupRaw : undefined,
+    callRequestId: typeof callRaw === 'string' ? callRaw : undefined,
+  };
+}
+
 /** Every method with no endpoint behind it fails the same, nameable way. */
 function notYet<T>(feature: string, task: string): Promise<T> {
   return Promise.reject(
@@ -872,15 +1049,27 @@ export const httpApi: FundMeApi = {
       })(),
       trialEndsAt: me.trial_ends_at,
       subscriptionStatus: me.subscription_status,
+      hasAccess: me.has_access,
     };
   },
 
   async getInvestorAccount() {
-    const me = await fetchMe();
+    const [me, profile] = await Promise.all([
+      fetchMe(),
+      httpApi.getInvestorProfile().catch(() => null),
+    ]);
+    const credentials: InvestorCredentials | null = profile?.firm || profile?.investorType
+      ? {
+          firm: profile.firm,
+          investorType: profile.investorType,
+          country: profile.country,
+          linkedinUrl: profile.linkedinUrl,
+        }
+      : null;
     return {
       emailVerified: me.email_verified,
       verification: KYC_TO_VERIFICATION[me.kyc_status],
-      credentials: null,
+      credentials,
     };
   },
 
@@ -938,8 +1127,48 @@ export const httpApi: FundMeApi = {
   },
 
   // ── verification ────────────────────────────────────────
-  submitCompanyRegistration: () => notYet('Company verification', 'T1.4'),
-  submitInvestorCredentials: () => notYet('Investor verification', 'T4.1'),
+  async submitCompanyRegistration(_registration?) {
+    const startupId = await requireProfileId();
+    await request<unknown>(`/v1/startups/${startupId}/company-verification/submit`, {
+      method: 'POST',
+      auth: true,
+    });
+    return httpApi.getFounderAccount();
+  },
+
+  async getInvestorProfile() {
+    return toInvestorProfile(
+      await request<WireInvestorProfile>('/v1/investor/me', { auth: true }),
+    );
+  },
+
+  async upsertInvestorProfile(profile) {
+    return toInvestorProfile(
+      await request<WireInvestorProfile>('/v1/investor/me', {
+        method: 'PUT',
+        body: investorProfileBody(profile),
+        auth: true,
+      }),
+    );
+  },
+
+  async startInvestorKyc(): Promise<KycSession> {
+    const body = await request<{ url: string; session_id: string; kyc_status: string }>(
+      '/v1/investor/kyc/session',
+      { method: 'POST', auth: true },
+    );
+    return { url: body.url, sessionId: body.session_id, kycStatus: body.kyc_status };
+  },
+
+  async submitInvestorCredentials(credentials) {
+    await httpApi.upsertInvestorProfile({
+      firm: credentials.firm,
+      investorType: credentials.investorType,
+      country: credentials.country,
+      linkedinUrl: credentials.linkedinUrl,
+    });
+    return httpApi.getInvestorAccount();
+  },
 
   // ── billing ─────────────────────────────────────────────
   async purchaseUnlock() {
@@ -1209,7 +1438,52 @@ export const httpApi: FundMeApi = {
     };
   },
 
-  enrol: () => notYet('Programme enrolment', 'T3.2'),
+  async listProducts(query = {}) {
+    const params = new URLSearchParams();
+    if (query.region) params.set('region', query.region);
+    if (query.kind) params.set('kind', query.kind);
+    params.set('limit', String(query.limit ?? 50));
+    params.set('offset', String(query.offset ?? 0));
+    const page = await request<{
+      items: WireProduct[];
+      total: number;
+      limit: number;
+      offset: number;
+    }>(`/v1/products?${params.toString()}`, { auth: true });
+    return {
+      items: (page.items ?? []).map(toProduct),
+      total: page.total,
+      limit: page.limit,
+      offset: page.offset,
+    };
+  },
+
+  async listEnrolments() {
+    const rows = await request<WireEnrolment[]>('/v1/me/enrolments', { auth: true });
+    return (rows ?? []).map(toEnrolment);
+  },
+
+  async enrolInProduct(productId: string) {
+    return toEnrolResult(
+      await request<WireEnrolResult>(`/v1/products/${productId}/enrol`, {
+        method: 'POST',
+        auth: true,
+      }),
+    );
+  },
+
+  async enrol(programme) {
+    const slug = PROGRAMME_SLUG[programme];
+    const page = await httpApi.listProducts({ limit: 100 });
+    const product = page.items.find((p) => p.slug === slug);
+    if (!product) {
+      throw new ApiFailure(
+        'not_found',
+        `Programme "${slug}" is not in the catalogue yet.`,
+      );
+    }
+    return httpApi.enrolInProduct(product.id);
+  },
 
   async askMentor(question: string) {
     const result = await httpApi.chatMentor({ message: question });
@@ -1293,34 +1567,82 @@ export const httpApi: FundMeApi = {
     );
   },
 
+  async chatAnalyst(startupId, input) {
+    const wire = await request<WireMentorChat>(`/v1/discover/${startupId}/analyst/chat`, {
+      method: 'POST',
+      body: {
+        message: input.message,
+        history: (input.history ?? []).map((turn) => ({
+          role: turn.role,
+          content: turn.content,
+        })),
+      },
+      auth: true,
+    });
+    return toMentorChat(wire);
+  },
+
   async getWatchlist() {
-    const raw = await storage.get(WATCHLIST_KEY);
-    if (!raw) return [];
-    try {
-      const parsed = JSON.parse(raw) as unknown;
-      return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
-    } catch {
-      return [];
-    }
+    const body = await request<{ startup_ids: string[] }>('/v1/watchlist', { auth: true });
+    return (body.startup_ids ?? []).map(String);
   },
 
   async toggleWatch(startupId: string) {
-    const before = await httpApi.getWatchlist();
-    const next = before.includes(startupId)
-      ? before.filter((id) => id !== startupId)
-      : [...before, startupId];
-    await storage.set(WATCHLIST_KEY, JSON.stringify(next));
-    return next;
+    const body = await request<{ startup_ids: string[] }>(`/v1/watchlist/${startupId}`, {
+      method: 'POST',
+      auth: true,
+    });
+    return (body.startup_ids ?? []).map(String);
   },
 
   requestIntroduction: () => notYet('Introductions', 'use expressInterest (T4.5)'),
 
   // ── virtual calls ───────────────────────────────────────
-  requestCall: () => notYet('Call scheduling', 'T4.5'),
-  listCallRequests: () => notYet('Call requests', 'T4.5'),
-  respondToCall: () => notYet('Call requests', 'T4.5'),
+  async requestCall(input) {
+    return toCall(
+      await request<WireCall>(`/v1/interests/${input.interestId}/calls`, {
+        method: 'POST',
+        body: {
+          proposed_at: input.proposedAt,
+          message: input.message?.trim() || null,
+        },
+        auth: true,
+      }),
+    );
+  },
+
+  async listCallRequests() {
+    const rows = await request<WireCall[]>('/v1/calls', { auth: true });
+    return (rows ?? []).map(toCall);
+  },
+
+  async respondToCall(id, accept) {
+    return toCall(
+      await request<WireCall>(`/v1/calls/${id}/respond`, {
+        method: 'POST',
+        body: { accept },
+        auth: true,
+      }),
+    );
+  },
 
   // ── notifications ───────────────────────────────────────
-  listNotifications: () => notYet('Notifications', 'T5.3'),
-  markNotificationsRead: () => notYet('Notifications', 'T5.3'),
+  async listNotifications(audience) {
+    const page = await request<{
+      items: WireNotification[];
+      total: number;
+      limit: number;
+      offset: number;
+    }>('/v1/notifications?limit=50&offset=0', { auth: true });
+    return (page.items ?? []).map((n) => toNotification(n, audience));
+  },
+
+  async markNotificationsRead(ids) {
+    if (!ids.length) return;
+    await request<void>('/v1/notifications/read', {
+      method: 'POST',
+      body: { ids },
+      auth: true,
+    });
+  },
 };

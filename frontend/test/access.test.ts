@@ -112,13 +112,19 @@ describe('investor gates', () => {
     expect(investorGate(account, 'requestIntroduction').reason).toBe('email');
   });
 
-  it('refuses an unverified investor for schedule/intro, but allows express interest', () => {
+  it('requires KYC for express interest, intros, and calls', () => {
     expect(investorGate(investor({ verification: 'in_review' }), 'scheduleCall').reason).toBe(
       'verification',
     );
-    expect(investorGate(investor({ verification: 'unverified' }), 'expressInterest').allowed).toBe(
-      true,
+    expect(investorGate(investor({ verification: 'unverified' }), 'expressInterest').reason).toBe(
+      'verification',
     );
+    expect(investorGate(investor(), 'expressInterest').allowed).toBe(true);
     expect(investorGate(investor(), 'scheduleCall').allowed).toBe(true);
+  });
+
+  it('prefers server hasAccess when set on a founder account', () => {
+    expect(hasAccess(founder({ hasAccess: true, trialEndsAt: inDays(-30) }), NOW)).toBe(true);
+    expect(hasAccess(founder({ hasAccess: false, trialEndsAt: inDays(7) }), NOW)).toBe(false);
   });
 });

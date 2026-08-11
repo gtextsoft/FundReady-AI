@@ -50,6 +50,9 @@ export function isPaid(account: FounderAccount): boolean {
 
 /** True when the founder has either paid or is still inside the trial window. */
 export function hasAccess(account: FounderAccount, now: number = Date.now()): boolean {
+  // Prefer the server's entitlement flag when present — do not recompute from
+  // created_at locally once `/v1/users/me` sends `has_access` / `trial_ends_at`.
+  if (typeof account.hasAccess === 'boolean') return account.hasAccess;
   return isPaid(account) || trialActive(account, now);
 }
 
@@ -74,15 +77,14 @@ export function gate(
 }
 
 /**
- * Investors confirm email before brokerage actions.
- *
- * KYC (`verification`) is shown on profile but does not hard-block express
- * interest until Stripe Identity (T4.1) is live — otherwise the tab is a dead end.
+ * Investors confirm email before brokerage actions, and must pass KYC before
+ * expressing interest, requesting intros, or scheduling calls.
  */
 export function investorGate(account: InvestorAccount, capability: InvestorCapability): Gate {
   if (!account.emailVerified) return deny('email');
-  if (capability === 'expressInterest') return ALLOW;
-  return account.verification === 'verified' ? ALLOW : deny('verification');
+  if (account.verification !== 'verified') return deny('verification');
+  void capability;
+  return ALLOW;
 }
 
 /** Copy for a locked module tile. */
@@ -94,5 +96,5 @@ export function lockLabel(reason: GateReason): string {
 export function lockExplanation(reason: GateReason): string {
   if (reason === 'payment') return 'Your free trial has ended. Unlock FundReady AI to continue.';
   if (reason === 'email') return 'Confirm your email address to unlock this.';
-  return 'Complete investor verification when it becomes available.';
+  return 'Complete investor identity verification to unlock this.';
 }

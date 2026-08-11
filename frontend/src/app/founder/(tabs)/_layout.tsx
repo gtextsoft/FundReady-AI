@@ -16,6 +16,7 @@ export default function FounderTabs() {
   const colors = useThemeColors();
   const load = useNotifications((s) => s.load);
   const pending = useNotifications((s) => s.pendingCalls().length);
+  const unread = useNotifications((s) => s.unreadCount());
 
   useEffect(() => {
     load('founder');
@@ -27,8 +28,7 @@ export default function FounderTabs() {
         <TabBar
           {...props}
           glyphs={GLYPHS}
-          // Alerts/calls are not live yet — hide badge counts that imply inbox activity.
-          badges={{ alerts: 0, investors: pending }}
+          badges={{ alerts: unread, investors: pending }}
         />
       )}
       screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: colors.ground } }}>

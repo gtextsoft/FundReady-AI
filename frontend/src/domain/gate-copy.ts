@@ -35,8 +35,8 @@ export function gateCopy(reason: GateReason, side: 'founder' | 'investor' = 'fou
       body:
         side === 'founder'
           ? 'Optional for browsing — required before some publish and diligence steps.'
-          : 'Coming soon. You can browse and express interest after confirming email.',
-      cta: side === 'founder' ? 'Add registration' : 'Learn more',
+          : 'Complete Stripe Identity verification and your investment thesis before expressing interest or scheduling calls.',
+      cta: side === 'founder' ? 'Add registration' : 'Verify identity',
     };
   }
   return {

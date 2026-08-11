@@ -292,14 +292,14 @@ export default function FounderDashboard() {
         <ModuleTile
           glyph="✦"
           title="AI mentor"
-          subtitle="Coming soon"
+          subtitle="Ask about your audit"
           gate={canAiMentor}
           onPress={openGated(canAiMentor, '/founder/ai-mentor')}
         />
         <ModuleTile
           glyph="◈"
           title="Investor interest"
-          subtitle={pendingCalls ? `${pendingCalls} awaiting your answer` : 'Requests not live yet'}
+          subtitle={pendingCalls ? `${pendingCalls} awaiting your answer` : 'Calls and introductions'}
           gate={canRequests}
           badge={pendingCalls}
           onPress={openGated(canRequests, '/founder/investors')}
@@ -307,7 +307,7 @@ export default function FounderDashboard() {
         <ModuleTile
           glyph="◎"
           title="Programmes"
-          subtitle="Enrolment not live yet"
+          subtitle="Browse and enrol"
           gate={canProgrammes}
           onPress={openGated(canProgrammes, '/founder/programmes')}
         />
@@ -328,7 +328,7 @@ export default function FounderDashboard() {
         <ModuleTile
           glyph="◇"
           title={paid ? 'Your plan' : locked ? 'Unlock access' : 'Trial'}
-          subtitle={paid ? 'Unlocked — one-off payment' : 'Billing not live yet'}
+          subtitle={paid ? 'Unlocked — one-off payment' : locked ? 'Trial ended — unlock to continue' : 'Trial active'}
           gate={ALLOWED}
           onPress={goPaywall}
         />

@@ -137,10 +137,20 @@ export default function InvestorProfile() {
                 </Txt>
               ) : null}
               {i.revealedRunIds.length > 0 ? (
-                <Txt className="mt-2 text-[11px]" style={{ color: C.grn }}>
-                  {i.revealedRunIds.length} report
-                  {i.revealedRunIds.length === 1 ? '' : 's'} revealed
-                </Txt>
+                <View className="mt-2 gap-2">
+                  <Txt className="text-[11px]" style={{ color: C.grn }}>
+                    {i.revealedRunIds.length} report
+                    {i.revealedRunIds.length === 1 ? '' : 's'} revealed
+                  </Txt>
+                  {i.revealedRunIds.map((runId) => (
+                    <Button
+                      key={runId}
+                      label="Open revealed report"
+                      height={36}
+                      onPress={() => router.push(route(`/investor/report/${i.id}/${runId}`))}
+                    />
+                  ))}
+                </View>
               ) : null}
               <View className="mt-2">
                 <Button
@@ -169,12 +179,16 @@ export default function InvestorProfile() {
         <Txt className="mt-2 text-[12px] text-ink-muted" style={{ lineHeight: 18 }}>
           {status === 'verified'
             ? `${account?.credentials?.investorType ?? 'Investor'} · ${account?.credentials?.country ?? ''}`.trim()
-            : 'Identity verification (Stripe Identity) is not live yet. You can already browse and express interest after confirming email.'}
+            : 'Complete your thesis and Stripe Identity verification to express interest and propose calls.'}
         </Txt>
         {status !== 'verified' ? (
-          <Txt className="mt-3 text-[11.5px] text-ink-faint" style={{ lineHeight: 17 }}>
-            We will prompt you here when identity verification opens.
-          </Txt>
+          <View className="mt-3">
+            <Button
+              label="Verify identity"
+              height={40}
+              onPress={() => router.push(route('/investor/verify'))}
+            />
+          </View>
         ) : null}
       </View>
 
