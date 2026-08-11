@@ -32,16 +32,16 @@ export function Unavailable({
       style={{
         borderWidth: 1,
         borderStyle: missing ? 'dashed' : 'solid',
-        borderColor: missing ? C.lineDash : '#4a1d1d',
-        backgroundColor: missing ? 'transparent' : 'rgba(255,77,79,0.08)',
+        borderColor: missing ? C.graphiteBright : '#4A1F1E',
+        backgroundColor: missing ? 'transparent' : 'rgba(242,85,78,0.08)',
       }}>
-      <Mono className="text-[9px]" style={{ letterSpacing: 1.2, color: missing ? C.inkFaint : C.red }}>
+      <Mono className="text-[9px]" style={{ letterSpacing: 1.2, color: missing ? C.boneFaint : C.alert }}>
         {missing ? 'NOT BUILT YET' : 'COULD NOT LOAD'}
       </Mono>
       <TxtSemi className="mb-[5px] mt-[9px] text-[15px]" style={{ letterSpacing: -0.3 }}>
         {title}
       </TxtSemi>
-      <Txt className="text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+      <Txt className="text-[12.5px] text-bone-secondary" style={{ lineHeight: 19 }}>
         {message}
       </Txt>
     </View>

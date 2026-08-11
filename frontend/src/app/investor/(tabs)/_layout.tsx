@@ -26,7 +26,7 @@ export default function InvestorTabs() {
   return (
     <Tabs
       tabBar={(props) => <TabBar {...props} glyphs={GLYPHS} badges={{ alerts: unread }} />}
-      screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: C.ground } }}>
+      screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: C.obsidian } }}>
       <Tabs.Screen name="index" options={{ title: 'Dealflow' }} />
       <Tabs.Screen name="watchlist" options={{ title: 'Watchlist' }} />
       <Tabs.Screen name="alerts" options={{ title: 'Alerts' }} />

@@ -77,7 +77,7 @@ export default function ResetPassword() {
 
   return (
     <KeyboardAvoidingView
-      className="flex-1 bg-ground"
+      className="flex-1 bg-obsidian"
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
         contentContainerStyle={{
@@ -99,19 +99,19 @@ export default function ResetPassword() {
 
           {done ? (
             <>
-              <View className="mb-6 rounded-[11px] border border-line bg-surface-1 p-4">
+              <View className="mb-6 rounded-[11px] border border-graphite bg-carbon-low p-4">
                 <View className="mb-2 flex-row items-center gap-2">
                   <View
                     className="h-[6px] w-[6px] rounded-full"
-                    style={{ backgroundColor: C.grn }}
+                    style={{ backgroundColor: C.signal }}
                   />
-                  <Mono className="text-[10px]" style={{ letterSpacing: 1, color: C.grn }}>
+                  <Mono className="text-[10px]" style={{ letterSpacing: 1, color: C.signal }}>
                     SIGNED OUT EVERYWHERE
                   </Mono>
                 </View>
                 {/* Said plainly, because otherwise the other device looking
                     signed out reads as a fault rather than as the point. */}
-                <Txt className="text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+                <Txt className="text-[12.5px] text-bone-secondary" style={{ lineHeight: 19 }}>
                   Every device signed in to this account has been signed out, including any
                   that were not yours. Sign in again with your new password.
                 </Txt>
@@ -120,7 +120,7 @@ export default function ResetPassword() {
             </>
           ) : (
             <>
-              <Txt className="mb-6 text-[13px] text-ink-muted" style={{ lineHeight: 20 }}>
+              <Txt className="mb-6 text-[13px] text-bone-secondary" style={{ lineHeight: 20 }}>
                 {linked
                   ? 'Your reset link checked out. Pick a new password and every other device will be signed out.'
                   : 'Paste the code from your reset email, then pick a new password.'}
@@ -172,7 +172,7 @@ export default function ResetPassword() {
               </View>
 
               {fieldError ? (
-                <Txt className="mt-3 text-[12.5px]" style={{ color: C.red }}>
+                <Txt className="mt-3 text-[12.5px]" style={{ color: C.alert }}>
                   {fieldError}
                 </Txt>
               ) : null}
@@ -206,7 +206,7 @@ export default function ResetPassword() {
               accessibilityRole="link"
               className="mt-6 items-center"
               onPress={() => router.replace(SIGN_IN)}>
-              <TxtMed className="text-[12.5px] text-ink-muted">Back to sign in</TxtMed>
+              <TxtMed className="text-[12.5px] text-bone-secondary">Back to sign in</TxtMed>
             </Pressable>
           )}
         </View>

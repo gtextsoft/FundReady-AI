@@ -68,14 +68,14 @@ export default function AssessmentScreen() {
   }, []);
 
   return (
-    <View className="flex-1 items-center justify-center overflow-hidden bg-ground px-8">
-      {/* blue glow behind the mark */}
+    <View className="flex-1 items-center justify-center overflow-hidden bg-obsidian px-8">
+      {/* signal glow behind the mark — the AI is working */}
       <View className="absolute inset-0" pointerEvents="none">
         <Svg width="100%" height="100%">
           <Defs>
             <RadialGradient id="glow" cx="50%" cy="42%" r="55%">
-              <Stop offset="0" stopColor={C.blue} stopOpacity={0.13} />
-              <Stop offset="1" stopColor={C.blue} stopOpacity={0} />
+              <Stop offset="0" stopColor={C.signal} stopOpacity={0.13} />
+              <Stop offset="1" stopColor={C.signal} stopOpacity={0} />
             </RadialGradient>
           </Defs>
           <Rect x="0" y="0" width="100%" height="100%" fill="url(#glow)" />
@@ -91,7 +91,7 @@ export default function AssessmentScreen() {
         <Mark size={52} />
       </View>
 
-      <Mono className="mb-[14px] text-[10px] text-ink-faint" style={{ letterSpacing: 1.5 }}>
+      <Mono className="mb-[14px] text-[10px] text-bone-faint" style={{ letterSpacing: 1.5 }}>
         ASSESSING {(company || 'your company').toUpperCase()}
       </Mono>
 
@@ -108,12 +108,12 @@ export default function AssessmentScreen() {
           <View
             key={i}
             className="h-[2px] w-[26px] rounded-[2px]"
-            style={{ backgroundColor: phase >= i ? C.ink : C.lineStrong }}
+            style={{ backgroundColor: phase >= i ? C.bone : C.graphiteStrong }}
           />
         ))}
       </View>
 
-      <Txt className="absolute bottom-11 left-8 right-8 text-center text-[11px] text-ink-faint" style={{ lineHeight: 17 }}>
+      <Txt className="absolute bottom-11 left-8 right-8 text-center text-[11px] text-bone-faint" style={{ lineHeight: 17 }}>
         Your figures are encrypted at rest and never shown to an investor until you approve a specific introduction.
       </Txt>
     </View>
@@ -154,7 +154,7 @@ function PulseRing({ inset, delay }: { inset: number; delay: number }) {
           right: inset,
           bottom: inset,
           borderWidth: 1,
-          borderColor: inset ? 'rgba(237,237,237,0.22)' : 'rgba(237,237,237,0.14)',
+          borderColor: inset ? 'rgba(237,240,234,0.22)' : 'rgba(237,240,234,0.14)',
         },
         style,
       ]}
@@ -176,7 +176,7 @@ function Spinner() {
     <Animated.View
       pointerEvents="none"
       className="absolute inset-0 rounded-full"
-      style={[{ borderWidth: 1.5, borderColor: 'transparent', borderTopColor: C.ink }, style]}
+      style={[{ borderWidth: 1.5, borderColor: 'transparent', borderTopColor: C.bone }, style]}
     />
   );
 }
@@ -193,7 +193,7 @@ function ScanLine({ height }: { height: number }) {
 
   return (
     <Animated.View pointerEvents="none" className="absolute left-0 right-0 top-0 h-[70px]" style={style}>
-      <LinearGradient colors={['transparent', 'rgba(0,112,243,0.09)', 'transparent']} style={{ flex: 1 }} />
+      <LinearGradient colors={['transparent', 'rgba(198,242,78,0.09)', 'transparent']} style={{ flex: 1 }} />
     </Animated.View>
   );
 }

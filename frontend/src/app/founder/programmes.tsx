@@ -22,10 +22,10 @@ const PROGRAMMES = [
       'CAC/LTV instrumentation clinic',
       'Re-score at week 6, free of charge',
     ],
-    accent: C.amb,
-    border: '#3d2f14',
-    gradient: ['rgba(245,166,35,0.14)', 'rgba(245,166,35,0.02)'] as [string, string],
-    variant: 'amber' as const,
+    accent: C.flag,
+    border: '#4A2A16',
+    gradient: ['rgba(255,122,61,0.14)', 'rgba(255,122,61,0.02)'] as [string, string],
+    variant: 'flag' as const,
   },
   {
     key: 'wealth' as const,
@@ -37,10 +37,10 @@ const PROGRAMMES = [
       'Scaling playbooks for channel and pricing',
       'Live listing in the investor dealflow database',
     ],
-    accent: C.grn,
+    accent: C.signal,
     border: '#14351f',
-    gradient: ['rgba(12,206,107,0.14)', 'rgba(12,206,107,0.02)'] as [string, string],
-    variant: 'green' as const,
+    gradient: ['rgba(198,242,78,0.14)', 'rgba(198,242,78,0.02)'] as [string, string],
+    variant: 'primary' as const,
   },
 ];
 
@@ -67,12 +67,12 @@ export default function Programmes() {
   }
 
   return (
-    <View className="flex-1 bg-ground">
+    <View className="flex-1 bg-obsidian">
       <View className="flex-row items-center justify-between px-[18px] pb-3" style={{ paddingTop: insets.top + 4 }}>
         <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => router.back()} hitSlop={10}>
-          <Txt className="text-[19px] text-ink">←</Txt>
+          <Txt className="text-[19px] text-bone">←</Txt>
         </Pressable>
-        <Mono className="text-[10px] text-ink-faint" style={{ letterSpacing: 1.2 }}>
+        <Mono className="text-[10px] text-bone-faint" style={{ letterSpacing: 1.2 }}>
           PROGRAMMES
         </Mono>
         <View className="w-5" />
@@ -97,8 +97,8 @@ export default function Programmes() {
                     </Mono>
                   </View>
                   {isRecommended ? (
-                    <View className="rounded-[4px] bg-ink px-[7px] py-[3px]">
-                      <Mono className="text-[9.5px] text-ground" style={{ letterSpacing: 1 }}>
+                    <View className="rounded-[4px] bg-bone px-[7px] py-[3px]">
+                      <Mono className="text-[9.5px] text-obsidian" style={{ letterSpacing: 1 }}>
                         RECOMMENDED
                       </Mono>
                     </View>
@@ -108,7 +108,7 @@ export default function Programmes() {
                 <TxtSemi className="mb-[6px] mt-[13px] text-[21px]" style={{ letterSpacing: -0.6 }}>
                   {p.title}
                 </TxtSemi>
-                <Txt className="mb-4 text-[13px] text-ink-muted" style={{ lineHeight: 20 }}>
+                <Txt className="mb-4 text-[13px] text-bone-secondary" style={{ lineHeight: 20 }}>
                   {p.body}
                 </Txt>
 
@@ -118,7 +118,7 @@ export default function Programmes() {
                       <Txt className="text-[12.5px]" style={{ color: p.accent }}>
                         →
                       </Txt>
-                      <Txt className="flex-1 text-[12.5px] text-ink" style={{ lineHeight: 19 }}>
+                      <Txt className="flex-1 text-[12.5px] text-bone" style={{ lineHeight: 19 }}>
                         {b}
                       </Txt>
                     </View>

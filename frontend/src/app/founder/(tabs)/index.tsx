@@ -50,7 +50,7 @@ export default function FounderDashboard() {
     }, [refreshAccount, loadNotifications, loadProfile, loadLatestAudit]),
   );
 
-  if (!account) return <View className="flex-1 bg-ground" />;
+  if (!account) return <View className="flex-1 bg-obsidian" />;
 
   const locked = !hasAccess(account);
   const paid = isPaid(account);
@@ -87,10 +87,10 @@ export default function FounderDashboard() {
 
   return (
     <ScrollView
-      className="flex-1 bg-ground"
+      className="flex-1 bg-obsidian"
       contentContainerStyle={{ paddingTop: insets.top + 4, paddingHorizontal: 18, paddingBottom: 24 }}
       showsVerticalScrollIndicator={false}
-      refreshControl={<RefreshControl refreshing={false} onRefresh={refreshAccount} tintColor={C.inkFaint} />}>
+      refreshControl={<RefreshControl refreshing={false} onRefresh={refreshAccount} tintColor={C.boneFaint} />}>
       {/* header */}
       <View className="h-[34px] flex-row items-center justify-between">
         <View className="flex-row items-center gap-2">
@@ -104,18 +104,18 @@ export default function FounderDashboard() {
             accessibilityRole="button"
             accessibilityLabel={unread ? `Alerts, ${unread} unread` : 'Alerts'}
             onPress={() => router.push(route('/founder/alerts'))}
-            className="h-[30px] w-[30px] items-center justify-center rounded-[8px] border border-line">
-            <Txt className="text-[12px] text-ink-muted">◔</Txt>
+            className="h-[30px] w-[30px] items-center justify-center rounded-[8px] border border-graphite">
+            <Txt className="text-[12px] text-bone-secondary">◔</Txt>
             {unread > 0 ? (
               <View
                 className="absolute -right-[3px] -top-[3px] h-[13px] min-w-[13px] items-center justify-center rounded-full px-[3px]"
-                style={{ backgroundColor: C.blue }}>
-                <Mono className="text-[8px] text-white">{unread > 9 ? '9+' : unread}</Mono>
+                style={{ backgroundColor: C.flag }}>
+                <Mono className="text-[8px] text-obsidian">{unread > 9 ? '9+' : unread}</Mono>
               </View>
             ) : null}
           </Pressable>
-          <View className="h-[28px] w-[28px] items-center justify-center rounded-full bg-line">
-            <TxtSemi className="text-[10px] text-ink-muted">
+          <View className="h-[28px] w-[28px] items-center justify-center rounded-full bg-graphite">
+            <TxtSemi className="text-[10px] text-bone-secondary">
               {(session?.displayName ?? 'F').slice(0, 2).toUpperCase()}
             </TxtSemi>
           </View>
@@ -234,12 +234,12 @@ function ScoreCard({
       <Pressable
         accessibilityRole="button"
         onPress={() => router.push(route('/onboarding'))}
-        className="rounded-[12px] border border-line bg-surface-1 p-[16px]">
+        className="rounded-[12px] border border-graphite bg-carbon-low p-[16px]">
         <TxtSemi className="text-[14px]">Run your Fundability assessment</TxtSemi>
-        <Txt className="mt-[4px] text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+        <Txt className="mt-[4px] text-[12.5px] text-bone-secondary" style={{ lineHeight: 19 }}>
           Four short steps. Investors cannot see you without a score.
         </Txt>
-        <Txt className="mt-3 text-[12.5px]" style={{ color: C.blue }}>
+        <Txt className="mt-3 text-[12.5px]" style={{ color: C.signal }}>
           Start assessment →
         </Txt>
       </Pressable>
@@ -255,12 +255,12 @@ function ScoreCard({
       <Pressable
         accessibilityRole="button"
         onPress={open}
-        className="rounded-[12px] border border-line bg-surface-1 p-[16px]">
+        className="rounded-[12px] border border-graphite bg-carbon-low p-[16px]">
         <View className="flex-row items-center gap-2">
-          <View className="h-[6px] w-[6px] rounded-full" style={{ backgroundColor: C.blue }} />
+          <View className="h-[6px] w-[6px] rounded-full" style={{ backgroundColor: C.signal }} />
           <TxtSemi className="text-[14px]">Your audit is running</TxtSemi>
         </View>
-        <Txt className="mt-[5px] text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+        <Txt className="mt-[5px] text-[12.5px] text-bone-secondary" style={{ lineHeight: 19 }}>
           Scoring against rubric {run.rubricVersion}. This takes a few minutes — you can leave the
           app and come back.
         </Txt>
@@ -278,12 +278,12 @@ function ScoreCard({
       <Pressable
         accessibilityRole="button"
         onPress={open}
-        className="rounded-[12px] border border-line bg-surface-1 p-[16px]">
+        className="rounded-[12px] border border-graphite bg-carbon-low p-[16px]">
         <TxtSemi className="text-[14px]">Not enough to tell yet</TxtSemi>
-        <Txt className="mt-[5px] text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+        <Txt className="mt-[5px] text-[12.5px] text-bone-secondary" style={{ lineHeight: 19 }}>
           {verdict?.rationale ?? 'The audit could not reach a verdict on what it was given.'}
         </Txt>
-        <Txt className="mt-3 text-[12.5px]" style={{ color: C.blue }}>
+        <Txt className="mt-3 text-[12.5px]" style={{ color: C.signal }}>
           See what is missing →
         </Txt>
       </Pressable>
@@ -299,29 +299,29 @@ function ScoreCard({
     <Pressable
       accessibilityRole="button"
       onPress={open}
-      className="flex-row items-center gap-4 rounded-[12px] border border-line bg-surface-1 p-[16px]">
+      className="flex-row items-center gap-4 rounded-[12px] border border-graphite bg-carbon-low p-[16px]">
       <View
         className="h-[62px] w-[62px] items-center justify-center rounded-full"
-        style={{ borderWidth: 3, borderColor: isReal ? b.color : C.lineStrong }}>
+        style={{ borderWidth: 3, borderColor: isReal ? b.color : C.graphiteStrong }}>
         <Mono className="text-[22px]" style={{ letterSpacing: -1 }}>
           {score}
         </Mono>
       </View>
       <View className="flex-1">
-        <TxtSemi className="text-[14px]" style={{ color: isReal ? b.color : C.inkMuted }}>
+        <TxtSemi className="text-[14px]" style={{ color: isReal ? b.color : C.boneSecondary }}>
           {b.label}
         </TxtSemi>
         {/* The estimate is never dressed as an audit: it is drawn in muted
             ink and says what it is. */}
-        <Txt className="mt-[3px] text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+        <Txt className="mt-[3px] text-[12.5px] text-bone-secondary" style={{ lineHeight: 19 }}>
           {!isReal
-            ? 'Provisional estimate from your answers — not a SACI audit, and no investor can see it.'
+            ? 'Provisional estimate from your answers — not a FundReady audit, and no investor can see it.'
             : visible
               ? 'Investors matching your profile can see this score.'
               : 'Hidden from investors until your company is verified.'}
         </Txt>
       </View>
-      <Txt className="text-[13px] text-ink-faint">›</Txt>
+      <Txt className="text-[13px] text-bone-faint">›</Txt>
     </Pressable>
   );
 }

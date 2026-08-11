@@ -25,7 +25,7 @@ export function RoleGuard({ allow, children }: { allow: Role; children: React.Re
     if (permitted) refreshAccount();
   }, [permitted, refreshAccount]);
 
-  if (status === 'loading') return <View className="flex-1 bg-ground" />;
+  if (status === 'loading') return <View className="flex-1 bg-obsidian" />;
   if (status === 'signedOut') return <Redirect href={SIGN_IN} />;
   if (role !== allow) return <Redirect href={homeFor(role)} />;
 

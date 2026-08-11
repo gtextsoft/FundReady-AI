@@ -39,7 +39,7 @@ export function FilterSheet({
         <View className="gap-[10px]">
           <View className="flex-row items-center justify-between">
             <TxtMed className="text-[12.5px]">Fundability score</TxtMed>
-            <Mono className="text-[12px] text-ink-muted">{minScore}–100</Mono>
+            <Mono className="text-[12px] text-bone-secondary">{minScore}–100</Mono>
           </View>
           <Slider value={minScore} onChange={setMinScore} label="Minimum fundability score" />
         </View>

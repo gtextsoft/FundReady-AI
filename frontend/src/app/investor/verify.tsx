@@ -62,13 +62,13 @@ export default function VerifyInvestor() {
   }
 
   return (
-    <KeyboardAvoidingView className="flex-1 bg-ground" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View className="border-b border-line-soft px-[18px] pb-3" style={{ paddingTop: insets.top + 4 }}>
+    <KeyboardAvoidingView className="flex-1 bg-obsidian" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View className="border-b border-graphite-soft px-[18px] pb-3" style={{ paddingTop: insets.top + 4 }}>
         <View className="h-[34px] flex-row items-center justify-between">
           <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => router.back()} hitSlop={10}>
-            <Txt className="text-[19px] text-ink">←</Txt>
+            <Txt className="text-[19px] text-bone">←</Txt>
           </Pressable>
-          <Mono className="text-[10px] text-ink-faint" style={{ letterSpacing: 1.2 }}>
+          <Mono className="text-[10px] text-bone-faint" style={{ letterSpacing: 1.2 }}>
             INVESTOR VERIFICATION
           </Mono>
           <View className="w-5" />
@@ -84,7 +84,7 @@ export default function VerifyInvestor() {
         <TxtSemi className="mb-1 mt-2 text-[23px]" style={{ letterSpacing: -0.7 }}>
           Verify your profile
         </TxtSemi>
-        <Txt className="mb-[22px] text-[13px] text-ink-dim" style={{ lineHeight: 20 }}>
+        <Txt className="mb-[22px] text-[13px] text-bone-muted" style={{ lineHeight: 20 }}>
           Founders share real numbers with you, so they get to see who is asking. Four fields, no documents.
         </Txt>
 
@@ -117,7 +117,7 @@ export default function VerifyInvestor() {
           {touched && !complete ? (
             <View
               className="rounded-[9px] px-[13px] py-[11px]"
-              style={{ borderWidth: 1, borderColor: '#4a1d1d', backgroundColor: 'rgba(255,77,79,0.07)' }}>
+              style={{ borderWidth: 1, borderColor: '#4A1F1E', backgroundColor: 'rgba(242,85,78,0.07)' }}>
               <Txt className="text-[12px]" style={{ color: '#ff8a8c', lineHeight: 18 }}>
                 Fill every field to verify.
               </Txt>
@@ -128,7 +128,7 @@ export default function VerifyInvestor() {
         </View>
       </ScrollView>
 
-      <View className="border-t border-line-soft bg-ground px-[18px] pt-3" style={{ paddingBottom: insets.bottom + 14 }}>
+      <View className="border-t border-graphite-soft bg-obsidian px-[18px] pt-3" style={{ paddingBottom: insets.bottom + 14 }}>
         <Button label="Verify profile" height={48} loading={busy} onPress={submit} />
       </View>
     </KeyboardAvoidingView>

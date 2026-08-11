@@ -126,13 +126,13 @@ export default function VerifyCompany() {
   }
 
   return (
-    <KeyboardAvoidingView className="flex-1 bg-ground" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View className="border-b border-line-soft px-[18px] pb-3" style={{ paddingTop: insets.top + 4 }}>
+    <KeyboardAvoidingView className="flex-1 bg-obsidian" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View className="border-b border-graphite-soft px-[18px] pb-3" style={{ paddingTop: insets.top + 4 }}>
         <View className="h-[34px] flex-row items-center justify-between">
           <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => router.back()} hitSlop={10}>
-            <Txt className="text-[19px] text-ink">←</Txt>
+            <Txt className="text-[19px] text-bone">←</Txt>
           </Pressable>
-          <Mono className="text-[10px] text-ink-faint" style={{ letterSpacing: 1.2 }}>
+          <Mono className="text-[10px] text-bone-faint" style={{ letterSpacing: 1.2 }}>
             COMPANY VERIFICATION
           </Mono>
           <View className="w-5" />
@@ -147,11 +147,11 @@ export default function VerifyCompany() {
         {inReview ? (
           <View
             className="mb-5 rounded-[12px] p-[14px]"
-            style={{ borderWidth: 1, borderColor: 'rgba(0,112,243,0.35)', backgroundColor: 'rgba(0,112,243,0.08)' }}>
-            <Mono className="text-[9px]" style={{ letterSpacing: 1.2, color: C.blue }}>
+            style={{ borderWidth: 1, borderColor: 'rgba(78,168,242,0.35)', backgroundColor: 'rgba(78,168,242,0.08)' }}>
+            <Mono className="text-[9px]" style={{ letterSpacing: 1.2, color: C.info }}>
               IN REVIEW
             </Mono>
-            <Txt className="mt-2 text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+            <Txt className="mt-2 text-[12.5px] text-bone-secondary" style={{ lineHeight: 19 }}>
               We are checking your registration against the registry. You will get a notification the moment it clears.
             </Txt>
           </View>
@@ -161,7 +161,7 @@ export default function VerifyCompany() {
         <TxtSemi className="mb-1 mt-2 text-[23px]" style={{ letterSpacing: -0.7 }}>
           Prove your company is real
         </TxtSemi>
-        <Txt className="mb-[22px] text-[13px] text-ink-dim" style={{ lineHeight: 20 }}>
+        <Txt className="mb-[22px] text-[13px] text-bone-muted" style={{ lineHeight: 20 }}>
           Investors only see companies that are registered in their own country. This is checked once.
         </Txt>
 
@@ -215,9 +215,9 @@ export default function VerifyCompany() {
           <View className="gap-[9px]">
             <FieldLabel>Certificate of incorporation</FieldLabel>
             {document ? (
-              <View className="flex-row items-center gap-[11px] rounded-[11px] border border-line-strong bg-surface-1 p-[14px]">
-                <View className="h-[34px] w-[34px] items-center justify-center rounded-[7px] border border-line-strong bg-surface-3">
-                  <Mono className="text-[9px] text-ink-muted">
+              <View className="flex-row items-center gap-[11px] rounded-[11px] border border-graphite-strong bg-carbon-low p-[14px]">
+                <View className="h-[34px] w-[34px] items-center justify-center rounded-[7px] border border-graphite-strong bg-carbon-high">
+                  <Mono className="text-[9px] text-bone-secondary">
                     {document.split('.').pop()?.slice(0, 4).toUpperCase() ?? 'DOC'}
                   </Mono>
                 </View>
@@ -225,21 +225,21 @@ export default function VerifyCompany() {
                   <Txt className="text-[13px]" numberOfLines={1}>
                     {document}
                   </Txt>
-                  <Txt className="text-[11px] text-ink-faint">attached</Txt>
+                  <Txt className="text-[11px] text-bone-faint">attached</Txt>
                 </View>
                 <Pressable accessibilityRole="button" onPress={pickDocument} hitSlop={8}>
-                  <Txt className="text-[11.5px] text-ink-muted">Replace</Txt>
+                  <Txt className="text-[11.5px] text-bone-secondary">Replace</Txt>
                 </Pressable>
               </View>
             ) : (
               <Pressable
                 accessibilityRole="button"
                 onPress={pickDocument}
-                className="w-full items-center gap-[6px] rounded-[11px] bg-surface-1 px-4 py-[26px]"
-                style={{ borderWidth: 1.5, borderStyle: 'dashed', borderColor: C.lineDash }}>
-                <Txt className="text-[19px] text-ink">↑</Txt>
-                <TxtMed className="text-[13.5px] text-ink">Upload certificate</TxtMed>
-                <Txt className="text-[11px] text-ink-faint">PDF, JPG or PNG · up to 10 MB</Txt>
+                className="w-full items-center gap-[6px] rounded-[11px] bg-carbon-low px-4 py-[26px]"
+                style={{ borderWidth: 1.5, borderStyle: 'dashed', borderColor: C.graphiteBright }}>
+                <Txt className="text-[19px] text-bone">↑</Txt>
+                <TxtMed className="text-[13.5px] text-bone">Upload certificate</TxtMed>
+                <Txt className="text-[11px] text-bone-faint">PDF, JPG or PNG · up to 10 MB</Txt>
               </Pressable>
             )}
             {docError ? (
@@ -250,7 +250,7 @@ export default function VerifyCompany() {
           {touched && !complete ? <ErrorNote text="Fill every field and attach your certificate to submit." /> : null}
         </View>
 
-        <Txt className="mt-5 text-[11px] text-ink-faint" style={{ lineHeight: 17 }}>
+        <Txt className="mt-5 text-[11px] text-bone-faint" style={{ lineHeight: 17 }}>
           Your certificate is used only to confirm registration and is never shown to investors.
         </Txt>
 
@@ -260,11 +260,11 @@ export default function VerifyCompany() {
         {saved && error ? (
           <View
             className="mt-5 rounded-[12px] p-[13px]"
-            style={{ borderWidth: 1, borderColor: '#3d2f14', backgroundColor: 'rgba(245,166,35,0.08)' }}>
-            <Mono className="text-[9px]" style={{ letterSpacing: 1.2, color: C.amb }}>
+            style={{ borderWidth: 1, borderColor: '#4A2A16', backgroundColor: 'rgba(255,122,61,0.08)' }}>
+            <Mono className="text-[9px]" style={{ letterSpacing: 1.2, color: C.flag }}>
               DETAILS SAVED
             </Mono>
-            <Txt className="mt-[7px] text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+            <Txt className="mt-[7px] text-[12.5px] text-bone-secondary" style={{ lineHeight: 19 }}>
               Your registration details are stored against your profile and the audit can use them.
               The review that marks you verified to investors is not built yet.
             </Txt>
@@ -276,7 +276,7 @@ export default function VerifyCompany() {
         ) : null}
       </ScrollView>
 
-      <View className="border-t border-line-soft bg-ground px-[18px] pt-3" style={{ paddingBottom: insets.bottom + 14 }}>
+      <View className="border-t border-graphite-soft bg-obsidian px-[18px] pt-3" style={{ paddingBottom: insets.bottom + 14 }}>
         <Button label={inReview ? 'Resubmit for review' : 'Submit for verification'} height={48} loading={busy} onPress={submit} />
       </View>
     </KeyboardAvoidingView>
@@ -287,7 +287,7 @@ function ErrorNote({ text }: { text: string }) {
   return (
     <View
       className="rounded-[9px] px-[13px] py-[11px]"
-      style={{ borderWidth: 1, borderColor: '#4a1d1d', backgroundColor: 'rgba(255,77,79,0.07)' }}>
+      style={{ borderWidth: 1, borderColor: '#4A1F1E', backgroundColor: 'rgba(242,85,78,0.07)' }}>
       <Txt className="text-[12px]" style={{ color: '#ff8a8c', lineHeight: 18 }}>
         {text}
       </Txt>

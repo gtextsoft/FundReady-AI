@@ -98,7 +98,7 @@ export function ScheduleCallSheet({
               />
             ))}
           </View>
-          <Txt className="text-[11px] text-ink-faint">Times are shown in your own timezone.</Txt>
+          <Txt className="text-[11px] text-bone-faint">Times are shown in your own timezone.</Txt>
         </View>
 
         <View className="gap-[10px]">
@@ -108,11 +108,11 @@ export function ScheduleCallSheet({
 
         <View className="gap-[10px]">
           <FieldLabel>Note to the founder</FieldLabel>
-          <View className="rounded-[11px] border border-line-strong bg-surface-1 px-[14px] py-2" style={{ minHeight: 84 }}>
+          <View className="rounded-[11px] border border-graphite-strong bg-carbon-low px-[14px] py-2" style={{ minHeight: 84 }}>
             <TextInput
-              className="flex-1 text-[13.5px] text-ink"
+              className="flex-1 text-[13.5px] text-bone"
               placeholder="What you want to cover on the call…"
-              placeholderTextColor={C.inkFaint}
+              placeholderTextColor={C.boneFaint}
               value={note}
               onChangeText={setNote}
               multiline
@@ -121,8 +121,8 @@ export function ScheduleCallSheet({
           </View>
         </View>
 
-        <View className="rounded-[9px] border border-line bg-ground px-3 py-[10px]">
-          <Txt className="text-[10px] text-ink-faint" style={{ letterSpacing: 0.5 }}>
+        <View className="rounded-[9px] border border-graphite bg-obsidian px-3 py-[10px]">
+          <Txt className="text-[10px] text-bone-faint" style={{ letterSpacing: 0.5 }}>
             YOU ARE PROPOSING
           </Txt>
           <Mono className="mt-[3px] text-[13px]">
@@ -132,7 +132,7 @@ export function ScheduleCallSheet({
 
         <View className="gap-[9px]">
           <Button label="Send request" loading={busy} onPress={send} />
-          <TxtMed className="text-center text-[11px] text-ink-faint">
+          <TxtMed className="text-center text-[11px] text-bone-faint">
             The founder gets a notification and can accept or decline.
           </TxtMed>
         </View>

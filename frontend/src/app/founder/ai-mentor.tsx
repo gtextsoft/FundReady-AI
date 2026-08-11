@@ -50,12 +50,12 @@ export default function AiMentor() {
   }
 
   return (
-    <KeyboardAvoidingView className="flex-1 bg-ground" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View className="flex-row items-center justify-between border-b border-line-soft px-[18px] pb-3" style={{ paddingTop: insets.top + 4 }}>
+    <KeyboardAvoidingView className="flex-1 bg-obsidian" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View className="flex-row items-center justify-between border-b border-graphite-soft px-[18px] pb-3" style={{ paddingTop: insets.top + 4 }}>
         <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => router.back()} hitSlop={10}>
-          <Txt className="text-[19px] text-ink">←</Txt>
+          <Txt className="text-[19px] text-bone">←</Txt>
         </Pressable>
-        <Mono className="text-[10px] text-ink-faint" style={{ letterSpacing: 1.2 }}>
+        <Mono className="text-[10px] text-bone-faint" style={{ letterSpacing: 1.2 }}>
           AI MENTOR
         </Mono>
         <View className="w-5" />
@@ -73,17 +73,17 @@ export default function AiMentor() {
             key={m.id}
             entering={FadeInDown.duration(220)}
             className={`max-w-[86%] rounded-[13px] px-[13px] py-[10px] ${
-              m.from === 'you' ? 'self-end bg-ink' : 'self-start border border-line bg-surface-1'
+              m.from === 'you' ? 'self-end bg-bone' : 'self-start border border-graphite bg-carbon-low'
             }`}>
-            <Txt className={`text-[13px] ${m.from === 'you' ? 'text-ground' : 'text-ink'}`} style={{ lineHeight: 20 }}>
+            <Txt className={`text-[13px] ${m.from === 'you' ? 'text-obsidian' : 'text-bone'}`} style={{ lineHeight: 20 }}>
               {m.text}
             </Txt>
           </Animated.View>
         ))}
 
         {busy ? (
-          <View className="self-start rounded-[13px] border border-line bg-surface-1 px-[13px] py-[10px]">
-            <Txt className="text-[13px] text-ink-faint">Thinking…</Txt>
+          <View className="self-start rounded-[13px] border border-graphite bg-carbon-low px-[13px] py-[10px]">
+            <Txt className="text-[13px] text-bone-faint">Thinking…</Txt>
           </View>
         ) : null}
 
@@ -94,20 +94,20 @@ export default function AiMentor() {
                 key={s}
                 accessibilityRole="button"
                 onPress={() => send(s)}
-                className="self-start rounded-[8px] border border-line-strong bg-surface-1 px-3 py-2">
-                <Txt className="text-[12.5px] text-ink-muted">{s}</Txt>
+                className="self-start rounded-[8px] border border-graphite-strong bg-carbon-low px-3 py-2">
+                <Txt className="text-[12.5px] text-bone-secondary">{s}</Txt>
               </Pressable>
             ))}
           </View>
         ) : null}
       </ScrollView>
 
-      <View className="border-t border-line-soft bg-ground px-[18px] pt-3" style={{ paddingBottom: insets.bottom + 14 }}>
-        <View className="flex-row items-center gap-2 rounded-[11px] border border-line-strong bg-surface-1 px-[14px]" style={{ minHeight: 46 }}>
+      <View className="border-t border-graphite-soft bg-obsidian px-[18px] pt-3" style={{ paddingBottom: insets.bottom + 14 }}>
+        <View className="flex-row items-center gap-2 rounded-[11px] border border-graphite-strong bg-carbon-low px-[14px]" style={{ minHeight: 46 }}>
           <TextInput
-            className="min-w-0 flex-1 text-[14px] text-ink"
+            className="min-w-0 flex-1 text-[14px] text-bone"
             placeholder="Ask about your metrics…"
-            placeholderTextColor={C.inkFaint}
+            placeholderTextColor={C.boneFaint}
             value={draft}
             onChangeText={setDraft}
             onSubmitEditing={() => send(draft)}
@@ -121,12 +121,12 @@ export default function AiMentor() {
             onPress={() => send(draft)}
             disabled={!draft.trim() || busy}
             hitSlop={8}>
-            <TxtSemi className="text-[13px]" style={{ color: draft.trim() && !busy ? C.ink : C.inkFaint }}>
+            <TxtSemi className="text-[13px]" style={{ color: draft.trim() && !busy ? C.bone : C.boneFaint }}>
               Send
             </TxtSemi>
           </Pressable>
         </View>
-        <Txt className="mt-2 text-center text-[10.5px] text-ink-ghost">
+        <Txt className="mt-2 text-center text-[10.5px] text-bone-ghost">
           Guidance from your declared metrics. Not investment advice.
         </Txt>
       </View>

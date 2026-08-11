@@ -26,7 +26,7 @@ module.exports = [
     rules: {
       // An unawaited API call fails silently: the screen carries on, the
       // request rejects into nothing, and the user sees a success state for
-      // something that never happened. Every method on `FundMeApi` is async.
+      // something that never happened. Every method on `FundReadyApi` is async.
       '@typescript-eslint/no-floating-promises': 'off', // needs type-aware linting; see below
       'no-console': ['warn', { allow: ['warn', 'error'] }],
       '@typescript-eslint/no-unused-vars': [

@@ -1,5 +1,5 @@
 /**
- * Drives every SACI FundMe screen in a real browser.
+ * Drives every FundReady screen in a real browser.
  *
  * The web build is a client-rendered SPA, so HTTP 200 proves nothing and deep
  * links bounce off the entry gate — the only honest check is to click through.
@@ -102,7 +102,7 @@ function check(name, ok, detail = '') {
   check('No light ancestor behind the app', lightAncestor === null, lightAncestor ?? 'all dark');
 
   // ── 02 sign-up ────────────────────────────────────────────
-  await page.getByText('New to SACI FundMe? Create an account').click();
+  await page.getByText('New to FundReady? Create an account').click();
   await sleep(2500);
   await killToast();
   await shot('02-sign-up');
@@ -315,7 +315,7 @@ function check(name, ok, detail = '') {
   await killToast();
   check('Sign out returns to login', (await url()).includes('/sign-in'), await url());
 
-  await page.getByText('New to SACI FundMe? Create an account').click();
+  await page.getByText('New to FundReady? Create an account').click();
   await sleep(2200);
   await page.getByRole('button', { name: "I'm investing" }).click();
   await sleep(600);

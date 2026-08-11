@@ -40,7 +40,7 @@ export default function InvestorInterest() {
 
   return (
     <ScrollView
-      className="flex-1 bg-ground"
+      className="flex-1 bg-obsidian"
       contentContainerStyle={{ paddingTop: insets.top + 8, paddingHorizontal: 18, paddingBottom: 24 }}
       showsVerticalScrollIndicator={false}>
       <TxtSemi className="mb-4 text-[19px]" style={{ letterSpacing: -0.5 }}>
@@ -48,9 +48,9 @@ export default function InvestorInterest() {
       </TxtSemi>
 
       {!gate.allowed ? (
-        <View className="rounded-[12px] border border-line bg-surface-1 p-4">
+        <View className="rounded-[12px] border border-graphite bg-carbon-low p-4">
           <TxtSemi className="text-[14px]">Locked</TxtSemi>
-          <Txt className="mt-[4px] text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+          <Txt className="mt-[4px] text-[12.5px] text-bone-secondary" style={{ lineHeight: 19 }}>
             {lockExplanation(gate.reason)}
           </Txt>
           <View className="mt-4">
@@ -81,16 +81,16 @@ export default function InvestorInterest() {
               <Eyebrow className="mb-[10px] mt-6">ANSWERED</Eyebrow>
               <View className="gap-[9px]">
                 {answered.map((r) => (
-                  <View key={r.id} className="rounded-[12px] border border-line bg-surface-1 p-[14px]">
+                  <View key={r.id} className="rounded-[12px] border border-graphite bg-carbon-low p-[14px]">
                     <View className="flex-row items-center justify-between">
                       <TxtMed className="text-[13px]">{r.investorFirm}</TxtMed>
                       <Mono
                         className="text-[10px]"
-                        style={{ color: r.status === 'accepted' ? C.grn : C.inkFaint }}>
+                        style={{ color: r.status === 'accepted' ? C.signal : C.boneFaint }}>
                         {r.status === 'accepted' ? 'ACCEPTED' : 'DECLINED'}
                       </Mono>
                     </View>
-                    <Txt className="mt-[3px] text-[12px] text-ink-muted">{formatSlot(r.proposedAt)}</Txt>
+                    <Txt className="mt-[3px] text-[12px] text-bone-secondary">{formatSlot(r.proposedAt)}</Txt>
                   </View>
                 ))}
               </View>
@@ -101,12 +101,12 @@ export default function InvestorInterest() {
           {intros.length ? (
             <View className="gap-[9px]">
               {intros.map((n) => (
-                <View key={n.id} className="rounded-[12px] border border-line bg-surface-1 p-[14px]">
+                <View key={n.id} className="rounded-[12px] border border-graphite bg-carbon-low p-[14px]">
                   <TxtMed className="text-[13px]">{n.title}</TxtMed>
-                  <Txt className="mt-[3px] text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+                  <Txt className="mt-[3px] text-[12.5px] text-bone-secondary" style={{ lineHeight: 19 }}>
                     {n.body}
                   </Txt>
-                  <Mono className="mt-2 text-[10px] text-ink-faint">{relativeTime(n.createdAt)}</Mono>
+                  <Mono className="mt-2 text-[10px] text-bone-faint">{relativeTime(n.createdAt)}</Mono>
                 </View>
               ))}
             </View>
@@ -138,30 +138,30 @@ function CallCard({
   }
 
   return (
-    <View className="rounded-[12px] border border-line bg-surface-1 p-[14px]">
+    <View className="rounded-[12px] border border-graphite bg-carbon-low p-[14px]">
       <View className="flex-row items-start justify-between gap-3">
         <View className="flex-1">
           <TxtSemi className="text-[14px]">{request.investorFirm}</TxtSemi>
-          <Txt className="mt-[3px] text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+          <Txt className="mt-[3px] text-[12.5px] text-bone-secondary" style={{ lineHeight: 19 }}>
             wants a {request.durationMinutes}-minute virtual call about {request.companyName}.
           </Txt>
         </View>
-        <View className="rounded-[5px] border border-line-strong px-2 py-[3px]">
-          <Mono className="text-[10px]" style={{ color: C.blue }}>
+        <View className="rounded-[5px] border border-graphite-strong px-2 py-[3px]">
+          <Mono className="text-[10px]" style={{ color: C.info }}>
             CALL
           </Mono>
         </View>
       </View>
 
-      <View className="mt-3 rounded-[9px] border border-line bg-ground px-3 py-[10px]">
-        <Txt className="text-[10px] text-ink-faint" style={{ letterSpacing: 0.5 }}>
+      <View className="mt-3 rounded-[9px] border border-graphite bg-obsidian px-3 py-[10px]">
+        <Txt className="text-[10px] text-bone-faint" style={{ letterSpacing: 0.5 }}>
           PROPOSED SLOT
         </Txt>
         <Mono className="mt-[3px] text-[13px]">{formatSlot(request.proposedAt)}</Mono>
       </View>
 
       {request.note ? (
-        <Txt className="mt-3 text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+        <Txt className="mt-3 text-[12.5px] text-bone-secondary" style={{ lineHeight: 19 }}>
           “{request.note}”
         </Txt>
       ) : null}
@@ -193,8 +193,8 @@ function CallCard({
 
 function EmptyRow({ text }: { text: string }) {
   return (
-    <View className="rounded-[12px] border border-line bg-surface-1 px-[14px] py-[18px]">
-      <Txt className="text-[12.5px] text-ink-dim" style={{ lineHeight: 19 }}>
+    <View className="rounded-[12px] border border-graphite bg-carbon-low px-[14px] py-[18px]">
+      <Txt className="text-[12.5px] text-bone-muted" style={{ lineHeight: 19 }}>
         {text}
       </Txt>
     </View>

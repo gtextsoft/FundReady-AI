@@ -37,13 +37,13 @@ export function TabBar({
 
   return (
     <View
-      className="flex-row border-t border-line-soft bg-ground px-3 pt-2"
+      className="flex-row border-t border-graphite-soft bg-obsidian px-3 pt-2"
       style={{ paddingBottom: insets.bottom + 10 }}>
       {state.routes.map((route, index) => {
         const focused = state.index === index;
         const { options } = descriptors[route.key];
         const label = options.title ?? route.name;
-        const color = focused ? C.ink : C.inkFaint;
+        const color = focused ? C.bone : C.boneFaint;
         const badge = badges?.[route.name] ?? 0;
 
         return (
@@ -62,8 +62,8 @@ export function TabBar({
               {badge > 0 ? (
                 <View
                   className="absolute -right-[9px] -top-[4px] h-[14px] min-w-[14px] items-center justify-center rounded-full px-[3px]"
-                  style={{ backgroundColor: C.blue }}>
-                  <Mono className="text-[8px] text-white">{badge > 9 ? '9+' : badge}</Mono>
+                  style={{ backgroundColor: C.flag }}>
+                  <Mono className="text-[8px] text-obsidian">{badge > 9 ? '9+' : badge}</Mono>
                 </View>
               ) : null}
             </View>

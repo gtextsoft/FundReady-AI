@@ -5,7 +5,7 @@ import { checkFounderEmail } from '@/domain/email';
 import type { FounderAccount, InvestorAccount } from '@/domain/types';
 import { storage } from '@/lib/storage';
 
-const KEY = 'saci.fundme.session';
+const KEY = 'fundready.session';
 
 type Status = 'loading' | 'signedOut' | 'signedIn';
 

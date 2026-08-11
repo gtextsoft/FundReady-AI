@@ -49,10 +49,10 @@ export function ScoreRing({ score, color }: { score: number; color: string }) {
         />
       </Svg>
       <View className="absolute inset-0 items-center justify-center">
-        <Mono className="text-[52px] text-ink" style={{ letterSpacing: -2.5, lineHeight: 56 }}>
+        <Mono className="text-[52px] text-bone" style={{ letterSpacing: -2.5, lineHeight: 56 }}>
           {score}
         </Mono>
-        <Txt className="mt-[2px] text-[11px] text-ink-faint">FUNDABILITY / 100</Txt>
+        <Txt className="mt-[2px] text-[11px] text-bone-faint">FUNDABILITY / 100</Txt>
       </View>
     </View>
   );

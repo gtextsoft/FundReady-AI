@@ -38,7 +38,7 @@ export function NotificationCentre({ audience }: { audience: Role }) {
 
   return (
     <ScrollView
-      className="flex-1 bg-ground"
+      className="flex-1 bg-obsidian"
       contentContainerStyle={{ paddingTop: insets.top + 8, paddingHorizontal: 18, paddingBottom: 24 }}
       showsVerticalScrollIndicator={false}>
       <TxtSemi className="mb-4 text-[19px]" style={{ letterSpacing: -0.5 }}>
@@ -57,11 +57,11 @@ export function NotificationCentre({ audience }: { audience: Role }) {
         <View className="items-center gap-[11px] px-6 py-[70px]">
           <View
             className="h-[42px] w-[42px] items-center justify-center rounded-[11px]"
-            style={{ borderWidth: 1, borderStyle: 'dashed', borderColor: C.lineDash }}>
-            <Txt className="text-[16px] text-ink-ghost">◔</Txt>
+            style={{ borderWidth: 1, borderStyle: 'dashed', borderColor: C.graphiteBright }}>
+            <Txt className="text-[16px] text-bone-ghost">◔</Txt>
           </View>
           <TxtSemi className="text-center text-[14px]">Nothing yet</TxtSemi>
-          <Txt className="text-center text-[12.5px] text-ink-dim" style={{ lineHeight: 19 }}>
+          <Txt className="text-center text-[12.5px] text-bone-muted" style={{ lineHeight: 19 }}>
             {audience === 'founder'
               ? 'Investor introductions, call requests and verification updates land here.'
               : 'Score changes on your watchlist and answers from founders land here.'}
@@ -89,13 +89,13 @@ function NotificationRow({ notification, audience }: { notification: AppNotifica
       <View className="mt-[6px] h-[6px] w-[6px] rounded-full" style={{ backgroundColor: notificationColor(n.kind) }} />
       <View className="flex-1">
         <TxtSemi className="text-[13.5px]">{n.title}</TxtSemi>
-        <Txt className="mt-[3px] text-[12.5px] text-ink-muted" style={{ lineHeight: 19 }}>
+        <Txt className="mt-[3px] text-[12.5px] text-bone-secondary" style={{ lineHeight: 19 }}>
           {n.body}
         </Txt>
         <View className="mt-2 flex-row items-center justify-between">
-          <Mono className="text-[10px] text-ink-faint">{relativeTime(n.createdAt)}</Mono>
+          <Mono className="text-[10px] text-bone-faint">{relativeTime(n.createdAt)}</Mono>
           {target ? (
-            <Txt className="text-[11.5px] text-ink-muted">
+            <Txt className="text-[11.5px] text-bone-secondary">
               {n.callRequestId ? 'Answer →' : 'View company →'}
             </Txt>
           ) : null}
@@ -104,8 +104,8 @@ function NotificationRow({ notification, audience }: { notification: AppNotifica
     </>
   );
 
-  const className = `flex-row gap-[10px] rounded-[12px] border bg-surface-1 p-[14px] ${
-    n.read ? 'border-line' : 'border-line-strong'
+  const className = `flex-row gap-[10px] rounded-[12px] border bg-carbon-low p-[14px] ${
+    n.read ? 'border-graphite' : 'border-graphite-strong'
   }`;
 
   if (!target) return <View className={className}>{body}</View>;

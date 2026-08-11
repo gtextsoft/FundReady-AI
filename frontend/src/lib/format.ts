@@ -25,9 +25,9 @@ export function growthLabel(n: number): string {
 }
 
 export function growthColor(n: number): string {
-  if (n >= 12) return C.grn;
-  if (n >= 5) return C.ink;
-  return C.amb;
+  if (n >= 12) return C.signal;
+  if (n >= 5) return C.bone;
+  return C.flag;
 }
 
 /** Trailing six months, ending on the seed data's July snapshot. */

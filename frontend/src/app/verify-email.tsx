@@ -154,7 +154,7 @@ export default function VerifyEmail() {
 
   return (
     <KeyboardAvoidingView
-      className="flex-1 bg-ground"
+      className="flex-1 bg-obsidian"
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
         contentContainerStyle={{
@@ -177,21 +177,21 @@ export default function VerifyEmail() {
             className="mb-6 flex-row items-center gap-2 self-start rounded-[7px] px-[9px] py-[6px]"
             style={{
               borderWidth: 1,
-              borderColor: verified ? 'rgba(12,206,107,0.30)' : 'rgba(245,166,35,0.35)',
-              backgroundColor: verified ? 'rgba(12,206,107,0.07)' : 'rgba(245,166,35,0.08)',
+              borderColor: verified ? 'rgba(198,242,78,0.30)' : 'rgba(255,122,61,0.35)',
+              backgroundColor: verified ? 'rgba(198,242,78,0.07)' : 'rgba(255,122,61,0.08)',
             }}>
             <View
               className="h-[6px] w-[6px] rounded-full"
-              style={{ backgroundColor: verified ? C.grn : C.amb }}
+              style={{ backgroundColor: verified ? C.signal : C.flag }}
             />
             <Mono
               className="text-[10px]"
-              style={{ letterSpacing: 1, color: verified ? C.grn : C.amb }}>
+              style={{ letterSpacing: 1, color: verified ? C.signal : C.flag }}>
               {verified ? 'VERIFIED' : 'PENDING VERIFICATION'}
             </Mono>
           </View>
 
-          <Txt className="mb-6 text-[13px] text-ink-muted" style={{ lineHeight: 20 }}>
+          <Txt className="mb-6 text-[13px] text-bone-secondary" style={{ lineHeight: 20 }}>
             {verified
               ? `${email || 'Your address'} is confirmed. Everything that needs a confirmed address is now open to you.`
               : `Enter the six-digit code we emailed${sessionEmail ? ` to ${sessionEmail}` : ''}. You can look around your own account in the meantime.`}
@@ -266,7 +266,7 @@ export default function VerifyEmail() {
               {/* Deliberately does not claim a message was sent: the endpoint
                   answers the same whether or not one was. */}
               {sentAt !== null && !error ? (
-                <Txt className="mt-4 text-[12px] text-ink-faint" style={{ lineHeight: 18 }}>
+                <Txt className="mt-4 text-[12px] text-bone-faint" style={{ lineHeight: 18 }}>
                   If that address needs verifying, a new code is on its way and any earlier one has
                   stopped working.
                 </Txt>
@@ -295,7 +295,7 @@ export default function VerifyEmail() {
               accessibilityRole="link"
               className="mt-6 items-center"
               onPress={() => router.replace(session ? homeFor(role) : SIGN_IN)}>
-              <Txt className="text-[12.5px] text-ink-muted">
+              <Txt className="text-[12.5px] text-bone-secondary">
                 {session ? 'Skip for now' : 'Back to sign in'}
               </Txt>
             </Pressable>
@@ -306,7 +306,7 @@ export default function VerifyEmail() {
               accessibilityRole="link"
               className="mt-6 items-center"
               onPress={() => void signOut()}>
-              <Txt className="text-[12.5px] text-ink-muted">Use a different account</Txt>
+              <Txt className="text-[12.5px] text-bone-secondary">Use a different account</Txt>
             </Pressable>
           ) : null}
         </View>

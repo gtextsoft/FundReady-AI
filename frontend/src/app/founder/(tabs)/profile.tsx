@@ -17,10 +17,10 @@ import { isAssessmentComplete, useFounder } from '@/store/founder';
 import { useSession } from '@/store/session';
 
 const VERIFICATION_COPY: Record<VerificationStatus, { label: string; color: string }> = {
-  unverified: { label: 'Not verified', color: C.amb },
-  in_review: { label: 'In review', color: C.blue },
-  verified: { label: 'Verified', color: C.grn },
-  rejected: { label: 'Rejected', color: C.red },
+  unverified: { label: 'Not verified', color: C.flag },
+  in_review: { label: 'In review', color: C.info },
+  verified: { label: 'Verified', color: C.signal },
+  rejected: { label: 'Rejected', color: C.alert },
 };
 
 export default function FounderProfile() {
@@ -60,7 +60,7 @@ export default function FounderProfile() {
     }
   }
 
-  if (!account) return <View className="flex-1 bg-ground" />;
+  if (!account) return <View className="flex-1 bg-obsidian" />;
 
   const verification = VERIFICATION_COPY[account.verification];
   const locked = !hasAccess(account);
@@ -77,29 +77,29 @@ export default function FounderProfile() {
 
   return (
     <ScrollView
-      className="flex-1 bg-ground"
+      className="flex-1 bg-obsidian"
       contentContainerStyle={{ paddingTop: insets.top + 8, paddingHorizontal: 18, paddingBottom: 24 }}
       showsVerticalScrollIndicator={false}>
       <TxtSemi className="mb-4 text-[19px]" style={{ letterSpacing: -0.5 }}>
         Profile
       </TxtSemi>
 
-      <View className="flex-row items-center gap-3 rounded-[12px] border border-line bg-surface-1 p-[14px]">
-        <View className="h-[44px] w-[44px] items-center justify-center rounded-full border border-line-strong bg-surface-3">
-          <TxtSemi className="text-[14px] text-ink-muted">
+      <View className="flex-row items-center gap-3 rounded-[12px] border border-graphite bg-carbon-low p-[14px]">
+        <View className="h-[44px] w-[44px] items-center justify-center rounded-full border border-graphite-strong bg-carbon-high">
+          <TxtSemi className="text-[14px] text-bone-secondary">
             {session?.displayName ? initials(session.displayName) : 'F'}
           </TxtSemi>
         </View>
         <View className="flex-1">
           {/* The person first — this is their profile, not the company's. */}
           <TxtSemi className="text-[15px]">{session?.displayName ?? 'Your profile'}</TxtSemi>
-          <Txt className="text-[12px] text-ink-muted">
+          <Txt className="text-[12px] text-bone-secondary">
             {profile.company || account.companyName || 'Your company'}
           </Txt>
-          <Txt className="text-[12px] text-ink-dim">{session?.email ?? 'not signed in'}</Txt>
+          <Txt className="text-[12px] text-bone-muted">{session?.email ?? 'not signed in'}</Txt>
         </View>
-        <View className="rounded-[5px] border border-line-strong px-2 py-[3px]">
-          <Mono className="text-[9.5px]" style={{ color: C.inkMuted }}>
+        <View className="rounded-[5px] border border-graphite-strong px-2 py-[3px]">
+          <Mono className="text-[9.5px]" style={{ color: C.boneSecondary }}>
             FOUNDER
           </Mono>
         </View>
@@ -107,14 +107,14 @@ export default function FounderProfile() {
 
       {/* account */}
       <Eyebrow className="mb-[10px] mt-6">ACCOUNT</Eyebrow>
-      <View className="rounded-[12px] border border-line bg-surface-1">
+      <View className="rounded-[12px] border border-graphite bg-carbon-low">
         <Row
           label="Email address"
           value={session?.email ?? '—'}
           status={
             account.emailVerified
-              ? { text: 'CONFIRMED', color: C.grn }
-              : { text: 'UNCONFIRMED', color: C.amb }
+              ? { text: 'CONFIRMED', color: C.signal }
+              : { text: 'UNCONFIRMED', color: C.flag }
           }
           // Unconfirmed is not cosmetic: the server refuses every profile,
           // audit and discovery route until it is done.
@@ -128,7 +128,7 @@ export default function FounderProfile() {
 
       {/* security */}
       <Eyebrow className="mb-[10px] mt-6">SECURITY</Eyebrow>
-      <View className="rounded-[12px] border border-line bg-surface-1">
+      <View className="rounded-[12px] border border-graphite bg-carbon-low">
         <Row
           label="Password"
           value={
@@ -150,7 +150,7 @@ export default function FounderProfile() {
         <Row
           label="Two-factor authentication"
           value="Not available in the app yet"
-          status={{ text: 'SOON', color: C.inkFaint }}
+          status={{ text: 'SOON', color: C.boneFaint }}
         />
       </View>
 
@@ -159,7 +159,7 @@ export default function FounderProfile() {
       ) : null}
 
       {resetSent ? (
-        <Txt className="mt-3 text-[12px] text-ink-faint" style={{ lineHeight: 18 }}>
+        <Txt className="mt-3 text-[12px] text-bone-faint" style={{ lineHeight: 18 }}>
           Completing the reset signs you out on every device, including this one.
         </Txt>
       ) : null}
@@ -169,12 +169,12 @@ export default function FounderProfile() {
       <Pressable
         accessibilityRole="button"
         onPress={() => router.push(route(assessed ? '/results' : '/onboarding'))}
-        className="rounded-[12px] border border-line bg-surface-1 p-[14px]">
+        className="rounded-[12px] border border-graphite bg-carbon-low p-[14px]">
         <View className="flex-row items-center justify-between">
           <TxtMed className="text-[13.5px]">{assessed ? 'Your latest result' : 'Not taken yet'}</TxtMed>
-          <Txt className="text-[13px] text-ink-faint">›</Txt>
+          <Txt className="text-[13px] text-bone-faint">›</Txt>
         </View>
-        <Txt className="mt-2 text-[12px] text-ink-muted" style={{ lineHeight: 18 }}>
+        <Txt className="mt-2 text-[12px] text-bone-secondary" style={{ lineHeight: 18 }}>
           {assessed
             ? 'Your score, what does not add up, and what to do next.'
             : 'Four short steps. Investors cannot see you without a score.'}
@@ -183,7 +183,7 @@ export default function FounderProfile() {
 
       {/* verification */}
       <Eyebrow className="mb-[10px] mt-6">COMPANY VERIFICATION</Eyebrow>
-      <View className="rounded-[12px] border border-line bg-surface-1 p-[14px]">
+      <View className="rounded-[12px] border border-graphite bg-carbon-low p-[14px]">
         <View className="flex-row items-center justify-between">
           <TxtMed className="text-[13.5px]">Registration status</TxtMed>
           <View className="flex-row items-center gap-2">
@@ -194,12 +194,12 @@ export default function FounderProfile() {
           </View>
         </View>
         {account.registration ? (
-          <Txt className="mt-2 text-[12px] text-ink-muted" style={{ lineHeight: 18 }}>
+          <Txt className="mt-2 text-[12px] text-bone-secondary" style={{ lineHeight: 18 }}>
             {account.registration.legalName} · {account.registration.registrationNumber} ·{' '}
             {account.registration.country}
           </Txt>
         ) : (
-          <Txt className="mt-2 text-[12px] text-ink-muted" style={{ lineHeight: 18 }}>
+          <Txt className="mt-2 text-[12px] text-bone-secondary" style={{ lineHeight: 18 }}>
             Confirm your company is registered in your country to be seen by investors.
           </Txt>
         )}
@@ -212,12 +212,12 @@ export default function FounderProfile() {
 
       {/* access */}
       <Eyebrow className="mb-[10px] mt-6">ACCESS</Eyebrow>
-      <View className="rounded-[12px] border border-line bg-surface-1 p-[14px]">
+      <View className="rounded-[12px] border border-graphite bg-carbon-low p-[14px]">
         <View className="flex-row items-center justify-between">
           <TxtMed className="text-[13.5px]">
             {paid ? 'Unlocked' : locked ? 'Trial ended' : 'Free trial'}
           </TxtMed>
-          <Mono className="text-[11px]" style={{ color: paid ? C.grn : locked ? C.red : C.amb }}>
+          <Mono className="text-[11px]" style={{ color: paid ? C.signal : locked ? C.alert : C.flag }}>
             {paid
               ? `${UNLOCK_PRICE.label} PAID`
               : locked
@@ -225,7 +225,7 @@ export default function FounderProfile() {
                 : `${daysLeftInTrial(account)} DAYS LEFT`}
           </Mono>
         </View>
-        <Txt className="mt-2 text-[12px] text-ink-muted" style={{ lineHeight: 18 }}>
+        <Txt className="mt-2 text-[12px] text-bone-secondary" style={{ lineHeight: 18 }}>
           {paid
             ? 'One-off payment received. Your access does not expire.'
             : 'Full access during the trial. A single one-off payment keeps it permanently.'}
@@ -278,14 +278,14 @@ function Row({
               refuses to hydrate (AGENTS.md, trap 5). */}
           {action ? (
             <Pressable accessibilityRole="button" onPress={action.onPress} hitSlop={8}>
-              <TxtMed className="text-[12.5px]" style={{ color: C.blue }}>
+              <TxtMed className="text-[12.5px]" style={{ color: C.signal }}>
                 {action.label}
               </TxtMed>
             </Pressable>
           ) : null}
         </View>
       </View>
-      <Txt className="mt-[5px] text-[12px] text-ink-muted" style={{ lineHeight: 18 }}>
+      <Txt className="mt-[5px] text-[12px] text-bone-secondary" style={{ lineHeight: 18 }}>
         {value}
       </Txt>
     </View>
@@ -293,5 +293,5 @@ function Row({
 }
 
 function Divider() {
-  return <View className="h-px" style={{ backgroundColor: C.line }} />;
+  return <View className="h-px" style={{ backgroundColor: C.graphite }} />;
 }

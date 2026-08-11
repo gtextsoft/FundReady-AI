@@ -12,7 +12,7 @@ export default function Index() {
   const status = useSession((s) => s.status);
   const role = useSession((s) => s.role);
 
-  if (status === 'loading') return <View className="flex-1 bg-ground" />;
+  if (status === 'loading') return <View className="flex-1 bg-obsidian" />;
   if (status === 'signedOut') return <Redirect href={SIGN_IN} />;
   return <Redirect href={homeFor(role)} />;
 }

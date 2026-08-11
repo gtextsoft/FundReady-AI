@@ -15,7 +15,7 @@ import type { VerificationStatus } from '@/domain/types';
 import type {
   Credentials,
   DomainLookup,
-  FundMeApi,
+  FundReadyApi,
   Session,
 } from './contract';
 import { ApiFailure } from './contract';
@@ -26,7 +26,7 @@ import { TRIAL_DAYS } from '@/domain/access';
  *
  * Live today: authentication (register, login, refresh, logout,
  * `/v1/users/me`), email verification, password reset, MFA, and the Startup
- * Profile (`/v1/startups`). Every other method on `FundMeApi` has no endpoint
+ * Profile (`/v1/startups`). Every other method on `FundReadyApi` has no endpoint
  * behind it yet, so it throws `not_implemented` rather than inventing an
  * answer — screens render an explicit "not available yet" state instead of
  * showing numbers nobody computed.
@@ -75,7 +75,7 @@ function resolveBaseUrl(): string {
 const BASE_URL = resolveBaseUrl();
 
 /** Access + refresh live together; they are only ever valid as a pair. */
-const TOKENS_KEY = 'saci.fundme.tokens';
+const TOKENS_KEY = 'fundready.tokens';
 
 type Tokens = { access: string; refresh: string };
 
@@ -507,7 +507,7 @@ function notYet<T>(feature: string, task: string): Promise<T> {
   );
 }
 
-export const httpApi: FundMeApi = {
+export const httpApi: FundReadyApi = {
   // ── auth ────────────────────────────────────────────────
   signIn: logIn,
 
