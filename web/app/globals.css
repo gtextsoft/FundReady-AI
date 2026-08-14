@@ -1,0 +1,222 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #f8f8f4;
+  --surface: #ffffff;
+  --surface-2: #eef3ea;
+  --surface-3: #e5e8e3;
+  --text: #111827;
+  --text-muted: #4b5563;
+  --text-faint: #6b7280;
+  --border: #d4d9d2;
+  --border-strong: #b8c0b6;
+  --brand: #0b6b4f;
+  --brand-hover: #095c44;
+  --brand-ink: #ffffff;
+  --accent: #d8f279;
+  --accent-ink: #1f2e0e;
+  --pass: #147447;
+  --hold: #a05b28;
+  --fail: #a44736;
+  --navy: #101c2c;
+  --paper: #ffffff;
+  --paper-ink: #111827;
+  --rail: #f3f4f6;
+  --rail-hover: #e8eaee;
+  --rail-active: #ffffff;
+  --rail-promo: #e7f1ec;
+
+  /* Backward-compatible aliases — values match semantics, names stay stable. */
+  --ink: var(--bg);
+  --ink-2: var(--surface);
+  --ink-3: var(--surface-2);
+  --ink-4: var(--surface-3);
+  --line: var(--border);
+  --line-strong: var(--border-strong);
+  --mist: var(--text-muted);
+  --mist-2: var(--text-faint);
+  --cream: var(--text);
+  --white: #ffffff;
+  --brass: var(--brand);
+  --brass-hover: var(--brand-hover);
+  --brass-ink: var(--brand-ink);
+  --signal: var(--brand);
+  --lime: var(--accent);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-text-faint: var(--text-faint);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-ink: var(--brand-ink);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-pass: var(--pass);
+  --color-hold: var(--hold);
+  --color-fail: var(--fail);
+  --color-navy: var(--navy);
+  --color-paper: var(--paper);
+  --color-paper-ink: var(--paper-ink);
+  --color-rail: var(--rail);
+  --color-rail-hover: var(--rail-hover);
+  --color-rail-active: var(--rail-active);
+  --color-rail-promo: var(--rail-promo);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-ink-4: var(--ink-4);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-mist: var(--mist);
+  --color-mist-2: var(--mist-2);
+  --color-cream: var(--cream);
+  --color-white: var(--white);
+  --color-brass: var(--brass);
+  --color-brass-hover: var(--brass-hover);
+  --color-brass-ink: var(--brass-ink);
+  --color-signal: var(--signal);
+  --color-lime: var(--lime);
+  --font-sans: var(--font-source), "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-fraunces), Fraunces, Georgia, serif;
+  --font-mono: var(--font-plex), "IBM Plex Mono", ui-monospace, monospace;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+}
+
+body {
+  min-height: 100%;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 70%, transparent);
+  color: var(--navy);
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+html.dark {
+  --bg: #101c2c;
+  --surface: #162333;
+  --surface-2: #1c2c3e;
+  --surface-3: #24364a;
+  --text: #f3f4f0;
+  --text-muted: #c5cdd4;
+  --text-faint: #9ba8b2;
+  --border: #2a3d50;
+  --border-strong: #3d5368;
+  --paper: #f5f4ed;
+  --paper-ink: #111827;
+  --rail: #162333;
+  --rail-hover: #1c2c3e;
+  --rail-active: #24364a;
+  --rail-promo: #1a332c;
+}
+
+html.dark body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.paper-grain {
+  background-color: var(--paper);
+  background-image:
+    radial-gradient(circle at 20% 10%, rgb(11 107 79 / 0.04), transparent 40%),
+    radial-gradient(circle at 80% 90%, rgb(216 242 121 / 0.18), transparent 45%);
+}
+
+.score-card-shadow {
+  box-shadow: 0 30px 70px rgb(44 60 51 / 0.13);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.sr-only:focus,
+.sr-only:focus-visible {
+  position: absolute;
+  width: auto;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
+}
+
+@keyframes fr-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fr-spin-rev {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+@keyframes fr-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.07);
+  }
+}
+
+@keyframes fr-sweep {
+  0% {
+    transform: translateX(-60%);
+  }
+  100% {
+    transform: translateX(220%);
+  }
+}
+
+@keyframes fr-dots {
+  0%,
+  20% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.25;
+  }
+}
