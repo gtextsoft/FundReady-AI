@@ -1,4 +1,5 @@
 const PRODUCTION_API_URL = "https://fundready-ai.onrender.com";
+export const PRODUCTION_APP_URL = "https://fundreadyai.vercel.app";
 const DEV_API_URL = "http://localhost:8000";
 
 /**

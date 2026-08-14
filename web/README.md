@@ -27,11 +27,11 @@ Set those on `STRIPE_CHECKOUT_SUCCESS_URL` / `STRIPE_CHECKOUT_CANCEL_URL`.
 
 Set the Vercel **Root Directory** to `web`. Production already points at the Render API (`https://fundready-ai.onrender.com`) via `.env.production`. Override with `API_URL` on Vercel only if that host changes.
 
-After the first production URL exists, set these on the Render API:
+Production site: [https://fundreadyai.vercel.app](https://fundreadyai.vercel.app). Set these on the Render API:
 
-- `STRIPE_CHECKOUT_SUCCESS_URL` = `https://<your-web-host>/founder/billing?checkout=success`
-- `STRIPE_CHECKOUT_CANCEL_URL` = `https://<your-web-host>/founder/billing?checkout=cancel`
-- `APP_LINK_BASE_URL` = `https://<your-web-host>` (email links)
+- `APP_LINK_BASE_URL` = `https://fundreadyai.vercel.app`
+- `STRIPE_CHECKOUT_SUCCESS_URL` = `https://fundreadyai.vercel.app/founder/billing?checkout=success`
+- `STRIPE_CHECKOUT_CANCEL_URL` = `https://fundreadyai.vercel.app/founder/billing?checkout=cancel`
 
 You do **not** need `CORS_ALLOWED_ORIGINS` for this app — the browser never talks to Render directly.
 

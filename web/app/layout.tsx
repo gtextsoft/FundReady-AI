@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Fraunces, IBM_Plex_Mono, Source_Sans_3 } from "next/font/google";
 import { AuthProvider } from "@/components/providers/auth-provider";
 import { ThemedToaster } from "@/components/ui/toaster";
+import { PRODUCTION_APP_URL } from "@/lib/api/config";
 import "./globals.css";
 
 const sourceSans = Source_Sans_3({
@@ -25,9 +26,8 @@ const plexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL(
-    process.env.VERCEL_PROJECT_PRODUCTION_URL
-      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-      : "http://localhost:3000",
+    process.env.NEXT_PUBLIC_APP_URL ??
+      (process.env.VERCEL_ENV === "production" ? PRODUCTION_APP_URL : "http://localhost:3000"),
   ),
   title: "FundReady — Investment Readiness Audit",
   description:
