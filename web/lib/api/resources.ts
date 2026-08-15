@@ -380,9 +380,10 @@ export const api = {
   listMeetings: (interestId: string) =>
     request<Meeting[]>(`/v1/interests/${interestId}/meetings`),
   // T4.5 call HTTP is not mounted — a real GET `/v1/calls` 404s.
-  requestCall: () => notYet<CallRequest>("Call scheduling", "T4.5"),
+  requestCall: (_interestId: string, _proposed_at: string, _message?: string) =>
+    notYet<CallRequest>("Call scheduling", "T4.5"),
   listCalls: () => Promise.resolve<CallRequest[]>([]),
-  respondCall: () => notYet<CallRequest>("Call requests", "T4.5"),
+  respondCall: (_id: string, _accept: boolean) => notYet<CallRequest>("Call requests", "T4.5"),
 
   checkout: () =>
     request<{ checkout_url: string; session_id: string }>("/v1/billing/checkout", {
@@ -407,7 +408,7 @@ export const api = {
   // T5.3 in-app inbox is not mounted — notifications only send email today.
   listNotifications: () =>
     Promise.resolve<Page<NotificationItem>>({ items: [], total: 0, limit: 20, offset: 0 }),
-  markRead: () => notYet<void>("Notifications", "T5.3"),
+  markRead: (_ids: string[]) => notYet<void>("Notifications", "T5.3"),
 
   listUsers: (qs = "") => request<Page<UserRow>>(`/v1/admin/users${qs}`),
   provisionAdmin: (email: string, password: string) =>

@@ -84,18 +84,13 @@ class TestRegistryMap:
             assert entry.number_example
 
     def test_registration_certificate_is_a_document_kind(self) -> None:
-        assert (
-            DocumentKind.REGISTRATION_CERTIFICATE.value
-            == "registration_certificate"
-        )
+        assert DocumentKind.REGISTRATION_CERTIFICATE.value == "registration_certificate"
         assert len(DocumentKind.REGISTRATION_CERTIFICATE.value) <= 32
 
 
 class TestRegistriesEndpoint:
     @pytest.fixture
-    async def client(
-        self, db_session: AsyncSession
-    ) -> AsyncIterator[AsyncClient]:
+    async def client(self, db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
         from app.main import app
 
         async def _override_session() -> AsyncIterator[AsyncSession]:

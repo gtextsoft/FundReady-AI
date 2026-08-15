@@ -427,9 +427,7 @@ class PasswordResetConfirmRequest(_EmailMixin):
     def _check_code(cls, value: str) -> str:
         digits = "".join(character for character in value if character.isdigit())
         if len(digits) != VERIFICATION_CODE_DIGITS:
-            raise ValueError(
-                f"the reset code is {VERIFICATION_CODE_DIGITS} digits"
-            )
+            raise ValueError(f"the reset code is {VERIFICATION_CODE_DIGITS} digits")
         return digits
 
 

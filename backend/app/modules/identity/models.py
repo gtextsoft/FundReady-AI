@@ -289,7 +289,7 @@ class TokenPurpose(StrEnum):
     """
 
     EMAIL_VERIFICATION = "email_verification"
-    # noqa: an enum member naming a flow, not a credential.
+    # S105: enum member naming a flow, not a credential.
     PASSWORD_RESET = "password_reset"  # noqa: S105
 
 

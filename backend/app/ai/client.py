@@ -313,9 +313,7 @@ class AiClient:
                     # `_call` only knows what its own request cost. Fold in what
                     # earlier attempts already spent, or a refusal on the retry
                     # would report half the bill.
-                    error.usage = _accumulate(
-                        usage, error.usage or AiUsage(0, 0, 0, 0)
-                    )
+                    error.usage = _accumulate(usage, error.usage or AiUsage(0, 0, 0, 0))
                     raise
                 usage = _accumulate(usage, call_usage)
 

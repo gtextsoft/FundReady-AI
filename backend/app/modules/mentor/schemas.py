@@ -49,9 +49,7 @@ class CitationKind(StrEnum):
 class MentorCitation(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
-        json_schema_extra={
-            "examples": [{"kind": "finding", "ref": "finding:runway"}]
-        },
+        json_schema_extra={"examples": [{"kind": "finding", "ref": "finding:runway"}]},
     )
 
     kind: CitationKind

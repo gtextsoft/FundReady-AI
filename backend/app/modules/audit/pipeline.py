@@ -202,9 +202,7 @@ def financial_inputs(snapshot: ProfileSnapshot) -> FinancialInputs:
         monthly_revenue_3m_ago_minor=_int(
             snapshot.fields, "monthly_revenue_3m_ago_minor"
         ),
-        monthly_costs_3m_ago_minor=_int(
-            snapshot.fields, "monthly_costs_3m_ago_minor"
-        ),
+        monthly_costs_3m_ago_minor=_int(snapshot.fields, "monthly_costs_3m_ago_minor"),
         customer_acquisition_cost_minor=_int(
             snapshot.fields, "customer_acquisition_cost_minor"
         ),

@@ -232,7 +232,10 @@ class TestTemplates:
 
     @pytest.mark.parametrize(
         "content",
-        [verification_email(CODE, TTL_MINUTES), password_reset_email(CODE, TTL_MINUTES)],
+        [
+            verification_email(CODE, TTL_MINUTES),
+            password_reset_email(CODE, TTL_MINUTES),
+        ],
         ids=["verification", "reset"],
     )
     def test_templates_never_embed_a_recipient(self, content: object) -> None:

@@ -93,6 +93,7 @@ def send_email(to: str, subject: str, html: str, text: str) -> bool:
         send_inline(to, EmailContent(subject=subject, html=html, text=text))
     )
 
+
 if sys.platform == "win32":
     # Same reason as `app.main`: psycopg's async mode cannot run on Windows'
     # default ProactorEventLoop. The worker entry point does not import

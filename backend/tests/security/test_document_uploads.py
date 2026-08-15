@@ -75,7 +75,9 @@ class FakeStorage:
     def head(self, key: str) -> FakeObject | None:
         return self.objects.get(key)
 
-    def get(self, key: str, *, bucket: str = "documents", max_bytes: int = 0) -> bytes | None:
+    def get(
+        self, key: str, *, bucket: str = "documents", max_bytes: int = 0
+    ) -> bytes | None:
         return self.bodies.get(key)
 
     def delete(self, key: str) -> None:

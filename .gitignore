@@ -9,6 +9,8 @@
 # Secrets - never commit
 .env
 .env.*
+# A leading-dot-less `env` file was committed once; never again.
+env
 !.env.example
 !*.env.example
 *.pem

@@ -374,9 +374,7 @@ def _run_rate_vs_trailing_percent(inputs: FinancialInputs) -> Metric:
     return Metric.of(_round(change, _PERCENT_PLACES))
 
 
-def _period_change_percent(
-    current: int | None, prior: int | None
-) -> Metric:
+def _period_change_percent(current: int | None, prior: int | None) -> Metric:
     """`(current - prior) / prior` as a percentage, or an explicit absence.
 
     Shared by the revenue and costs three-month trends so the two cannot

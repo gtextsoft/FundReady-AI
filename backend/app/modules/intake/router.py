@@ -12,7 +12,13 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
 
-from app.core.deps import CurrentUserDep, FounderWithAccess, SessionDep, SettingsDep, require_role
+from app.core.deps import (
+    CurrentUserDep,
+    FounderWithAccess,
+    SessionDep,
+    SettingsDep,
+    require_role,
+)
 from app.core.errors import error_responses
 from app.core.security import CurrentUser, Role
 from app.modules.intake import service
@@ -229,7 +235,7 @@ async def unpublish_profile(
         "what the certificate is called, and how to label the registration "
         "number field.\n\n"
         "**Key on ISO codes, not display names.** `NG` maps to CAC; "
-        "`\"Nigeria\"` is not a key. Countries not in this list are still "
+        '`"Nigeria"` is not a key. Countries not in this list are still '
         "accepted — the founder fills legal name and number as free text "
         "and uploads a `registration_certificate`.\n\n"
         "Nothing here verifies a company exists (`DECISIONS.md` D7)."

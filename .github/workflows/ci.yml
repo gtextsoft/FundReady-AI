@@ -6,8 +6,8 @@ name: CI
 # This file must live at the *repository* root. GitHub Actions only discovers
 # workflows in `/.github/workflows`, so while it sat under `backend/` it was
 # never run at all. The repository is a monorepo (`backend/`, `frontend/`,
-# `skills/`), hence the `working-directory` below: the quality job is the
-# backend's, and every one of its commands expects `backend/` as the cwd.
+# `web/`, `skills/`), hence the `working-directory` below: the quality job is
+# the backend's, and every one of its commands expects `backend/` as the cwd.
 
 on:
   push:
@@ -101,6 +101,30 @@ jobs:
         run: npm run format || true
         continue-on-error: true
 
+  web:
+    name: Web lint and types
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npm run typecheck
+
   secret-scan:
     name: Secret scan
     runs-on: ubuntu-latest
@@ -124,13 +148,13 @@ jobs:
       # NOTE: `detect` is deprecated in favour of `gitleaks git` from 8.19
       # onward; switch when the pinned version is next bumped.
       - name: Scan history for secrets
-        run: gitleaks detect --source . --redact --no-banner --exit-code 1
+        run: gitleaks detect --source . --redact --no-banner --exit-code 1 --config .gitleaks.toml
 
   # Render autoDeploy is off (see render.yaml). A green main branch deploys by
   # hitting the deploy hooks so a red CI never reaches production.
   deploy:
     name: Deploy to Render (main)
-    needs: [quality, frontend, secret-scan]
+    needs: [quality, frontend, web, secret-scan]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:

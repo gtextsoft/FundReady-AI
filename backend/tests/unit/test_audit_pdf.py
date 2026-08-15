@@ -52,7 +52,9 @@ def test_render_founder_report_pdf_is_non_empty_pdf() -> None:
     )
 
     pdf = render_founder_report_pdf(
-        report, company_name="Kanmi Logistics", run_id="00000000-0000-0000-0000-000000000001"
+        report,
+        company_name="Kanmi Logistics",
+        run_id="00000000-0000-0000-0000-000000000001",
     )
 
     assert pdf[:4] == b"%PDF"

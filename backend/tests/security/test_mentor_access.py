@@ -34,7 +34,11 @@ from app.modules.identity.models import User
 from app.modules.intake import service as intake
 from app.modules.intake.fields import Stage
 from app.modules.mentor import service as mentor
-from app.modules.mentor.ai_schema import MentorCitationKind, MentorCitationOut, MentorReplyOut
+from app.modules.mentor.ai_schema import (
+    MentorCitationKind,
+    MentorCitationOut,
+    MentorReplyOut,
+)
 from app.modules.mentor.schemas import ChatRole, ChatTurn
 from tests.conftest import requires_database
 
@@ -218,9 +222,7 @@ class TestMentorTenantIsolation:
     ) -> None:
         """Retrieval ignores the message body; CONTEXT is the caller's report."""
         _, owner_a = await _user(db_session)
-        startup_a, _ = await _succeeded_run(
-            db_session, owner_a, name="Alpha Logistics"
-        )
+        startup_a, _ = await _succeeded_run(db_session, owner_a, name="Alpha Logistics")
         _, owner_b = await _user(db_session)
         await _succeeded_run(db_session, owner_b, name="Beta Secrets Ltd")
 

@@ -1,0 +1,35 @@
+# Gitleaks config for the monorepo.
+#
+# `useDefault = true` keeps the stock rule set; this file only allowlists
+# known non-secrets. A custom config without that flag replaces the defaults
+# and the scan would pass while checking nothing.
+
+title = "FundReady"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures, generated docs, vendored skills, and a removed env file"
+paths = [
+    # Committed by mistake; removed from HEAD. History still contains it, so
+    # the full-history scan stays red unless this path is allowlisted. Treat
+    # every credential that was in that file as public and rotate it.
+    '''(^|/)backend/env$''',
+    '''(^|/)(backend/)?tests/''',
+    '''(^|/)skills/''',
+    '''(^|/)claude-skills-main/''',
+    '''(^|/)backend/docs/openapi\.json$''',
+    # Pre-monorepo path of the identity schemas (examples only).
+    '''(^|/)app/modules/identity/schemas\.py$''',
+    # Blueprint placeholders (`sync: false`); real secrets are not stored here.
+    '''(^|/)render\.yaml$''',
+]
+regexes = [
+    # Documentation-only examples in identity schemas / OpenAPI. They decode
+    # to nothing and are labelled EXAMPLE on purpose.
+    '''eyJhbGciOiJIUzI1NiIsImtpZCI6ImsxIn0\.eyJzdWIiOiI3Yzll\.EXAMPLE''',
+    '''eyJhbGciOiJIUzI1NiJ9\.eyJ0eXAiOiJtZmFfY2hhbGxlbmdlIn0\.EXAMPLE''',
+    '''N2Q4ZjFhYzQtM2I5ZS00ZjJhLTk4YzEtMGU3YjRkNmE5ZjEy''',
+    '''correct-horse-battery-staple''',
+]

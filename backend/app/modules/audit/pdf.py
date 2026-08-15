@@ -22,7 +22,12 @@ from reportlab.platypus import (
     TableStyle,
 )
 
-from app.modules.audit.reports import FounderReport, VerdictDetail
+from app.modules.audit.reports import (
+    ActionItemView,
+    FinderView,
+    FounderReport,
+    VerdictDetail,
+)
 
 
 def render_founder_report_pdf(
@@ -45,7 +50,7 @@ def render_founder_report_pdf(
         title=f"FundReady audit — {company_name or 'Startup'}",
     )
     styles = _styles()
-    story: list = []
+    story: list[object] = []
 
     story.append(Paragraph("SACI FundReady", styles["brand"]))
     story.append(Paragraph("Founder audit report", styles["title"]))
@@ -80,7 +85,7 @@ def render_founder_report_pdf(
     if not report.findings:
         story.append(Paragraph("No findings were raised.", styles["body"]))
     else:
-        by_sev: dict[str, list] = {}
+        by_sev: dict[str, list[FinderView]] = {}
         for finding in report.findings:
             by_sev.setdefault(finding.severity, []).append(finding)
         for severity in ("certain", "likely", "possible", "info"):
@@ -127,8 +132,10 @@ def render_founder_report_pdf(
     return buffer.getvalue()
 
 
-def _verdict_blocks(verdict: VerdictDetail, styles: dict) -> list:
-    blocks: list = []
+def _verdict_blocks(
+    verdict: VerdictDetail, styles: dict[str, ParagraphStyle]
+) -> list[object]:
+    blocks: list[object] = []
     score_text = (
         "insufficient evidence"
         if verdict.level == "insufficient_data" or verdict.score is None
@@ -145,8 +152,7 @@ def _verdict_blocks(verdict: VerdictDetail, styles: dict) -> list:
     if verdict.evidenced_dimensions:
         blocks.append(
             Paragraph(
-                "<b>Evidenced:</b> "
-                + _esc(", ".join(verdict.evidenced_dimensions)),
+                "<b>Evidenced:</b> " + _esc(", ".join(verdict.evidenced_dimensions)),
                 styles["body"],
             )
         )
@@ -162,7 +168,7 @@ def _verdict_blocks(verdict: VerdictDetail, styles: dict) -> list:
     return blocks
 
 
-def _action_rows(items: list) -> list:
+def _action_rows(items: list[ActionItemView]) -> list[object]:
     data = [["Dimension", "Score", "Action"]]
     for item in items:
         score = "—" if item.dimension_score is None else str(item.dimension_score)
@@ -187,7 +193,7 @@ def _action_rows(items: list) -> list:
     return [table, Spacer(1, 3 * mm)]
 
 
-def _styles() -> dict:
+def _styles() -> dict[str, ParagraphStyle]:
     base = getSampleStyleSheet()
     return {
         "brand": ParagraphStyle(

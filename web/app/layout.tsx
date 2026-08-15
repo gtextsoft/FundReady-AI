@@ -32,6 +32,10 @@ export const metadata: Metadata = {
   title: "FundReady — Investment Readiness Audit",
   description:
     "A rigorous, evidence-weighted audit that shows founders whether their business is ready for investment.",
+  icons: {
+    icon: [{ url: "/logo.png", type: "image/png" }],
+    apple: [{ url: "/apple-icon.png", type: "image/png" }],
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

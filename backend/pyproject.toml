@@ -138,7 +138,7 @@ disallow_untyped_decorators = false
 [[tool.mypy.overrides]]
 # Third-party packages that ship no type information. Listed explicitly -
 # never blanket-ignore missing imports.
-module = ["rq.*", "pgvector.*", "boto3.*", "botocore.*"]
+module = ["rq.*", "pgvector.*", "boto3.*", "botocore.*", "reportlab.*"]
 ignore_missing_imports = true
 
 [tool.pydantic-mypy]
