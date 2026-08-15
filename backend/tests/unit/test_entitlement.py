@@ -1,4 +1,4 @@
-"""Server-authoritative trial and unlock entitlement (D21)."""
+"""Server-authoritative trial and subscription entitlement (D24)."""
 
 from datetime import UTC, datetime, timedelta
 
@@ -27,10 +27,10 @@ def test_trial_inactive_after_window() -> None:
     assert trial_active(created) is False
 
 
-def test_paid_is_active_only() -> None:
+def test_paid_includes_dunning() -> None:
     assert is_paid(SubscriptionStatus.ACTIVE) is True
+    assert is_paid(SubscriptionStatus.PAST_DUE) is True
     assert is_paid(SubscriptionStatus.NONE) is False
-    assert is_paid(SubscriptionStatus.PAST_DUE) is False
     assert is_paid(SubscriptionStatus.CANCELED) is False
 
 
@@ -55,6 +55,12 @@ def test_access_after_trial_requires_payment() -> None:
     assert (
         has_founder_access(
             subscription_status=SubscriptionStatus.ACTIVE, created_at=created
+        )
+        is True
+    )
+    assert (
+        has_founder_access(
+            subscription_status=SubscriptionStatus.PAST_DUE, created_at=created
         )
         is True
     )

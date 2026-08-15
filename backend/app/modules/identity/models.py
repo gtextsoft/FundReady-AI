@@ -216,6 +216,11 @@ class User(Base):
     )
     # Stripe Customer id for Checkout reuse. Trusted from Stripe only.
     stripe_customer_id: Mapped[str | None] = mapped_column(String(255), index=True)
+    # Recurring Billing subscription (DECISIONS.md D24). Null on a grandfathered
+    # D21 one-time unlock — those stay `active` without a subscription id.
+    stripe_subscription_id: Mapped[str | None] = mapped_column(
+        String(255), index=True
+    )
 
     # Bumping this invalidates every access token issued before it, without
     # waiting for expiry (AUTH.md section 11).

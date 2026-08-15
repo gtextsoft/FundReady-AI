@@ -317,7 +317,7 @@ class UserResponse(BaseModel):
     kyc_status: KycStatus
     subscription_status: SubscriptionStatus
     created_at: datetime
-    # Server-authoritative trial/entitlement (DECISIONS.md D21). Clients must
+    # Server-authoritative trial/entitlement (DECISIONS.md D24). Clients must
     # not recompute these from `created_at` with a local clock.
     trial_ends_at: datetime
     has_access: bool

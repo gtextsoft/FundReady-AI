@@ -93,6 +93,20 @@ class UserRepository:
         )
         return result
 
+    async def get_by_stripe_customer_id(self, customer_id: str) -> User | None:
+        result: User | None = await self._session.scalar(
+            select(User).where(User.stripe_customer_id == customer_id)
+        )
+        return result
+
+    async def get_by_stripe_subscription_id(
+        self, subscription_id: str
+    ) -> User | None:
+        result: User | None = await self._session.scalar(
+            select(User).where(User.stripe_subscription_id == subscription_id)
+        )
+        return result
+
     async def count_admins(self, *, active_only: bool = True) -> int:
         """How many admin accounts exist.
 

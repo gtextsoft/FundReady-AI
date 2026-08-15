@@ -837,7 +837,7 @@
         "type": "object"
       },
       "CheckoutSessionResponse": {
-        "description": "Hosted Stripe Checkout URL for the founder unlock (DECISIONS.md D21).",
+        "description": "Hosted Stripe Checkout URL for the founder monthly subscription (D24).",
         "examples": [
           {
             "checkout_url": "https://checkout.stripe.com/c/pay/cs_test_a1b2c3",
@@ -3300,6 +3300,25 @@
         "title": "PasswordResetRequest",
         "type": "object"
       },
+      "PortalSessionResponse": {
+        "additionalProperties": false,
+        "description": "Hosted Stripe Customer Portal URL for card updates and cancel.",
+        "example": {
+          "portal_url": "https://billing.stripe.com/p/session/test_abc"
+        },
+        "properties": {
+          "portal_url": {
+            "description": "Open this URL to manage the subscription.",
+            "title": "Portal Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "portal_url"
+        ],
+        "title": "PortalSessionResponse",
+        "type": "object"
+      },
       "ProductCreate": {
         "additionalProperties": false,
         "description": "Add one catalogue item.",
@@ -5087,7 +5106,7 @@
         "description": "Completed unlock purchase, when one exists.",
         "examples": [
           {
-            "amount": 14900,
+            "amount": 7900,
             "currency": "USD",
             "paid_at": "2026-08-10T12:00:00Z",
             "reference": "3f2a1b0c-4d5e-6789-abcd-ef0123456789"
@@ -8593,7 +8612,7 @@
     },
     "/v1/billing/checkout": {
       "post": {
-        "description": "Creates a Stripe Checkout Session for the one-off founder unlock (DECISIONS.md D21). Open `checkout_url` in a browser or system web view. Entitlement is granted only after Stripe delivers a verified `checkout.session.completed` webhook \u2014 do not treat opening the URL as payment.\n\n`422` with `already_unlocked` when `subscription_status` is already `active`.",
+        "description": "Creates a Stripe Checkout Session for the monthly founder subscription (DECISIONS.md D24, `mode=subscription`). Open `checkout_url` in a browser. Entitlement is granted only after Stripe delivers a verified webhook \u2014 do not treat opening the URL as payment.\n\n`422` with `already_unlocked` when `subscription_status` is already `active` or `past_due`.",
         "operationId": "start_checkout_v1_billing_checkout_post",
         "responses": {
           "200": {
@@ -8652,7 +8671,84 @@
             "Bearer": []
           }
         ],
-        "summary": "Start founder unlock Checkout",
+        "summary": "Start founder subscription Checkout",
+        "tags": [
+          "commerce"
+        ]
+      }
+    },
+    "/v1/billing/portal": {
+      "post": {
+        "description": "Creates a Stripe Customer Portal session so the founder can update the card or cancel the monthly subscription. Requires an existing Stripe customer (`422` with `no_customer` otherwise).",
+        "operationId": "start_billing_portal_v1_billing_portal_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "internal_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Open the Stripe billing portal",
         "tags": [
           "commerce"
         ]
@@ -8717,7 +8813,7 @@
     },
     "/v1/billing/webhooks/stripe": {
       "post": {
-        "description": "Verifies the Stripe signature header and applies entitlement changes. Idempotent on `event.id`. Not authenticated with a bearer token \u2014 Stripe signs the body instead.",
+        "description": "Verifies the Stripe signature header and applies entitlement changes. Handles `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`, and `invoice.payment_failed`. Idempotent on `event.id`. Not authenticated with a bearer token \u2014 Stripe signs the body instead.",
         "operationId": "stripe_webhook_v1_billing_webhooks_stripe_post",
         "parameters": [
           {

@@ -103,7 +103,7 @@ class CurrentUser:
     email_verified: bool = False
     mfa_enabled: bool = False
     session_valid_after: datetime | None = None
-    # Founder entitlement inputs (DECISIONS.md D21). Investors leave defaults.
+    # Founder entitlement inputs (DECISIONS.md D24). Investors leave defaults.
     subscription_status: SubscriptionStatus = SubscriptionStatus.NONE
     created_at: datetime | None = None
     kyc_status: KycStatus = KycStatus.NONE

@@ -102,11 +102,11 @@ export default function FounderHome() {
       {!paid ? (
         <LockedCard
           title="Trial ended"
-          body="One payment restores full access."
-          cta="View unlock"
+          body="A monthly subscription restores full access."
+          cta="Subscribe"
           href="/founder/paywall"
         />
-      ) : session?.subscriptionStatus !== "active" ? (
+      ) : session?.subscriptionStatus !== "active" && session?.subscriptionStatus !== "past_due" ? (
         <Panel className="bg-rail-promo">
           <p className="text-sm text-mist">
             Trial: <span className="font-semibold text-cream">{days} days</span> remaining.{" "}

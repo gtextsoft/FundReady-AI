@@ -24,6 +24,7 @@ from app.modules.commerce.schemas import (
     CheckoutSessionResponse,
     EnrolmentPage,
     EnrolResult,
+    PortalSessionResponse,
     ProductCreate,
     ProductPage,
     ProductResponse,
@@ -45,15 +46,15 @@ CATALOGUE_NOTE = (
 @router.post(
     "/billing/checkout",
     response_model=CheckoutSessionResponse,
-    summary="Start founder unlock Checkout",
+    summary="Start founder subscription Checkout",
     description=(
-        "Creates a Stripe Checkout Session for the one-off founder unlock "
-        "(DECISIONS.md D21). Open `checkout_url` in a browser or system web "
-        "view. Entitlement is granted only after Stripe delivers a verified "
-        "`checkout.session.completed` webhook — do not treat opening the URL "
+        "Creates a Stripe Checkout Session for the monthly founder "
+        "subscription (DECISIONS.md D24, `mode=subscription`). Open "
+        "`checkout_url` in a browser. Entitlement is granted only after "
+        "Stripe delivers a verified webhook — do not treat opening the URL "
         "as payment.\n\n"
         "`422` with `already_unlocked` when `subscription_status` is already "
-        "`active`."
+        "`active` or `past_due`."
     ),
     responses=error_responses(401, 403, 422, 500),
 )
@@ -77,13 +78,32 @@ async def read_unlock(
 
 
 @router.post(
+    "/billing/portal",
+    response_model=PortalSessionResponse,
+    summary="Open the Stripe billing portal",
+    description=(
+        "Creates a Stripe Customer Portal session so the founder can update "
+        "the card or cancel the monthly subscription. Requires an existing "
+        "Stripe customer (`422` with `no_customer` otherwise)."
+    ),
+    responses=error_responses(401, 403, 404, 422, 500),
+)
+async def start_billing_portal(
+    actor: CurrentFounder, session: SessionDep
+) -> PortalSessionResponse:
+    return await service.create_billing_portal(session, actor)
+
+
+@router.post(
     "/billing/webhooks/stripe",
     status_code=status.HTTP_200_OK,
     summary="Stripe webhook receiver",
     description=(
         "Verifies the Stripe signature header and applies entitlement changes. "
-        "Idempotent on `event.id`. Not authenticated with a bearer token — "
-        "Stripe signs the body instead."
+        "Handles `checkout.session.completed`, `customer.subscription.updated`, "
+        "`customer.subscription.deleted`, `invoice.paid`, and "
+        "`invoice.payment_failed`. Idempotent on `event.id`. Not authenticated "
+        "with a bearer token — Stripe signs the body instead."
     ),
     responses=error_responses(422, 500),
     include_in_schema=True,

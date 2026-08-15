@@ -1,4 +1,4 @@
-"""Stripe webhook signature verification and unlock entitlement (T3.3 / D21)."""
+"""Stripe webhook signature verification and subscription entitlement (D24)."""
 
 from __future__ import annotations
 
@@ -59,20 +59,71 @@ async def _founder(session: AsyncSession) -> User:
     return user
 
 
+async def _deliver(session: AsyncSession, event: dict) -> dict[str, str]:
+    payload = json.dumps(event).encode()
+    return await service.handle_stripe_webhook(
+        session, payload=payload, signature=_sign(payload)
+    )
+
+
 def _checkout_event(user_id: uuid.UUID, session_id: str = "cs_test_1") -> dict:
     return {
         "id": f"evt_{uuid.uuid4().hex}",
+        "object": "event",
         "type": "checkout.session.completed",
         "data": {
             "object": {
                 "id": session_id,
                 "object": "checkout.session",
-                "amount_total": 14900,
+                "mode": "subscription",
+                "amount_total": 7900,
                 "currency": "usd",
                 "customer": "cus_test_1",
-                "payment_intent": "pi_test_1",
+                "subscription": "sub_test_1",
                 "client_reference_id": str(user_id),
                 "metadata": {"user_id": str(user_id), "kind": "unlock"},
+            }
+        },
+    }
+
+
+def _subscription_event(
+    *,
+    event_type: str,
+    status: str,
+    customer: str = "cus_test_1",
+    subscription_id: str = "sub_test_1",
+    user_id: uuid.UUID | None = None,
+) -> dict:
+    obj: dict = {
+        "id": subscription_id,
+        "object": "subscription",
+        "status": status,
+        "customer": customer,
+        "metadata": {"kind": "unlock"},
+    }
+    if user_id is not None:
+        obj["metadata"]["user_id"] = str(user_id)
+    return {
+        "id": f"evt_{uuid.uuid4().hex}",
+        "object": "event",
+        "type": event_type,
+        "data": {"object": obj},
+    }
+
+
+def _invoice_event(*, failed: bool, customer: str = "cus_test_1") -> dict:
+    return {
+        "id": f"evt_{uuid.uuid4().hex}",
+        "object": "event",
+        "type": "invoice.payment_failed" if failed else "invoice.paid",
+        "data": {
+            "object": {
+                "id": f"in_{uuid.uuid4().hex[:8]}",
+                "object": "invoice",
+                "customer": customer,
+                "subscription": "sub_test_1",
+                "paid": not failed,
             }
         },
     }
@@ -87,24 +138,23 @@ async def test_invalid_signature_is_rejected(db_session: AsyncSession) -> None:
     assert exc.value.details["reason"] == "invalid_signature"
 
 
-async def test_checkout_completed_grants_unlock(db_session: AsyncSession) -> None:
+async def test_checkout_completed_grants_subscription(
+    db_session: AsyncSession,
+) -> None:
     user = await _founder(db_session)
-    event = _checkout_event(user.id)
-    payload = json.dumps(event).encode()
-    result = await service.handle_stripe_webhook(
-        db_session, payload=payload, signature=_sign(payload)
-    )
+    result = await _deliver(db_session, _checkout_event(user.id))
     assert result["status"] == "ok"
 
     await db_session.refresh(user)
     assert user.subscription_status is SubscriptionStatus.ACTIVE
     assert user.stripe_customer_id == "cus_test_1"
+    assert user.stripe_subscription_id == "sub_test_1"
 
     purchase = await PurchaseRepository(db_session).latest_completed_unlock(user.id)
     assert purchase is not None
     assert purchase.kind is PurchaseKind.UNLOCK
     assert purchase.status is PurchaseStatus.COMPLETED
-    assert purchase.amount_minor == 14900
+    assert purchase.amount_minor == 7900
 
 
 async def test_duplicate_event_is_idempotent(db_session: AsyncSession) -> None:
@@ -125,3 +175,66 @@ async def test_duplicate_event_is_idempotent(db_session: AsyncSession) -> None:
     refreshed = await UserRepository(db_session).get_by_id(user.id)
     assert refreshed is not None
     assert refreshed.subscription_status is SubscriptionStatus.ACTIVE
+
+
+async def test_subscription_updated_marks_past_due(db_session: AsyncSession) -> None:
+    user = await _founder(db_session)
+    await _deliver(db_session, _checkout_event(user.id))
+    result = await _deliver(
+        db_session,
+        _subscription_event(
+            event_type="customer.subscription.updated",
+            status="past_due",
+            user_id=user.id,
+        ),
+    )
+    assert result["status"] == "ok"
+    await db_session.refresh(user)
+    assert user.subscription_status is SubscriptionStatus.PAST_DUE
+
+
+async def test_subscription_deleted_cancels(db_session: AsyncSession) -> None:
+    user = await _founder(db_session)
+    await _deliver(db_session, _checkout_event(user.id))
+    await _deliver(
+        db_session,
+        _subscription_event(
+            event_type="customer.subscription.deleted",
+            status="canceled",
+            user_id=user.id,
+        ),
+    )
+    await db_session.refresh(user)
+    assert user.subscription_status is SubscriptionStatus.CANCELED
+
+
+async def test_invoice_paid_restores_active(db_session: AsyncSession) -> None:
+    user = await _founder(db_session)
+    await _deliver(db_session, _checkout_event(user.id))
+    await _deliver(db_session, _invoice_event(failed=True))
+    await db_session.refresh(user)
+    assert user.subscription_status is SubscriptionStatus.PAST_DUE
+    await _deliver(db_session, _invoice_event(failed=False))
+    await db_session.refresh(user)
+    assert user.subscription_status is SubscriptionStatus.ACTIVE
+
+
+async def test_grandfathered_unlock_ignores_cancel(
+    db_session: AsyncSession,
+) -> None:
+    user = await _founder(db_session)
+    user.subscription_status = SubscriptionStatus.ACTIVE
+    user.stripe_customer_id = "cus_legacy"
+    await db_session.flush()
+
+    await _deliver(
+        db_session,
+        _subscription_event(
+            event_type="customer.subscription.deleted",
+            status="canceled",
+            customer="cus_legacy",
+        ),
+    )
+    await db_session.refresh(user)
+    assert user.subscription_status is SubscriptionStatus.ACTIVE
+    assert user.stripe_subscription_id is None

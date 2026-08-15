@@ -1,7 +1,7 @@
 """Commerce business logic: Checkout + verified Stripe webhooks.
 
 Layer: **service** (ARCHITECTURE.md section 3). Entitlement is granted only
-from verified webhooks (CLAUDE.md section 4, DECISIONS.md D21) — never from a
+from verified webhooks (CLAUDE.md section 4, DECISIONS.md D24) — never from a
 client-reported payment state.
 """
 
@@ -45,13 +45,14 @@ from app.modules.commerce.schemas import (
     EnrolmentPage,
     EnrolmentResponse,
     EnrolResult,
+    PortalSessionResponse,
     ProductCreate,
     ProductPage,
     ProductResponse,
     ProductUpdate,
     UnlockReceiptResponse,
 )
-from app.modules.identity.models import AuditAction
+from app.modules.identity.models import AuditAction, User
 from app.modules.identity.repository import UserRepository
 from app.modules.identity.service import record_action
 from app.modules.intake import service as intake
@@ -73,15 +74,23 @@ def _configure_stripe(settings: Settings) -> None:
     stripe.api_key = key.get_secret_value()
 
 
+def _already_subscribed(user: User) -> bool:
+    """Active, dunning, or a grandfathered D21 one-time unlock."""
+    return user.subscription_status in {
+        SubscriptionStatus.ACTIVE,
+        SubscriptionStatus.PAST_DUE,
+    }
+
+
 async def create_unlock_checkout(
     session: AsyncSession,
     actor: CurrentUser,
     *,
     settings: Settings | None = None,
 ) -> CheckoutSessionResponse:
-    """Create a Stripe Checkout Session for the one-off founder unlock."""
+    """Create a Stripe Checkout Session for the monthly founder subscription."""
     if actor.role is not Role.FOUNDER:
-        raise ForbiddenError("Only founders can purchase an unlock.")
+        raise ForbiddenError("Only founders can subscribe.")
 
     settings = settings or get_settings()
     price_id = settings.stripe_price_id_unlock.strip()
@@ -93,21 +102,21 @@ async def create_unlock_checkout(
     if user is None:
         raise NotFoundError
 
-    if user.subscription_status is SubscriptionStatus.ACTIVE:
+    if _already_subscribed(user):
         raise ConflictAlreadyUnlockedError()
 
     _configure_stripe(settings)
     success = (
         settings.stripe_checkout_success_url.strip()
-        or f"{settings.app_link_base_url.rstrip('/')}/founder/paywall?checkout=success"
+        or f"{settings.app_link_base_url.rstrip('/')}/founder/billing?checkout=success"
     )
     cancel = (
         settings.stripe_checkout_cancel_url.strip()
-        or f"{settings.app_link_base_url.rstrip('/')}/founder/paywall?checkout=cancel"
+        or f"{settings.app_link_base_url.rstrip('/')}/founder/billing?checkout=cancel"
     )
 
     create_kwargs: dict[str, Any] = {
-        "mode": "payment",
+        "mode": "subscription",
         "line_items": [{"price": price_id, "quantity": 1}],
         "success_url": success,
         "cancel_url": cancel,
@@ -116,7 +125,7 @@ async def create_unlock_checkout(
             "user_id": str(user.id),
             "kind": UNLOCK_METADATA_KIND,
         },
-        "payment_intent_data": {
+        "subscription_data": {
             "metadata": {
                 "user_id": str(user.id),
                 "kind": UNLOCK_METADATA_KIND,
@@ -127,7 +136,6 @@ async def create_unlock_checkout(
         create_kwargs["customer"] = user.stripe_customer_id
     else:
         create_kwargs["customer_email"] = user.email
-        create_kwargs["customer_creation"] = "always"
 
     checkout = stripe.checkout.Session.create(**create_kwargs)
     session_id = str(checkout.id)
@@ -157,13 +165,49 @@ async def create_unlock_checkout(
 
 
 class ConflictAlreadyUnlockedError(InvalidRequestError):
-    """Founder already holds an active unlock."""
+    """Founder already holds an active or past-due subscription."""
 
     def __init__(self) -> None:
         super().__init__(
-            "This account is already unlocked.",
+            "This account already has a subscription.",
             {"reason": "already_unlocked"},
         )
+
+
+async def create_billing_portal(
+    session: AsyncSession,
+    actor: CurrentUser,
+    *,
+    settings: Settings | None = None,
+) -> PortalSessionResponse:
+    """Open the Stripe Customer Portal so the founder can update the card or cancel."""
+    if actor.role is not Role.FOUNDER:
+        raise ForbiddenError("Only founders can manage billing.")
+
+    settings = settings or get_settings()
+    users = UserRepository(session)
+    user = await users.get_by_id(actor.id)
+    if user is None:
+        raise NotFoundError
+    if not user.stripe_customer_id:
+        raise InvalidRequestError(
+            "No billing account yet. Subscribe first.",
+            {"reason": "no_customer"},
+        )
+
+    _configure_stripe(settings)
+    return_url = (
+        settings.stripe_checkout_success_url.strip()
+        or f"{settings.app_link_base_url.rstrip('/')}/founder/billing"
+    )
+    portal = stripe.billing_portal.Session.create(
+        customer=user.stripe_customer_id,
+        return_url=return_url,
+    )
+    url = portal.url
+    if not url:
+        raise ConfigurationError
+    return PortalSessionResponse(portal_url=url)
 
 
 async def get_unlock_receipt(
@@ -519,9 +563,17 @@ async def handle_stripe_webhook(
     if await events.get(event_id) is not None:
         return {"status": "duplicate"}
 
+    payload_object = _as_dict(event["data"]["object"])
     if event_type == "checkout.session.completed":
-        await _apply_checkout_completed(session, event["data"]["object"])
-    # Future: invoice.* / customer.subscription.* if Billing is adopted (D21).
+        await _apply_checkout_completed(session, payload_object)
+    elif event_type == "customer.subscription.updated":
+        await _apply_subscription_event(session, payload_object)
+    elif event_type == "customer.subscription.deleted":
+        await _apply_subscription_event(session, payload_object, force_canceled=True)
+    elif event_type == "invoice.paid":
+        await _apply_invoice_event(session, payload_object, failed=False)
+    elif event_type == "invoice.payment_failed":
+        await _apply_invoice_event(session, payload_object, failed=True)
 
     await events.record(event_id, event_type)
     return {"status": "ok"}
@@ -588,12 +640,15 @@ async def _apply_checkout_completed(
         )
 
     customer = checkout.get("customer")
-    if customer and not user.stripe_customer_id:
+    if customer:
         user.stripe_customer_id = str(customer)
+    subscription = checkout.get("subscription")
+    if subscription:
+        user.stripe_subscription_id = str(subscription)
 
-    previous = user.subscription_status
-    user.subscription_status = SubscriptionStatus.ACTIVE
-    await session.flush()
+    await _set_subscription_status(
+        session, user, SubscriptionStatus.ACTIVE, source="checkout.session.completed"
+    )
 
     await record_action(
         session,
@@ -603,20 +658,6 @@ async def _apply_checkout_completed(
         target_id=str(purchase.id),
         details={"kind": PurchaseKind.UNLOCK.value, "user_id": str(user.id)},
     )
-    if previous is not SubscriptionStatus.ACTIVE:
-        await record_action(
-            session,
-            AuditAction.SUBSCRIPTION_CHANGED,
-            actor_id=None,
-            target_type="user",
-            target_id=str(user.id),
-            details={
-                "from": previous.value,
-                "to": SubscriptionStatus.ACTIVE.value,
-                "source": "stripe_webhook",
-                "at": datetime.now(UTC).isoformat(),
-            },
-        )
 
 
 async def _apply_catalogue_checkout(
@@ -695,3 +736,149 @@ async def _apply_catalogue_checkout(
             "product_id": str(product.id),
         },
     )
+
+
+def _as_dict(payload: Any) -> dict[str, Any]:
+    """Stripe objects look like dicts but do not implement `.get`."""
+    if isinstance(payload, dict):
+        return payload
+    to_dict = getattr(payload, "to_dict_recursive", None) or getattr(
+        payload, "to_dict", None
+    )
+    if callable(to_dict):
+        converted = to_dict()
+        if isinstance(converted, dict):
+            return converted
+    return dict(payload)
+
+
+def _is_grandfathered(user: User) -> bool:
+    return (
+        user.subscription_status is SubscriptionStatus.ACTIVE
+        and not user.stripe_subscription_id
+    )
+
+
+def _status_from_stripe(stripe_status: str) -> SubscriptionStatus | None:
+    if stripe_status in {"active", "trialing"}:
+        return SubscriptionStatus.ACTIVE
+    if stripe_status == "past_due":
+        return SubscriptionStatus.PAST_DUE
+    if stripe_status in {"canceled", "unpaid", "incomplete_expired"}:
+        return SubscriptionStatus.CANCELED
+    return None
+
+
+async def _user_from_stripe(
+    session: AsyncSession,
+    payload: dict[str, Any],
+    *,
+    subscription_id: str | None = None,
+) -> User | None:
+    users = UserRepository(session)
+    metadata = payload.get("metadata") or {}
+    user_id_raw = metadata.get("user_id")
+    if user_id_raw:
+        try:
+            found = await users.get_by_id(uuid.UUID(str(user_id_raw)))
+            if found is not None:
+                return found
+        except ValueError:
+            pass
+    if subscription_id:
+        found = await users.get_by_stripe_subscription_id(subscription_id)
+        if found is not None:
+            return found
+    customer = payload.get("customer")
+    if customer:
+        return await users.get_by_stripe_customer_id(str(customer))
+    return None
+
+
+async def _set_subscription_status(
+    session: AsyncSession,
+    user: User,
+    new_status: SubscriptionStatus,
+    *,
+    source: str,
+) -> None:
+    previous = user.subscription_status
+    user.subscription_status = new_status
+    await session.flush()
+    if previous is new_status:
+        return
+    await record_action(
+        session,
+        AuditAction.SUBSCRIPTION_CHANGED,
+        actor_id=None,
+        target_type="user",
+        target_id=str(user.id),
+        details={
+            "from": previous.value,
+            "to": new_status.value,
+            "source": source,
+            "at": datetime.now(UTC).isoformat(),
+        },
+    )
+
+
+async def _apply_subscription_event(
+    session: AsyncSession,
+    subscription: dict[str, Any],
+    *,
+    force_canceled: bool = False,
+) -> None:
+    subscription_id = str(subscription.get("id") or "")
+    user = await _user_from_stripe(
+        session, subscription, subscription_id=subscription_id or None
+    )
+    if user is None:
+        logger.warning("stripe subscription event missing user")
+        return
+    if _is_grandfathered(user):
+        return
+    if subscription_id:
+        user.stripe_subscription_id = subscription_id
+    customer = subscription.get("customer")
+    if customer and not user.stripe_customer_id:
+        user.stripe_customer_id = str(customer)
+    if force_canceled:
+        await _set_subscription_status(
+            session,
+            user,
+            SubscriptionStatus.CANCELED,
+            source="customer.subscription.deleted",
+        )
+        return
+    mapped = _status_from_stripe(str(subscription.get("status") or ""))
+    if mapped is None:
+        return
+    await _set_subscription_status(
+        session, user, mapped, source="customer.subscription.updated"
+    )
+
+
+async def _apply_invoice_event(
+    session: AsyncSession, invoice: dict[str, Any], *, failed: bool
+) -> None:
+    subscription_id = invoice.get("subscription")
+    user = await _user_from_stripe(
+        session,
+        invoice,
+        subscription_id=str(subscription_id) if subscription_id else None,
+    )
+    if user is None:
+        logger.warning("stripe invoice event missing user")
+        return
+    if _is_grandfathered(user):
+        return
+    if subscription_id and not user.stripe_subscription_id:
+        user.stripe_subscription_id = str(subscription_id)
+    customer = invoice.get("customer")
+    if customer and not user.stripe_customer_id:
+        user.stripe_customer_id = str(customer)
+    new_status = (
+        SubscriptionStatus.PAST_DUE if failed else SubscriptionStatus.ACTIVE
+    )
+    source = "invoice.payment_failed" if failed else "invoice.paid"
+    await _set_subscription_status(session, user, new_status, source=source)

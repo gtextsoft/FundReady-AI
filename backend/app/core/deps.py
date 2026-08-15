@@ -112,7 +112,7 @@ CurrentAdmin = Annotated[CurrentUser, Depends(require_role(Role.ADMIN))]
 
 
 async def require_active_subscription(user: CurrentFounder) -> CurrentUser:
-    """Founder with a Stripe-granted unlock (AUTH.md section 8, D21).
+    """Founder with a Stripe-granted subscription (AUTH.md section 8, D24).
 
     Trial access is *not* enough here — use `require_founder_access` for
     capabilities that stay open during the trial window.
@@ -154,7 +154,7 @@ FounderWithAccess = Annotated[CurrentUser, Depends(require_founder_access)]
 """Founder with trial or paid unlock (admins with MFA also allowed)."""
 
 PaidFounder = Annotated[CurrentUser, Depends(require_active_subscription)]
-"""Founder with a completed Stripe unlock only."""
+"""Founder with an active or past-due Stripe subscription only."""
 
 __all__ = [
     "AuthenticatedUserDep",

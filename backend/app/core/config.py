@@ -173,7 +173,7 @@ class Settings(BaseSettings):
     stripe_secret_key: SecretStr | None = None
     stripe_webhook_secret: SecretStr | None = None
     stripe_publishable_key: str = ""
-    # One-time Price for the founder unlock (DECISIONS.md D21).
+    # Recurring Price for the founder monthly subscription (DECISIONS.md D24).
     stripe_price_id_unlock: BlankableStr = ""
     # Optional overrides; blank falls back to APP_LINK_BASE_URL deep links.
     stripe_checkout_success_url: BlankableStr = ""
@@ -222,7 +222,7 @@ class Settings(BaseSettings):
 
         **Required means "some code reads it", not "it exists as a field".**
         Stripe keys return here now that `commerce` creates Checkout sessions
-        and verifies webhooks (T3.3 / DECISIONS.md D21).
+        and verifies webhooks (T3.3 / DECISIONS.md D24).
         """
         if not self.is_production:
             return []

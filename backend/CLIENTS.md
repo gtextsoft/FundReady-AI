@@ -259,8 +259,9 @@ per endpoint (`tasks` is priority-first, `audits` is newest-first).
 | `POST /v1/evidence/{id}/complete` | Confirm it; queues grading |
 | `GET /v1/tasks/{id}/evidence` | Submissions for a task |
 | `GET /v1/evidence/{id}/download` | Expiring signed URL |
-| `POST /v1/billing/checkout` | Start Stripe Checkout for the one-off unlock; open `checkout_url` |
-| `GET /v1/billing/unlock` | Completed unlock receipt, if any |
+| `POST /v1/billing/checkout` | Start Stripe Checkout for the monthly founder subscription; open `checkout_url` |
+| `GET /v1/billing/unlock` | Completed subscription receipt, if any |
+| `POST /v1/billing/portal` | Open the Stripe Customer Portal to update the card or cancel |
 | `POST /v1/products/{id}/enrol` | Free item → `{status: enrolled}`. Priced item with a Stripe Price → `{status: checkout_required, checkout_url}`. Idempotent after enrolment |
 | `GET /v1/startups/{id}/recommendations` | Active catalogue items whose `gap_tags` overlap this startup's open task dimensions and whose `regions` include the profile country or `*` |
 

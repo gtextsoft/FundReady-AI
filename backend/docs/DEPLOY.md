@@ -278,11 +278,14 @@ It does **not** get you:
 - Full antivirus (magic-byte scan is live; ClamAV-class scanning is not).
 
 **Before public traffic:** set `SENTRY_DSN`, Stripe unlock secrets
-(`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_UNLOCK`),
-point Stripe webhooks at `POST /v1/billing/webhooks/stripe`, and keep
+(`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_UNLOCK` —
+a recurring Price, not a one-time Price),
+point Stripe webhooks at `POST /v1/billing/webhooks/stripe` (include
+`customer.subscription.*` and `invoice.paid` / `invoice.payment_failed`), and keep
 `AI_DAILY_BUDGET_TOKENS_PER_USER` at a sane cap (default 500000).
 
-**Catalogue prices.** The founder unlock uses `STRIPE_PRICE_ID_UNLOCK`. Each
+**Catalogue prices.** The founder monthly plan uses `STRIPE_PRICE_ID_UNLOCK`
+(a recurring $79/month Price). Each
 priced programme or event needs its own Stripe Price created in the Dashboard.
 Paste the `price_…` id (and the matching amount/currency) on
 `POST /v1/admin/products` or the admin Products screen. Do not invent price

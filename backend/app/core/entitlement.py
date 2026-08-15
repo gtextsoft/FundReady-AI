@@ -1,4 +1,4 @@
-"""Founder trial and paid-unlock entitlement (DECISIONS.md D21).
+"""Founder trial and paid-subscription entitlement (DECISIONS.md D24).
 
 Server-authoritative: the client must not invent trial end dates or treat a
 local receipt as paid. Paid state comes only from Stripe webhooks writing
@@ -13,7 +13,7 @@ from typing import Final
 from app.core.security import SubscriptionStatus
 
 TRIAL_DAYS: Final = 14
-"""Days of full founder access from account creation, before unlock is required."""
+"""Days of full founder access from account creation, before subscribe."""
 
 
 def trial_ends_at(created_at: datetime) -> datetime:
@@ -31,8 +31,11 @@ def trial_active(created_at: datetime, *, now: datetime | None = None) -> bool:
 
 
 def is_paid(subscription_status: SubscriptionStatus) -> bool:
-    """True when Stripe has granted the one-off unlock."""
-    return subscription_status is SubscriptionStatus.ACTIVE
+    """True while Stripe is collecting — including dunning (`past_due`)."""
+    return subscription_status in {
+        SubscriptionStatus.ACTIVE,
+        SubscriptionStatus.PAST_DUE,
+    }
 
 
 def has_founder_access(
@@ -41,7 +44,7 @@ def has_founder_access(
     created_at: datetime,
     now: datetime | None = None,
 ) -> bool:
-    """Paid unlock or still inside the server-computed trial window."""
+    """Paid subscription (or dunning) or still inside the server-computed trial."""
     return is_paid(subscription_status) or trial_active(created_at, now=now)
 
 

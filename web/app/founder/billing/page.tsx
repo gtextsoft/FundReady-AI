@@ -5,7 +5,17 @@ import { Suspense, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { MetaList, MetaRow, Panel } from "@/components/ui/panel";
+import { api } from "@/lib/api";
+import { UNLOCK_PRICE } from "@/lib/domain/access";
 import { useSession } from "@/stores/session";
+import { toast } from "sonner";
+
+function planLabel(status: string | undefined) {
+  if (status === "active") return `${UNLOCK_PRICE.label} / month`;
+  if (status === "past_due") return `${UNLOCK_PRICE.label} / month · past due`;
+  if (status === "canceled") return "Canceled";
+  return "Trial / unpaid";
+}
 
 function Inner() {
   const params = useSearchParams();
@@ -13,6 +23,8 @@ function Inner() {
   const session = useSession((s) => s.session);
   const status = params.get("checkout");
   const [busy, setBusy] = useState(false);
+  const subscribed =
+    session?.subscriptionStatus === "active" || session?.subscriptionStatus === "past_due";
 
   useEffect(() => {
     void refresh();
@@ -27,11 +39,9 @@ function Inner() {
       <Panel>
         <MetaList>
           <MetaRow label="Access">
-            {session?.hasAccess || session?.subscriptionStatus === "active" ? "Unlocked" : "Locked"}
+            {session?.hasAccess || subscribed ? "Unlocked" : "Locked"}
           </MetaRow>
-          <MetaRow label="Plan">
-            {session?.subscriptionStatus === "active" ? "One-time unlock" : "Trial / unpaid"}
-          </MetaRow>
+          <MetaRow label="Plan">{planLabel(session?.subscriptionStatus)}</MetaRow>
         </MetaList>
       </Panel>
       <div className="flex flex-wrap gap-3">
@@ -47,7 +57,28 @@ function Inner() {
         >
           Refresh entitlement
         </Button>
-        <Button href="/founder">Back to the desk</Button>
+        {subscribed ? (
+          <Button
+            type="button"
+            onClick={async () => {
+              setBusy(true);
+              try {
+                const portal = await api.billingPortal();
+                window.location.href = portal.portal_url;
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : "Could not open billing.");
+                setBusy(false);
+              }
+            }}
+          >
+            Manage billing
+          </Button>
+        ) : (
+          <Button href="/founder/paywall">Subscribe</Button>
+        )}
+        <Button href="/founder" variant="ghost">
+          Back to the desk
+        </Button>
       </div>
     </div>
   );

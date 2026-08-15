@@ -80,7 +80,9 @@ function activityFor(role: Role, unread: number): RailItem[] {
 
 function planLabel(role: Role, session: Session) {
   if (role === "founder") {
-    if (session.subscriptionStatus === "active") return "Unlocked";
+    if (session.subscriptionStatus === "active" || session.subscriptionStatus === "past_due") {
+      return session.subscriptionStatus === "past_due" ? "Past due" : "Subscribed";
+    }
     const days = daysLeftInTrial(founderAccount(session));
     return days > 0 ? "Trial" : "Locked";
   }
@@ -90,7 +92,9 @@ function planLabel(role: Role, session: Session) {
 
 function promoFor(role: Role, session: Session) {
   if (role === "founder") {
-    if (session.subscriptionStatus === "active") return null;
+    if (session.subscriptionStatus === "active" || session.subscriptionStatus === "past_due") {
+      return null;
+    }
     const account = founderAccount(session);
     const trial = hasAccess(account);
     const days = daysLeftInTrial(account);
@@ -99,8 +103,8 @@ function promoFor(role: Role, session: Session) {
       kicker: trial ? `Current plan: Trial` : "Trial ended",
       body: trial
         ? `${days} day${days === 1 ? "" : "s"} left. Unlock to keep mentor, programmes, and dealflow listing.`
-        : "One payment restores the desk after the trial.",
-      cta: "Unlock the desk",
+        : "A monthly subscription restores the desk after the trial.",
+      cta: "Subscribe",
     };
   }
   return null;

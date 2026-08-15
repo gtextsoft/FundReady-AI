@@ -281,7 +281,7 @@ class EnrolResult(BaseModel):
 
 
 class CheckoutSessionResponse(BaseModel):
-    """Hosted Stripe Checkout URL for the founder unlock (DECISIONS.md D21)."""
+    """Hosted Stripe Checkout URL for the founder monthly subscription (D24)."""
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -307,7 +307,7 @@ class UnlockReceiptResponse(BaseModel):
             "examples": [
                 {
                     "reference": "3f2a1b0c-4d5e-6789-abcd-ef0123456789",
-                    "amount": 14900,
+                    "amount": 7900,
                     "currency": "USD",
                     "paid_at": "2026-08-10T12:00:00Z",
                 }
@@ -319,3 +319,18 @@ class UnlockReceiptResponse(BaseModel):
     amount: int = Field(description="Amount in minor units (e.g. cents).")
     currency: str = Field(description="ISO 4217 currency code.")
     paid_at: datetime
+
+
+class PortalSessionResponse(BaseModel):
+    """Hosted Stripe Customer Portal URL for card updates and cancel."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "portal_url": "https://billing.stripe.com/p/session/test_abc",
+            }
+        },
+    )
+
+    portal_url: str = Field(description="Open this URL to manage the subscription.")

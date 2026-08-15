@@ -39,7 +39,7 @@ class ProductKind(StrEnum):
 
 
 class PurchaseKind(StrEnum):
-    """What was bought. Unlock is D21; catalogue is T3.2 / D18."""
+    """What was bought. Unlock is D24; catalogue is T3.2 / D18."""
 
     UNLOCK = "unlock"
     CATALOGUE = "catalogue"
@@ -170,7 +170,7 @@ class StripeWebhookEvent(Base):
     """Idempotency store for Stripe webhook deliveries.
 
     Stripe retries; processing the same `event.id` twice must not double-grant
-    entitlement (CLAUDE.md section 4, DECISIONS.md D21).
+    entitlement (CLAUDE.md section 4, DECISIONS.md D24).
     """
 
     __tablename__ = "stripe_webhook_events"

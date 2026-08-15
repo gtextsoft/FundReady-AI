@@ -139,15 +139,24 @@ Making it real needs a second Postgres role (`NOBYPASSRLS`, least privilege, not
 **The tradeoff, accepted knowingly:** this product's own vocabulary includes `Stage.IDEA` and `PRE_SEED` (`intake/fields.py`), and the PRD's premise is converting not-yet-ready startups. Idea-stage founders frequently have no company domain, and a hard block at registration turns them away at the one step where a rejected user simply leaves. The alternative considered was requiring the company address at **profile creation** instead, which preserves the funnel and still guarantees every profile has a verified company domain behind it. The owner chose the hard block at registration. **If signup conversion for early-stage founders disappoints, moving the check to profile creation is the first thing to try** — the rule is one call in `register_user` and the derivation is untouched by the move.
 
 ### D21 — Founder access is a one-off unlock via Stripe Checkout, not a recurring Billing subscription
-*Recorded 2026-08-10. Resolves the frontend/backend product mismatch before T3.3.*
+*Recorded 2026-08-10. **Superseded by D24** (monthly Billing subscription, 2026-08-15).*
 
-**Why:** the mobile product sells a single **$149 once** unlock (14-day trial, then pay). Recurring Stripe Billing would contradict that UX and the paywall copy already shipped. Stripe Checkout `mode=payment` against a one-time Price is enough to take money and grant entitlement; catalogue programmes (D18 / T3.2) remain additive Checkout sessions later.
+**Why:** the mobile product sold a single **$149 once** unlock. Recurring Billing would have contradicted that UX.
+
+**Constraint (historical):** entitlement from `checkout.session.completed` only; `subscription_status=active` meant a one-time unlock. Catalogue programmes stayed additive Checkout sessions.
+
+### D24 — Founder access is a monthly Stripe Billing subscription
+*Recorded 2026-08-15. Supersedes D21.*
+
+**Why:** a one-time unlock underprices recurring audits, mentor chat, and investor matching, and produces no MRR. Checkout `mode=subscription` against a recurring Price ($79 USD / month) is the rail. Catalogue programmes (D18) stay one-off Checkout.
 
 **Constraint:**
-- Founder entitlement is granted only from a verified Stripe webhook (`checkout.session.completed` for the unlock Price). Never from a client-reported receipt.
-- Paid state is stored on `users.subscription_status = active` (existing column). The name is historical; v1 is a one-time unlock, not a renewing subscription. `past_due` / `canceled` stay available if Billing is adopted later under a new decision.
-- **App Store / Play IAP is out of this slice.** Hosted Checkout (or a web paywall) is the rail for web and sideloaded Android. Shipping the iOS app with an in-app card unlock will fail store review — that needs Apple/Google IAP and is a separate decision.
-- Stripe Connect remains out of scope (D5).
+- Founder entitlement is granted only from verified Stripe webhooks. Never from a client-reported receipt.
+- `subscription_status` is `active` or `past_due` while Stripe is collecting (dunning keeps the desk open). `canceled` / `none` lose access after the 14-day account trial.
+- The trial is computed from `users.created_at`. Do not also set Stripe `trial_period_days`.
+- Anyone already `active` with no `stripe_subscription_id` is a grandfathered D21 unlock and stays unlocked.
+- Founders manage card and cancel through the Stripe Customer Portal (`POST /v1/billing/portal`).
+- **App Store / Play IAP is out of this slice.** Hosted Checkout is the rail for web. Stripe Connect remains out of scope (D5).
 
 ### D22 — Post-launch: RLS least-privilege role and privacy export/erase
 *Recorded 2026-08-10. Scopes remaining launch-ops work; does not change D13/D19.*

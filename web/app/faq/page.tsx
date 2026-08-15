@@ -21,7 +21,7 @@ const ITEMS = [
   },
   {
     q: "What happens after the trial?",
-    a: "Fourteen days, then a one-time unlock. The desk stays yours. It is not a subscription.",
+    a: "Fourteen days, then $79 a month. Cancel any time from billing. The desk stays yours while the subscription is active or Stripe is retrying a failed card.",
   },
   {
     q: "Is this investment advice?",

@@ -35,7 +35,7 @@ export default function TermsPage() {
       </p>
       <h2 className="font-display text-xl text-cream">Payments</h2>
       <p>
-        The founder unlock is a one-time fee after the trial. Catalogue items may require a
+        The founder desk is a monthly subscription after the trial. Catalogue items may require a
         separate Stripe Checkout. Fees are processed by Stripe; chargebacks follow Stripe&apos;s
         process.
       </p>

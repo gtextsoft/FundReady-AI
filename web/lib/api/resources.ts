@@ -447,6 +447,8 @@ export const api = {
     request<{ checkout_url: string; session_id: string }>("/v1/billing/checkout", {
       method: "POST",
     }),
+  billingPortal: () =>
+    request<{ portal_url: string }>("/v1/billing/portal", { method: "POST" }),
   getUnlock: () => request<unknown>("/v1/billing/unlock"),
   listProducts: (qs = "") => request<Page<Product>>(`/v1/products${qs}`),
   getProduct: (id: string) => request<Product>(`/v1/products/${id}`),

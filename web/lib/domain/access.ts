@@ -33,7 +33,9 @@ export type InvestorAccount = {
 
 export function hasAccess(account: FounderAccount, now: number = Date.now()): boolean {
   if (typeof account.hasAccess === "boolean") return account.hasAccess;
-  if (account.subscriptionStatus === "active") return true;
+  if (account.subscriptionStatus === "active" || account.subscriptionStatus === "past_due") {
+    return true;
+  }
   return new Date(account.trialEndsAt).getTime() > now;
 }
 
@@ -83,9 +85,9 @@ export function gateCopy(reason: GateReason | null, side: "founder" | "investor"
   }
   if (reason === "payment") {
     return {
-      title: "Unlock FundReady AI",
-      body: "Your free trial has ended. One payment restores full access.",
-      cta: "View unlock",
+      title: "Subscribe to FundReady AI",
+      body: "Your free trial has ended. A monthly subscription restores the desk.",
+      cta: "View plans",
     };
   }
   if (reason === "verification") {
@@ -101,9 +103,9 @@ export function gateCopy(reason: GateReason | null, side: "founder" | "investor"
 export const UNLOCK_PRICE = {
   currency: "USD",
   symbol: "$",
-  amount: 149,
-  label: "$149",
-  cadence: "one-time",
+  amount: 79,
+  label: "$79",
+  cadence: "month",
 } as const;
 
 export const UNLOCK_BENEFITS = [

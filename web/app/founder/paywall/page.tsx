@@ -16,8 +16,8 @@ export default function PaywallPage() {
     <div className="mx-auto max-w-lg space-y-6">
       <PageHeader
         eyebrow="Unlock"
-        title={`${UNLOCK_PRICE.label} once.`}
-        description="Not a subscription. One payment restores the desk after the 14-day trial."
+        title={`${UNLOCK_PRICE.label} / month.`}
+        description="Monthly subscription. Cancel any time. Restores the desk after the 14-day trial."
       />
       <Panel className="bg-rail-promo">
         <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-brand shadow-sm dark:bg-surface">
