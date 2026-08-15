@@ -32,6 +32,10 @@ async function refreshAccess(): Promise<string> {
     if (started !== authEpoch) {
       throw new ApiFailure("unauthorized", "You are signed out.");
     }
+    if (res.status === 204) {
+      accessToken = null;
+      throw new ApiFailure("unauthorized", "You are signed out.");
+    }
     if (!res.ok) {
       accessToken = null;
       throw new ApiFailure("unauthorized", "Your session expired. Please sign in again.");

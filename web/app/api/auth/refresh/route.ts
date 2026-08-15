@@ -4,10 +4,9 @@ import { apiBase, readRefresh, writeRefreshCookie } from "@/lib/auth/cookies";
 export async function POST(request: NextRequest) {
   const refresh = readRefresh(request);
   if (!refresh) {
-    const res = NextResponse.json(
-      { error: { code: "unauthorized", message: "You are signed out." } },
-      { status: 401 },
-    );
+    // No session cookie is a normal signed-out boot, not an auth failure.
+    // 204 keeps the browser console clean; the client treats it as signed out.
+    const res = new NextResponse(null, { status: 204 });
     writeRefreshCookie(res, null);
     return res;
   }

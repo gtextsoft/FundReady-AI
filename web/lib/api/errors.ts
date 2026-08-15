@@ -7,7 +7,8 @@ export class ApiFailure extends Error {
     | "validation"
     | "rate_limited"
     | "server"
-    | "network";
+    | "network"
+    | "not_implemented";
   readonly serverCode?: string;
   readonly details?: Record<string, unknown>;
 
@@ -57,5 +58,20 @@ export function isMfaGate(error: unknown): boolean {
     error instanceof ApiFailure &&
     error.code === "forbidden" &&
     /two-factor|enrol/i.test(error.message)
+  );
+}
+
+/** True when a feature has no backend behind it yet. */
+export function isUnavailable(error: unknown): error is ApiFailure {
+  return error instanceof ApiFailure && error.code === "not_implemented";
+}
+
+/** Reject locally — do not hit a route the API does not serve. */
+export function notYet<T>(feature: string, task: string): Promise<T> {
+  return Promise.reject(
+    new ApiFailure(
+      "not_implemented",
+      `${feature} is not available yet — the backend for it has not been built (${task}).`,
+    ),
   );
 }

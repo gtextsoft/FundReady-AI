@@ -54,7 +54,10 @@ export default function RequestsPage() {
     return (
       <div className="space-y-6">
         <PageHeader title="Investor requests" />
-        <EmptyState title="No requests" body="When an investor proposes a call, it lands here." />
+        <EmptyState
+          title="No requests"
+          body="Call scheduling is not live yet. When an investor can propose a slot, it will land here."
+        />
       </div>
     );
   }

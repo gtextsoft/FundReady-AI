@@ -1,3 +1,4 @@
+import { notYet } from "./errors";
 import { request, requestBytes } from "./http";
 
 export type WireField = {
@@ -378,14 +379,10 @@ export const api = {
     }),
   listMeetings: (interestId: string) =>
     request<Meeting[]>(`/v1/interests/${interestId}/meetings`),
-  requestCall: (interestId: string, proposed_at: string, message?: string) =>
-    request<CallRequest>(`/v1/interests/${interestId}/calls`, {
-      method: "POST",
-      body: { proposed_at, message: message || null },
-    }),
-  listCalls: () => request<CallRequest[]>("/v1/calls"),
-  respondCall: (id: string, accept: boolean) =>
-    request<CallRequest>(`/v1/calls/${id}/respond`, { method: "POST", body: { accept } }),
+  // T4.5 call HTTP is not mounted — a real GET `/v1/calls` 404s.
+  requestCall: () => notYet<CallRequest>("Call scheduling", "T4.5"),
+  listCalls: () => Promise.resolve<CallRequest[]>([]),
+  respondCall: () => notYet<CallRequest>("Call requests", "T4.5"),
 
   checkout: () =>
     request<{ checkout_url: string; session_id: string }>("/v1/billing/checkout", {
@@ -407,9 +404,10 @@ export const api = {
   listRecommendations: (startupId: string) =>
     request<Page<Product>>(`/v1/startups/${startupId}/recommendations`),
 
-  listNotifications: () => request<Page<NotificationItem>>("/v1/notifications"),
-  markRead: (ids: string[]) =>
-    request<void>("/v1/notifications/read", { method: "POST", body: { ids } }),
+  // T5.3 in-app inbox is not mounted — notifications only send email today.
+  listNotifications: () =>
+    Promise.resolve<Page<NotificationItem>>({ items: [], total: 0, limit: 20, offset: 0 }),
+  markRead: () => notYet<void>("Notifications", "T5.3"),
 
   listUsers: (qs = "") => request<Page<UserRow>>(`/v1/admin/users${qs}`),
   provisionAdmin: (email: string, password: string) =>
