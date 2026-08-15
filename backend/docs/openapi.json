@@ -953,6 +953,139 @@
         "title": "DownloadTicket",
         "type": "object"
       },
+      "EnrolResult": {
+        "additionalProperties": false,
+        "description": "Outcome of asking to take a catalogue item.",
+        "examples": [
+          {
+            "status": "enrolled"
+          },
+          {
+            "checkout_url": "https://checkout.stripe.com/c/pay/cs_test_a1b2c3",
+            "status": "checkout_required"
+          }
+        ],
+        "properties": {
+          "checkout_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkout Url"
+          },
+          "status": {
+            "description": "`enrolled` or `checkout_required`.",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "EnrolResult",
+        "type": "object"
+      },
+      "EnrolmentPage": {
+        "additionalProperties": false,
+        "description": "The caller's enrolments.",
+        "example": {
+          "items": [],
+          "limit": 20,
+          "offset": 0,
+          "total": 0
+        },
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EnrolmentResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "EnrolmentPage",
+        "type": "object"
+      },
+      "EnrolmentResponse": {
+        "additionalProperties": false,
+        "description": "One founder's enrolment, with the catalogue item when it still exists.",
+        "example": {
+          "created_at": "2026-08-15T10:00:00Z",
+          "id": "8d3b2c1d-5e6f-7890-bcde-f01234567890",
+          "product": {
+            "active": true,
+            "description": "A four-week programme on pricing, CAC, and contribution margin.",
+            "gap_tags": [
+              "unit_economics"
+            ],
+            "id": "7c2a1b0c-4d5e-6789-abcd-ef0123456789",
+            "kind": "program",
+            "regions": [
+              "*"
+            ],
+            "slug": "unit-economics-clinic",
+            "title": "Unit economics clinic"
+          },
+          "product_id": "7c2a1b0c-4d5e-6789-abcd-ef0123456789"
+        },
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "product": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProductResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "product_id": {
+            "format": "uuid",
+            "title": "Product Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "product_id",
+          "created_at",
+          "product"
+        ],
+        "title": "EnrolmentResponse",
+        "type": "object"
+      },
       "Environment": {
         "description": "Deployment environment.",
         "enum": [
@@ -2003,6 +2136,483 @@
         "title": "PasswordResetRequest",
         "type": "object"
       },
+      "ProductCreate": {
+        "additionalProperties": false,
+        "description": "Add one catalogue item.",
+        "examples": [
+          {
+            "active": true,
+            "description": "A four-week programme on pricing, CAC, and contribution margin.",
+            "gap_tags": [
+              "unit_economics"
+            ],
+            "kind": "program",
+            "regions": [
+              "*"
+            ],
+            "slug": "unit-economics-clinic",
+            "title": "Unit economics clinic"
+          }
+        ],
+        "properties": {
+          "active": {
+            "default": true,
+            "title": "Active",
+            "type": "boolean"
+          },
+          "amount_minor": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Minor"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "maxLength": 3,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Description",
+            "type": "string"
+          },
+          "event_location": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Location"
+          },
+          "event_starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Starts At"
+          },
+          "gap_tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Gap Tags",
+            "type": "array"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ProductKind"
+          },
+          "regions": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Regions",
+            "type": "array"
+          },
+          "slug": {
+            "maxLength": 80,
+            "minLength": 2,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "title": "Slug",
+            "type": "string"
+          },
+          "stripe_price_id": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stripe Price Id"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "slug",
+          "title",
+          "regions"
+        ],
+        "title": "ProductCreate",
+        "type": "object"
+      },
+      "ProductKind": {
+        "description": "Catalogue discriminator (DECISIONS.md D18). Events carry date/location.",
+        "enum": [
+          "program",
+          "mentorship",
+          "event"
+        ],
+        "title": "ProductKind",
+        "type": "string"
+      },
+      "ProductPage": {
+        "additionalProperties": false,
+        "description": "One page of catalogue items.",
+        "example": {
+          "items": [
+            {
+              "active": true,
+              "description": "A four-week programme on pricing, CAC, and contribution margin.",
+              "gap_tags": [
+                "unit_economics"
+              ],
+              "id": "7c2a1b0c-4d5e-6789-abcd-ef0123456789",
+              "kind": "program",
+              "regions": [
+                "*"
+              ],
+              "slug": "unit-economics-clinic",
+              "title": "Unit economics clinic"
+            }
+          ],
+          "limit": 20,
+          "offset": 0,
+          "total": 1
+        },
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProductResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "ProductPage",
+        "type": "object"
+      },
+      "ProductResponse": {
+        "additionalProperties": false,
+        "description": "One catalogue item as any signed-in caller sees it.",
+        "example": {
+          "active": true,
+          "description": "A four-week programme on pricing, CAC, and contribution margin.",
+          "gap_tags": [
+            "unit_economics"
+          ],
+          "id": "7c2a1b0c-4d5e-6789-abcd-ef0123456789",
+          "kind": "program",
+          "regions": [
+            "*"
+          ],
+          "slug": "unit-economics-clinic",
+          "title": "Unit economics clinic"
+        },
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "amount_minor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Minor"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "event_location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Location"
+          },
+          "event_starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Starts At"
+          },
+          "gap_tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Gap Tags",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ProductKind"
+          },
+          "regions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Regions",
+            "type": "array"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "slug",
+          "title",
+          "description",
+          "regions",
+          "gap_tags",
+          "amount_minor",
+          "currency",
+          "event_starts_at",
+          "event_location",
+          "active"
+        ],
+        "title": "ProductResponse",
+        "type": "object"
+      },
+      "ProductUpdate": {
+        "additionalProperties": false,
+        "description": "Revise a catalogue item. Omitted fields stay as they are.",
+        "examples": [
+          {
+            "active": false
+          }
+        ],
+        "properties": {
+          "active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active"
+          },
+          "amount_minor": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Minor"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "maxLength": 3,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "event_location": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Location"
+          },
+          "event_starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Starts At"
+          },
+          "gap_tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gap Tags"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProductKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "regions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regions"
+          },
+          "slug": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 2,
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slug"
+          },
+          "stripe_price_id": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stripe Price Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "ProductUpdate",
+        "type": "object"
+      },
       "ProfileFieldValue": {
         "additionalProperties": false,
         "description": "One field, with where it came from and how sure we are.\n\nProvenance is part of the value rather than a parallel structure, so a field\ncannot be stored without it. The audit has to cite its evidence\n(CLAUDE.md section 5), and \"the founder told us\" is a materially different\ninput from \"read out of their filed accounts\".",
@@ -2488,6 +3098,19 @@
             "description": "Whether this is in the short list to show first. An audit marks at most five, one per weak dimension. If nothing is marked, show everything.",
             "title": "Is Priority",
             "type": "boolean"
+          },
+          "product_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A catalogue item that closes this gap, when SACI has listed one. `null` is the usual case \u2014 most tasks have no programme attached.",
+            "title": "Product Id"
           },
           "requirement": {
             "$ref": "#/components/schemas/Requirement",
@@ -3862,6 +4485,182 @@
         "summary": "Reveal the full report to an investor",
         "tags": [
           "brokerage"
+        ]
+      }
+    },
+    "/v1/admin/products": {
+      "post": {
+        "description": "SACI admins only; MFA required. `409` when the slug is already taken. Events must include `event_starts_at` and `event_location`.\n\n**One catalogue, three kinds** (`program` \u00b7 `mentorship` \u00b7 `event`) per `DECISIONS.md` D18. Events carry `event_starts_at` and `event_location`. `regions` is ISO alpha-2 or `*` for everywhere. `gap_tags` match rubric dimensions (for example `unit_economics`) so a startup's open tasks can recommend the right item.",
+        "operationId": "create_product_v1_admin_products_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Create a catalogue item",
+        "tags": [
+          "commerce"
+        ]
+      }
+    },
+    "/v1/admin/products/{product_id}": {
+      "patch": {
+        "description": "SACI admins only; MFA required. Omitted fields stay as they are. Set `active` to `false` to retire an item without deleting it \u2014 enrolments and the `product_id` on a task survive.\n\n**One catalogue, three kinds** (`program` \u00b7 `mentorship` \u00b7 `event`) per `DECISIONS.md` D18. Events carry `event_starts_at` and `event_location`. `regions` is ISO alpha-2 or `*` for everywhere. `gap_tags` match rubric dimensions (for example `unit_economics`) so a startup's open tasks can recommend the right item.",
+        "operationId": "update_product_v1_admin_products__product_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "product_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Product Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Update a catalogue item",
+        "tags": [
+          "commerce"
         ]
       }
     },
@@ -6405,6 +7204,372 @@
         ]
       }
     },
+    "/v1/me/enrolments": {
+      "get": {
+        "description": "Newest first. The nested `product` is `null` if the item was deleted.",
+        "operationId": "list_enrolments_v1_me_enrolments_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrolmentPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "List the caller's enrolments",
+        "tags": [
+          "commerce"
+        ]
+      }
+    },
+    "/v1/products": {
+      "get": {
+        "description": "Programs, mentorship, and events SACI has listed, newest title first is not the order \u2014 title then id, so paging is stable.\n\n`region` keeps items whose `regions` include that ISO code or `*`. Founders and investors see **active** items only; an admin also sees retired ones.\n\n**One catalogue, three kinds** (`program` \u00b7 `mentorship` \u00b7 `event`) per `DECISIONS.md` D18. Events carry `event_starts_at` and `event_location`. `regions` is ISO alpha-2 or `*` for everywhere. `gap_tags` match rubric dimensions (for example `unit_economics`) so a startup's open tasks can recommend the right item.",
+        "operationId": "list_products_v1_products_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Region"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ProductKind"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Browse the product catalogue",
+        "tags": [
+          "commerce"
+        ]
+      }
+    },
+    "/v1/products/{product_id}": {
+      "get": {
+        "description": "A retired item is `404` for anyone who is not a SACI admin \u2014 the same answer as an unknown id.\n\n**One catalogue, three kinds** (`program` \u00b7 `mentorship` \u00b7 `event`) per `DECISIONS.md` D18. Events carry `event_starts_at` and `event_location`. `regions` is ISO alpha-2 or `*` for everywhere. `gap_tags` match rubric dimensions (for example `unit_economics`) so a startup's open tasks can recommend the right item.",
+        "operationId": "read_product_v1_products__product_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "product_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Product Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Read one catalogue item",
+        "tags": [
+          "commerce"
+        ]
+      }
+    },
+    "/v1/products/{product_id}/enrol": {
+      "post": {
+        "description": "Founders only. A free item (`amount_minor` empty) enrols immediately and returns `{status: enrolled}`. A priced item with a Stripe Price returns `{status: checkout_required, checkout_url}` \u2014 entitlement arrives only after the verified webhook, the same rule as the unlock. Repeating the call after a successful enrolment is idempotent.\n\n`422` with `checkout_not_configured` when the item is priced but has no `stripe_price_id`.",
+        "operationId": "enrol_product_v1_products__product_id__enrol_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "product_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Product Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrolResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "internal_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Enrol in a catalogue item",
+        "tags": [
+          "commerce"
+        ]
+      }
+    },
     "/v1/ready": {
       "get": {
         "description": "Probes Postgres and Redis. Returns HTTP `503` with this same body when either is unreachable so a load balancer can drain traffic. Unauthenticated on purpose \u2014 the response only names dependency health, never secrets or data. Branch on `status` / the status code.",
@@ -7621,6 +8786,108 @@
         "summary": "Chat with the AI mentor about your audit",
         "tags": [
           "mentor"
+        ]
+      }
+    },
+    "/v1/startups/{startup_id}/recommendations": {
+      "get": {
+        "description": "Active items whose `gap_tags` overlap this startup's **open** readiness-task dimensions, and whose `regions` include the profile country or `*`.\n\nOwnership-checked: another founder's startup is `404`. An item with no `gap_tags` is browse-only and never appears here.\n\n**One catalogue, three kinds** (`program` \u00b7 `mentorship` \u00b7 `event`) per `DECISIONS.md` D18. Events carry `event_starts_at` and `event_location`. `regions` is ISO alpha-2 or `*` for everywhere. `gap_tags` match rubric dimensions (for example `unit_economics`) so a startup's open tasks can recommend the right item.",
+        "operationId": "list_recommendations_v1_startups__startup_id__recommendations_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "startup_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Startup Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Catalogue items matched to this startup's gaps",
+        "tags": [
+          "commerce"
         ]
       }
     },

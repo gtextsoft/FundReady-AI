@@ -175,6 +175,9 @@ be wrong for those two.
 |---|---|---|
 | `GET /v1/discover` | thesis filters, `limit`, `offset` | `{items, total, limit, offset}` |
 | `GET /v1/startups/{id}/tasks` | `status`, `requirement`, `limit`, `offset` | `{items, total, limit, offset}` |
+| `GET /v1/products` | `region`, `kind`, `limit`, `offset` | `{items, total, limit, offset}` |
+| `GET /v1/me/enrolments` | `limit`, `offset` | `{items, total, limit, offset}` |
+| `GET /v1/startups/{id}/recommendations` | `limit`, `offset` | `{items, total, limit, offset}` |
 | `GET /v1/tasks/{id}/evidence` | `limit`, `offset` | `{items, total, limit, offset}` |
 | `GET /v1/benchmarks` | `sector`, `stage`, `metric`, `region`, `include_retired`, `limit`, `offset` | bare array |
 | `GET /v1/startups/{id}/documents` | **none** — returns every document for that startup | bare array |
@@ -197,7 +200,7 @@ per endpoint (`tasks` is priority-first, `audits` is newest-first).
 
 ## 4. Endpoints by role
 
-52 operations across 46 paths today. Anything not listed here is not built yet
+67 operations across 61 paths today. Anything not listed here is not built yet
 — see §7.
 
 ### Public (no token)
@@ -224,6 +227,8 @@ per endpoint (`tasks` is priority-first, `audits` is newest-first).
 | `GET /v1/users/me` | The caller's own account, never another's. Includes server `trial_ends_at` and `has_access` |
 | `POST /v1/auth/mfa/enroll` · `POST /v1/auth/mfa/confirm` | Enrol a second factor |
 | `GET /v1/registries` | Company-register labels by country (for registration forms) |
+| `GET /v1/products` · `GET /v1/products/{id}` | Catalogue. Inactive items are hidden unless the caller is an MFA-enrolled admin. Filter with `region` (ISO alpha-2 or omitted) and `kind` |
+| `GET /v1/me/enrolments` | The caller's enrolments, newest first |
 
 ### Founder (mobile)
 
@@ -252,6 +257,8 @@ per endpoint (`tasks` is priority-first, `audits` is newest-first).
 | `GET /v1/evidence/{id}/download` | Expiring signed URL |
 | `POST /v1/billing/checkout` | Start Stripe Checkout for the one-off unlock; open `checkout_url` |
 | `GET /v1/billing/unlock` | Completed unlock receipt, if any |
+| `POST /v1/products/{id}/enrol` | Free item → `{status: enrolled}`. Priced item with a Stripe Price → `{status: checkout_required, checkout_url}`. Idempotent after enrolment |
+| `GET /v1/startups/{id}/recommendations` | Active catalogue items whose `gap_tags` overlap this startup's open task dimensions and whose `regions` include the profile country or `*` |
 
 If you omit `name` on profile creation it is derived from your company email
 domain — `founder@acme.com` → `Acme`. That is a starting point, not a verified
@@ -276,6 +283,7 @@ Enrol before calling any of them; an access token alone is not enough.
 | `POST /v1/admin/interests/{id}/approve` · `POST /v1/admin/interests/{id}/decline` | Decide an interest — see §5d |
 | `POST /v1/admin/interests/{id}/reveal` | Open one full report to one investor — see §5d |
 | `POST /v1/admin/tasks/{task_id}/reopen` | Clear a locked task's attempt cap — see §5e |
+| `POST /v1/admin/products` · `PATCH /v1/admin/products/{id}` | Create or revise a catalogue item. Set `active: false` to retire it |
 
 **The admin report path is separate from the founder's on purpose.** It is the
 same stored document served by a wider serializer, and keeping it on its own
@@ -1089,6 +1097,7 @@ compatibility, not as an error — parse defensively.
 | `EvidenceStatus` | `pending`, `ready`, `rejected` |
 | `AssessmentOutcome` | `pass`, `fail`, `needs_more` |
 | `Dimension` | `financial_health`, `unit_economics`, `traction`, `market_opportunity`, `team`, `legal_and_ip`, `data_integrity`, `scalability`, `owner_independence`, `transferability`, `revenue_durability` |
+| `ProductKind` | `program`, `mentorship`, `event` |
 
 `TaskStatus` is the whole evidence loop and **every value is now reachable** —
 `submitted` through `needs_more` are written by evidence assessment (§5f).
@@ -1125,7 +1134,6 @@ exist for any of them today.
 
 | Area | Task | Affects |
 |---|---|---|
-| Product & event catalogue, and the `product_id` link on a task | T3.2 | Founder mobile |
 | Stripe checkout and subscriptions | T3.3, T3.4 | Founder mobile |
 | Founder AI chat over their own audit and tasks | T3.7 | Founder mobile |
 | Investor profile + KYC gate. **Any investor account can discover today** | T4.1 | Investor mobile |

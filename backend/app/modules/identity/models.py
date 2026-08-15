@@ -82,6 +82,8 @@ class AuditAction(StrEnum):
     # Commerce
     PURCHASE_COMPLETED = "commerce.purchase_completed"
     SUBSCRIPTION_CHANGED = "commerce.subscription_changed"
+    PRODUCT_CREATED = "admin.product_created"
+    PRODUCT_UPDATED = "admin.product_updated"
 
 
 class AuditLog(Base):

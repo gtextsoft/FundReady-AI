@@ -9,6 +9,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Product & event catalogue (T3.2 / D18).** One model with a `program` ·
+  `mentorship` · `event` discriminator; admin CRUD; region and gap-tag
+  matching. The web programmes and admin products screens were calling
+  `GET /v1/products` and getting 404.
+  - `GET /v1/products` · `GET /v1/products/{id}` — browse. Inactive items are
+    hidden except to an MFA-enrolled admin. Filter with `region` and `kind`.
+  - `POST /v1/admin/products` · `PATCH /v1/admin/products/{id}` — create or
+    revise. Set `active: false` to retire. `409` on a duplicate slug.
+  - `POST /v1/products/{id}/enrol` — free items enrol immediately; priced
+    items with a Stripe Price return `checkout_required` and a Checkout URL.
+    Entitlement still arrives only from the verified webhook.
+  - `GET /v1/me/enrolments` — the caller's enrolments.
+  - `GET /v1/startups/{id}/recommendations` — active items whose `gap_tags`
+    overlap open readiness-task dimensions and whose `regions` include the
+    profile country or `*`.
+  - Migration `0021_catalogue_enrolments`: `products`, `enrolments`, nullable
+    `product_id` on `purchases` and `readiness_tasks` (idempotent — a live
+    branch already had `products`).
+
 ### Changed
 - **Breaking: password reset is a six-digit code, not a link.**
   - `POST /v1/auth/password-reset/request` emails a code (15 minutes, five
