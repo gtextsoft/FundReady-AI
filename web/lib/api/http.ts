@@ -122,6 +122,65 @@ export async function requestBytes(path: string): Promise<Uint8Array> {
   return new Uint8Array(await res.arrayBuffer());
 }
 
+export async function requestStream(
+  path: string,
+  body: unknown,
+  onEvent: (event: string, data: Record<string, unknown>) => void,
+): Promise<Record<string, unknown>> {
+  if (!accessToken) await refreshAccess();
+  const headers: Record<string, string> = {
+    Accept: "text/event-stream",
+    "Content-Type": "application/json",
+  };
+  if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+  let res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+  if (res.status === 401) {
+    const next = await refreshAccess();
+    headers.Authorization = `Bearer ${next}`;
+    res = await fetch(`${BASE}${path}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+  }
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => null)) as {
+      error?: { code?: string; message?: string };
+    } | null;
+    throw failureFor(res.status, errBody);
+  }
+  if (!res.body) throw new ApiFailure("network", "The mentor stream did not start.");
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let donePayload: Record<string, unknown> = {};
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() ?? "";
+    for (const part of parts) {
+      let event = "message";
+      const dataLines: string[] = [];
+      for (const line of part.split("\n")) {
+        if (line.startsWith("event:")) event = line.slice(6).trim();
+        if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+      }
+      if (!dataLines.length) continue;
+      const data = JSON.parse(dataLines.join("\n")) as Record<string, unknown>;
+      if (event === "done") donePayload = data;
+      onEvent(event, data);
+    }
+  }
+  return donePayload;
+}
+
 export function sessionFrom(me: MeResponse): Session {
   return {
     userId: me.id,

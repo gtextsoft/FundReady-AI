@@ -69,6 +69,12 @@ class AuditAction(StrEnum):
     INTEREST_EXPRESSED = "brokerage.interest_expressed"
     INTEREST_APPROVED = "brokerage.interest_approved"
     INTEREST_DECLINED = "brokerage.interest_declined"
+    INTEREST_WITHDRAWN = "brokerage.interest_withdrawn"
+    MEETING_PROPOSED = "brokerage.meeting_proposed"
+    MEETING_SCHEDULED = "brokerage.meeting_scheduled"
+    THESIS_REVIEWED = "admin.thesis_reviewed"
+    COMPANY_VERIFICATION_DECIDED = "admin.company_verification_decided"
+    CORPUS_EXPORTED = "admin.corpus_exported"
 
     # Readiness (T3.5). A reopen resets a founder's assessment attempts, which
     # is the only way past the cap that guards the investor-visibility gate --

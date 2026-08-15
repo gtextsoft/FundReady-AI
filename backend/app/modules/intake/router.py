@@ -10,9 +10,10 @@ No business logic, no database access, no LLM calls.
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from app.core.deps import (
+    CurrentAdmin,
     CurrentUserDep,
     FounderWithAccess,
     SessionDep,
@@ -23,11 +24,15 @@ from app.core.errors import error_responses
 from app.core.security import CurrentUser, Role
 from app.modules.intake import service
 from app.modules.intake.documents import MAX_UPLOAD_BYTES
-from app.modules.intake.models import StartupProfile
+from app.modules.intake.fields import Stage
+from app.modules.intake.models import CompanyVerificationStatus, StartupProfile
 from app.modules.intake.registries import REGISTRIES
 from app.modules.intake.schemas import (
+    AdminStats,
+    CorpusPage,
     DocumentResponse,
     DownloadTicket,
+    ProfilePage,
     ProfileResponse,
     RegistriesResponse,
     RegistryEntry,
@@ -35,6 +40,7 @@ from app.modules.intake.schemas import (
     StartupProfileUpdate,
     UploadRequest,
     UploadTicket,
+    VerificationDecision,
 )
 
 router = APIRouter(tags=["intake"])
@@ -67,6 +73,7 @@ def _serialise(profile: StartupProfile) -> ProfileResponse:
         missing_fields=service.missing_fields(profile),
         investor_visible=profile.investor_visible,
         published_at=profile.published_at,
+        company_verification_status=profile.company_verification_status,
         created_at=profile.created_at,
         updated_at=profile.updated_at,
     )
@@ -218,6 +225,148 @@ async def unpublish_profile(
         session, actor, profile_id, visible=False
     )
     return _serialise(profile)
+
+
+@router.post(
+    "/startups/{profile_id}/company-verification/submit",
+    response_model=ProfileResponse,
+    summary="Submit company registration for review",
+    description=(
+        "Moves `company_verification_status` to `in_review`. This is an "
+        "admin badge, not a call to a company register (D7). Resubmitting a "
+        "rejected profile is allowed; an already-accepted one is `409`."
+        + OWNERSHIP_NOTE
+    ),
+    responses=error_responses(401, 403, 404, 409, 422),
+)
+async def submit_company_verification(
+    profile_id: uuid.UUID, actor: CurrentUserDep, session: SessionDep
+) -> ProfileResponse:
+    profile = await service.submit_company_verification(session, actor, profile_id)
+    return _serialise(profile)
+
+
+@router.post(
+    "/admin/startups/{profile_id}/company-verification",
+    response_model=ProfileResponse,
+    summary="Accept or reject company verification",
+    description=(
+        "**SACI admins with MFA only.** Sets `accepted` or `rejected` and "
+        "notifies the founder."
+    ),
+    responses=error_responses(401, 403, 404, 422),
+)
+async def decide_company_verification(
+    profile_id: uuid.UUID,
+    payload: VerificationDecision,
+    actor: CurrentAdmin,
+    session: SessionDep,
+) -> ProfileResponse:
+    profile = await service.decide_company_verification(
+        session, actor, profile_id, accept=payload.accept
+    )
+    return _serialise(profile)
+
+
+@router.get(
+    "/admin/startups",
+    response_model=ProfilePage,
+    summary="List every startup profile",
+    description=(
+        "**SACI admins with MFA only.** Newest first. Filter with "
+        "`company_verification_status`, `q` (name/sector/country), `country`, "
+        "`sector`, `stage`, and `published`."
+    ),
+    responses=error_responses(401, 403, 422),
+)
+async def list_admin_startups(
+    actor: CurrentAdmin,
+    session: SessionDep,
+    verification: Annotated[
+        CompanyVerificationStatus | None, Query(alias="company_verification_status")
+    ] = None,
+    q: Annotated[str | None, Query(max_length=120)] = None,
+    country: Annotated[str | None, Query(min_length=2, max_length=2)] = None,
+    sector: Annotated[str | None, Query(max_length=120)] = None,
+    stage: Annotated[Stage | None, Query()] = None,
+    published: Annotated[bool | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> ProfilePage:
+    rows, total = await service.list_admin_startups(
+        session,
+        actor,
+        verification=verification,
+        q=q,
+        country=country,
+        sector=sector,
+        stage=stage,
+        published=published,
+        limit=limit,
+        offset=offset,
+    )
+    return ProfilePage(
+        items=[_serialise(row) for row in rows],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get(
+    "/admin/stats",
+    response_model=AdminStats,
+    summary="Platform counters for the admin home",
+    description=(
+        "**SACI admins with MFA only.** Totals for startups, published "
+        "profiles, succeeded audits, users by role, and pending interests."
+    ),
+    responses=error_responses(401, 403),
+)
+async def get_admin_stats(actor: CurrentAdmin, session: SessionDep) -> AdminStats:
+    return await service.admin_stats(session, actor)
+
+
+@router.get(
+    "/admin/corpus",
+    response_model=CorpusPage,
+    summary="Export identity-stripped training records",
+    description=(
+        "**SACI admins with MFA only.** Paginated corpus for later model "
+        "training. Legal names, registration numbers, founder contacts, and "
+        "emails are stripped. Each export is audit-logged. Same filters as "
+        "`GET /admin/startups` plus optional `startup_id`."
+    ),
+    responses=error_responses(401, 403, 422),
+)
+async def export_admin_corpus(
+    actor: CurrentAdmin,
+    session: SessionDep,
+    verification: Annotated[
+        CompanyVerificationStatus | None, Query(alias="company_verification_status")
+    ] = None,
+    q: Annotated[str | None, Query(max_length=120)] = None,
+    country: Annotated[str | None, Query(min_length=2, max_length=2)] = None,
+    sector: Annotated[str | None, Query(max_length=120)] = None,
+    stage: Annotated[Stage | None, Query()] = None,
+    published: Annotated[bool | None, Query()] = None,
+    startup_id: Annotated[uuid.UUID | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> CorpusPage:
+    return await service.export_training_corpus(
+        session,
+        actor,
+        verification=verification,
+        q=q,
+        country=country,
+        sector=sector,
+        stage=stage,
+        published=published,
+        startup_id=startup_id,
+        limit=limit,
+        offset=offset,
+    )
 
 
 # ---------------------------------------------------------------------------

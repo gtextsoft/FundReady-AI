@@ -6,13 +6,21 @@ Queries in, models/data out. No business rules, no authorization decisions.
 
 import uuid
 from collections.abc import Sequence
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.brokerage.models import Interest, InterestStatus, ReportReveal
+from app.modules.brokerage.models import (
+    Interest,
+    InterestStatus,
+    Meeting,
+    MeetingStatus,
+    ReportReveal,
+)
+from app.modules.intake.models import StartupProfile
 
-__all__ = ["InterestRepository", "RevealRepository"]
+__all__ = ["InterestRepository", "MeetingRepository", "RevealRepository"]
 
 
 class InterestRepository:
@@ -122,3 +130,75 @@ class RevealRepository:
         self._session.add(reveal)
         await self._session.flush()
         return reveal
+
+
+class MeetingRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get(self, meeting_id: uuid.UUID) -> Meeting | None:
+        return await self._session.get(Meeting, meeting_id)
+
+    async def list_for_interest(self, interest_id: uuid.UUID) -> Sequence[Meeting]:
+        return list(
+            await self._session.scalars(
+                select(Meeting)
+                .where(Meeting.interest_id == interest_id)
+                .order_by(Meeting.scheduled_at.desc())
+            )
+        )
+
+    async def list_all(self) -> Sequence[Meeting]:
+        return list(
+            await self._session.scalars(
+                select(Meeting).order_by(Meeting.scheduled_at.desc())
+            )
+        )
+
+    async def list_for_investor(self, investor_id: uuid.UUID) -> Sequence[Meeting]:
+        return list(
+            await self._session.scalars(
+                select(Meeting)
+                .join(Interest, Meeting.interest_id == Interest.id)
+                .where(Interest.investor_id == investor_id)
+                .order_by(Meeting.scheduled_at.desc())
+            )
+        )
+
+    async def list_for_founder(self, founder_id: uuid.UUID) -> Sequence[Meeting]:
+        return list(
+            await self._session.scalars(
+                select(Meeting)
+                .join(Interest, Meeting.interest_id == Interest.id)
+                .join(StartupProfile, Interest.startup_id == StartupProfile.id)
+                .where(
+                    StartupProfile.owner_id == founder_id,
+                    Meeting.status == MeetingStatus.SCHEDULED,
+                )
+                .order_by(Meeting.scheduled_at.desc())
+            )
+        )
+
+    async def create(
+        self,
+        *,
+        interest_id: uuid.UUID,
+        scheduled_at: datetime,
+        duration_minutes: int,
+        location: str | None,
+        notes: str | None,
+        created_by_id: uuid.UUID,
+        status: MeetingStatus = MeetingStatus.SCHEDULED,
+    ) -> Meeting:
+        meeting = Meeting(
+            interest_id=interest_id,
+            scheduled_at=scheduled_at,
+            duration_minutes=duration_minutes,
+            location=location,
+            notes=notes,
+            created_by_id=created_by_id,
+            status=status,
+        )
+        self._session.add(meeting)
+        await self._session.flush()
+        return meeting

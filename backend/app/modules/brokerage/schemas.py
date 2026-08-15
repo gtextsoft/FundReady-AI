@@ -11,9 +11,17 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.modules.brokerage.models import Interest, InterestStatus
+from app.modules.brokerage.models import Interest, InterestStatus, Meeting, MeetingStatus
 
-__all__ = ["InterestCreate", "InterestResponse", "RevealResponse"]
+__all__ = [
+    "InterestCreate",
+    "InterestResponse",
+    "MeetingConfirm",
+    "MeetingCreate",
+    "MeetingPropose",
+    "MeetingResponse",
+    "RevealResponse",
+]
 
 
 class InterestCreate(BaseModel):
@@ -115,3 +123,102 @@ class RevealResponse(BaseModel):
     interest_id: uuid.UUID
     audit_run_id: uuid.UUID
     revealed_at: datetime
+
+
+class MeetingCreate(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "scheduled_at": "2026-08-20T10:00:00Z",
+                "duration_minutes": 45,
+                "location": "https://meet.saci.example/intro",
+                "notes": "SACI hosts. Founder and investor both attend.",
+            }
+        },
+    )
+
+    scheduled_at: datetime
+    duration_minutes: int = Field(ge=15, le=180)
+    location: str | None = Field(default=None, max_length=400)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class MeetingPropose(BaseModel):
+    """An investor proposing a slot. SACI still has to confirm."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "scheduled_at": "2026-08-20T10:00:00Z",
+                "duration_minutes": 45,
+                "message": "Any time after 10:00 WAT works.",
+            }
+        },
+    )
+
+    scheduled_at: datetime
+    duration_minutes: int = Field(default=45, ge=15, le=180)
+    message: str | None = Field(default=None, max_length=2000)
+
+
+class MeetingConfirm(BaseModel):
+    """Admin overrides when confirming a proposed slot. Omitted fields stay."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "scheduled_at": "2026-08-20T10:00:00Z",
+                "duration_minutes": 45,
+                "location": "https://meet.saci.example/intro",
+                "notes": "SACI hosts.",
+            }
+        },
+    )
+
+    scheduled_at: datetime | None = None
+    duration_minutes: int | None = Field(default=None, ge=15, le=180)
+    location: str | None = Field(default=None, max_length=400)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class MeetingResponse(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "id": "8c2f0e2a-0000-4000-8000-000000000001",
+                "interest_id": "6b1f0e2a-0000-4000-8000-000000000001",
+                "scheduled_at": "2026-08-20T10:00:00Z",
+                "duration_minutes": 45,
+                "location": "https://meet.saci.example/intro",
+                "notes": "SACI hosts.",
+                "status": "scheduled",
+                "created_at": "2026-08-15T12:00:00Z",
+            }
+        },
+    )
+
+    id: uuid.UUID
+    interest_id: uuid.UUID
+    scheduled_at: datetime
+    duration_minutes: int
+    location: str | None
+    notes: str | None
+    status: MeetingStatus
+    created_at: datetime
+
+    @classmethod
+    def of(cls, meeting: Meeting) -> "MeetingResponse":
+        return cls(
+            id=meeting.id,
+            interest_id=meeting.interest_id,
+            scheduled_at=meeting.scheduled_at,
+            duration_minutes=meeting.duration_minutes,
+            location=meeting.location,
+            notes=meeting.notes,
+            status=meeting.status,
+            created_at=meeting.created_at,
+        )

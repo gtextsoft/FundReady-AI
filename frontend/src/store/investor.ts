@@ -10,9 +10,9 @@ type InvestorState = {
   stages: string[];
   sort: SortKey;
   page: number;
-  watchlist: number[];
+  watchlist: string[];
   /** Companies the user has already asked to be introduced to. */
-  introRequested: number[];
+  introRequested: string[];
 
   setQuery(q: string): void;
   setMinScore(n: number): void;
@@ -25,8 +25,8 @@ type InvestorState = {
   activeFilterCount(): number;
 
   loadWatchlist(): Promise<void>;
-  toggleWatch(id: number): Promise<void>;
-  requestIntro(id: number): Promise<void>;
+  toggleWatch(id: string): Promise<void>;
+  requestIntro(id: string): Promise<void>;
 };
 
 export const useInvestor = create<InvestorState>((set, get) => ({

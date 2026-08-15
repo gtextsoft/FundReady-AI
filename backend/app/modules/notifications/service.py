@@ -35,7 +35,10 @@ from app.core.config import Settings, get_settings
 from app.modules.notifications.templates import (
     EmailContent,
     audit_report_email,
+    evidence_result_email,
+    meeting_booked_email,
     password_reset_email,
+    task_assigned_email,
     verification_email,
     welcome_email,
 )
@@ -196,3 +199,19 @@ async def send_audit_report_email(
     return await dispatch_email(
         to, audit_report_email(report, app_url), settings=settings
     )
+
+
+async def send_task_assigned_email(to: str, *, settings: Settings | None = None) -> bool:
+    return await dispatch_email(to, task_assigned_email(), settings=settings)
+
+
+async def send_evidence_result_email(
+    to: str, *, passed: bool, settings: Settings | None = None
+) -> bool:
+    return await dispatch_email(
+        to, evidence_result_email(passed=passed), settings=settings
+    )
+
+
+async def send_meeting_booked_email(to: str, *, settings: Settings | None = None) -> bool:
+    return await dispatch_email(to, meeting_booked_email(), settings=settings)

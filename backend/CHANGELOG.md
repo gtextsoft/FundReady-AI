@@ -10,6 +10,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Web/API contract close (T4.1, T4.4, T4.5, T5.3).** Endpoints the Next.js
+  app already called now exist: investor thesis (`GET/PUT /v1/investor/me`,
+  admin review), watchlist, company-verification badge, admin startup/user
+  lists, in-app notifications, SACI-hosted meetings, interest withdraw, and
+  summary-tier investor analyst chat. Discovery requires an accepted thesis.
+- **Benchmark seed.** `python scripts/seed_benchmarks.py` writes global and
+  NG/AE/GB/US starting bands so live audits can leave `provisional`.
+- **Transactional mail** for task assigned, evidence result, and meeting booked.
+- **RLS backstop** (migration `0023_rls_backstop`). Policies are cosmetic until
+  the deployed role is `NOBYPASSRLS` (D19).
+
+### Added
+
 - **Product & event catalogue (T3.2 / D18).** One model with a `program` ·
   `mentorship` · `event` discriminator; admin CRUD; region and gap-tag
   matching. The web programmes and admin products screens were calling

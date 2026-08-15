@@ -8,9 +8,15 @@ import { PageSkeleton } from "@/components/ui/skeleton";
 import { PanelList, PanelRow } from "@/components/ui/panel";
 import { api, type NotificationItem } from "@/lib/api";
 import { relativeTime } from "@/lib/utils";
+import { useSession } from "@/stores/session";
 
-function hrefFor(n: NotificationItem): string | null {
+function hrefFor(n: NotificationItem, role: string | undefined): string | null {
   const p = n.payload ?? {};
+  if (n.kind.includes("meeting")) {
+    if (role === "founder") return "/founder/requests";
+    if (role === "investor") return "/investor/interests";
+    return "/admin";
+  }
   if (typeof p.startup_id === "string") return `/investor/company/${p.startup_id}`;
   if (typeof p.task_id === "string") return "/founder/tasks";
   if (n.kind.includes("call") || n.kind.includes("request")) return "/founder/requests";
@@ -20,6 +26,7 @@ function hrefFor(n: NotificationItem): string | null {
 }
 
 export function AlertsInbox({ emptyBody }: { emptyBody: string }) {
+  const role = useSession((s) => s.session?.role);
   const [items, setItems] = useState<NotificationItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -72,7 +79,7 @@ export function AlertsInbox({ emptyBody }: { emptyBody: string }) {
       <PageHeader title="Alerts" description="Newest first. Unread items clear shortly after you open this page." />
       <PanelList>
         {items.map((n) => {
-          const href = hrefFor(n);
+          const href = hrefFor(n, role);
           const inner = (
             <>
               <div className="flex justify-between gap-4">

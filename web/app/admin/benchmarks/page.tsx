@@ -25,8 +25,7 @@ export default function BenchmarksPage() {
   const [busy, setBusy] = useState(false);
   const load = useLoad(
     async () => {
-      const page = await api.listBenchmarks();
-      return page.items;
+      return api.listBenchmarks();
     },
     [],
     (d) => d.length === 0,

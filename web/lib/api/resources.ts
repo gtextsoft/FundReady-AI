@@ -1,5 +1,4 @@
-import { notYet } from "./errors";
-import { request, requestBytes } from "./http";
+import { request, requestBytes, requestStream } from "./http";
 
 export type WireField = {
   value: string | number | boolean | null;
@@ -123,16 +122,6 @@ export type Interest = {
   revealed_run_ids: string[];
 };
 
-export type CallRequest = {
-  id: string;
-  interest_id: string;
-  proposed_at: string;
-  message: string | null;
-  status: "pending" | "accepted" | "declined";
-  created_at: string;
-  responded_at: string | null;
-};
-
 export type Meeting = {
   id: string;
   interest_id: string;
@@ -167,6 +156,7 @@ export type Product = {
   event_starts_at: string | null;
   event_location: string | null;
   active: boolean;
+  checkout_configured: boolean;
 };
 
 export type Enrolment = {
@@ -253,6 +243,41 @@ export type DocumentRow = {
   updated_at: string;
 };
 
+export type AdminStats = {
+  startups_total: number;
+  startups_published: number;
+  startups_with_succeeded_audit: number;
+  users_founders: number;
+  users_investors: number;
+  users_admins: number;
+  interests_pending: number;
+};
+
+export type CorpusRecord = {
+  startup_id: string;
+  sector: string | null;
+  stage: string | null;
+  country: string | null;
+  currency: string | null;
+  verification: ProfileResponse["company_verification_status"];
+  published: boolean;
+  fields: Record<string, unknown>;
+  latest_audit: Record<string, unknown> | null;
+  tasks: { dimension: string; action: string; status: string; requirement: string }[];
+};
+
+export type CorpusPage = Page<CorpusRecord> & { purpose: "model_training" };
+
+export function queryString(params: Record<string, string | number | boolean | undefined | null>) {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === "") continue;
+    search.set(key, String(value));
+  }
+  const encoded = search.toString();
+  return encoded ? `?${encoded}` : "";
+}
+
 export const api = {
   getProfile: () => request<ProfileResponse>("/v1/startups/me"),
   getProfileById: (id: string) => request<ProfileResponse>(`/v1/startups/${id}`),
@@ -288,7 +313,7 @@ export const api = {
   completeDocument: (id: string) =>
     request<DocumentRow>(`/v1/documents/${id}/complete`, { method: "POST" }),
   listDocuments: (startupId: string, qs = "") =>
-    request<Page<DocumentRow>>(`/v1/startups/${startupId}/documents${qs}`),
+    request<DocumentRow[]>(`/v1/startups/${startupId}/documents${qs}`),
 
   requestAudit: (startupId: string) =>
     request<AuditRun>(`/v1/startups/${startupId}/audits`, { method: "POST" }),
@@ -328,6 +353,24 @@ export const api = {
       `/v1/startups/${startupId}/mentor/chat`,
       { method: "POST", body: { message, history } },
     ),
+  chatMentorStream: (
+    startupId: string,
+    message: string,
+    history: { role: string; content: string }[],
+    onDelta: (text: string) => void,
+  ) =>
+    requestStream(
+      `/v1/startups/${startupId}/mentor/chat/stream`,
+      { message, history },
+      (event, data) => {
+        if (event === "delta" && typeof data.text === "string") onDelta(data.text);
+      },
+    ).then((done) => ({
+      reply: typeof done.reply === "string" ? done.reply : "",
+      citations: Array.isArray(done.citations)
+        ? (done.citations as { kind: string; ref: string }[])
+        : [],
+    })),
 
   getInvestorMe: () => request<InvestorProfile>("/v1/investor/me"),
   putInvestorMe: (body: Record<string, unknown>) =>
@@ -358,6 +401,8 @@ export const api = {
     }),
   listInterests: (status?: string) =>
     request<Interest[]>(`/v1/interests${status ? `?status=${status}` : ""}`),
+  withdrawInterest: (id: string) =>
+    request<Interest>(`/v1/interests/${id}/withdraw`, { method: "POST" }),
   approveInterest: (id: string) =>
     request<Interest>(`/v1/admin/interests/${id}/approve`, { method: "POST" }),
   declineInterest: (id: string) =>
@@ -377,13 +422,26 @@ export const api = {
       method: "POST",
       body,
     }),
+  proposeMeeting: (
+    interestId: string,
+    body: { scheduled_at: string; duration_minutes?: number; message?: string },
+  ) =>
+    request<Meeting>(`/v1/interests/${interestId}/meetings/propose`, {
+      method: "POST",
+      body,
+    }),
+  confirmMeeting: (
+    interestId: string,
+    meetingId: string,
+    body: { scheduled_at?: string; duration_minutes?: number; location?: string; notes?: string } = {},
+  ) =>
+    request<Meeting>(`/v1/admin/interests/${interestId}/meetings/${meetingId}/confirm`, {
+      method: "POST",
+      body,
+    }),
   listMeetings: (interestId: string) =>
     request<Meeting[]>(`/v1/interests/${interestId}/meetings`),
-  // T4.5 call HTTP is not mounted — a real GET `/v1/calls` 404s.
-  requestCall: (_interestId: string, _proposed_at: string, _message?: string) =>
-    notYet<CallRequest>("Call scheduling", "T4.5"),
-  listCalls: () => Promise.resolve<CallRequest[]>([]),
-  respondCall: (_id: string, _accept: boolean) => notYet<CallRequest>("Call requests", "T4.5"),
+  listMyMeetings: () => request<Meeting[]>("/v1/me/meetings"),
 
   checkout: () =>
     request<{ checkout_url: string; session_id: string }>("/v1/billing/checkout", {
@@ -400,16 +458,21 @@ export const api = {
     request<{ status: string; checkout_url?: string | null }>(`/v1/products/${id}/enrol`, {
       method: "POST",
     }),
-  listEnrolments: () => request<Enrolment[]>("/v1/me/enrolments"),
+  listEnrolments: () => request<Page<Enrolment>>("/v1/me/enrolments"),
 
   listRecommendations: (startupId: string) =>
     request<Page<Product>>(`/v1/startups/${startupId}/recommendations`),
 
-  // T5.3 in-app inbox is not mounted — notifications only send email today.
   listNotifications: () =>
-    Promise.resolve<Page<NotificationItem>>({ items: [], total: 0, limit: 20, offset: 0 }),
-  markRead: (_ids: string[]) => notYet<void>("Notifications", "T5.3"),
+    request<Page<NotificationItem>>("/v1/notifications"),
+  markRead: (ids: string[]) =>
+    request<Page<NotificationItem>>("/v1/notifications/read", {
+      method: "POST",
+      body: { ids },
+    }).then(() => undefined),
 
+  adminStats: () => request<AdminStats>("/v1/admin/stats"),
+  exportCorpus: (qs = "") => request<CorpusPage>(`/v1/admin/corpus${qs}`),
   listUsers: (qs = "") => request<Page<UserRow>>(`/v1/admin/users${qs}`),
   provisionAdmin: (email: string, password: string) =>
     request<UserRow>("/v1/admin/users", { method: "POST", body: { email, password } }),
@@ -421,7 +484,7 @@ export const api = {
     request<UserRow>(`/v1/admin/users/${id}/role`, { method: "PATCH", body: { role } }),
   listStartups: (qs = "") => request<Page<ProfileResponse>>(`/v1/admin/startups${qs}`),
 
-  listBenchmarks: (qs = "") => request<Page<Benchmark>>(`/v1/benchmarks${qs}`),
+  listBenchmarks: (qs = "") => request<Benchmark[]>(`/v1/benchmarks${qs}`),
   getBenchmark: (id: string) => request<Benchmark>(`/v1/benchmarks/${id}`),
   createBenchmark: (body: Record<string, unknown>) =>
     request<Benchmark>("/v1/benchmarks", { method: "POST", body }),

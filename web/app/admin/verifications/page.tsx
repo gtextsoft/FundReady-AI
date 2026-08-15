@@ -25,8 +25,8 @@ export default function VerificationsPage() {
       const startups = [...page.items, ...submitted.items];
       const rows: StartupRow[] = [];
       for (const s of startups) {
-        const docs = await api.listDocuments(s.id).catch(() => ({ items: [] as DocumentRow[] }));
-        rows.push({ startup: s, documents: docs.items });
+        const docs = await api.listDocuments(s.id).catch(() => [] as DocumentRow[]);
+        rows.push({ startup: s, documents: docs });
       }
       return { theses: theses.items, companies: rows };
     },

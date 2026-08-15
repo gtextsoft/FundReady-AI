@@ -3,17 +3,21 @@ export function humanize(value: string | null | undefined): string {
   return value.replace(/[_-]+/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
 }
 
-export function founderAccount(session: {
-  emailVerified: boolean;
-  trialEndsAt: string;
-  subscriptionStatus: "none" | "active" | "past_due" | "canceled";
-  hasAccess?: boolean;
-} | null) {
+export function founderAccount(
+  session: {
+    emailVerified: boolean;
+    trialEndsAt: string;
+    subscriptionStatus: "none" | "active" | "past_due" | "canceled";
+    hasAccess?: boolean;
+  } | null,
+  verification?: "none" | "submitted" | "in_review" | "accepted" | "rejected",
+) {
   return {
     emailVerified: session?.emailVerified ?? false,
     trialEndsAt: session?.trialEndsAt ?? "",
     subscriptionStatus: session?.subscriptionStatus ?? "none" as const,
     hasAccess: session?.hasAccess,
+    verification: verification ?? "none",
   };
 }
 

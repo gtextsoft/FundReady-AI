@@ -7,7 +7,7 @@ import { Badge, ErrorState } from "@/components/ui/states";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { PanelList, PanelRow } from "@/components/ui/panel";
-import { api, type AuditReport, type AuditRun, type ProfileResponse } from "@/lib/api";
+import { api, queryString, type AuditReport, type AuditRun, type ProfileResponse } from "@/lib/api";
 import { humanize } from "@/lib/format";
 import { useLoad } from "@/lib/hooks/use-load";
 import { toast } from "sonner";
@@ -54,22 +54,46 @@ export default function AdminStartupDossier() {
           </PanelRow>
         ))}
       </PanelList>
-      <Button
-        type="button"
-        variant="ghost"
-        onClick={async () => {
-          const tasks = await api.listTasks(id, "?status=failed");
-          const locked = tasks.items.find((t) => t.attempts_remaining === 0);
-          if (!locked) {
-            toast.message("No locked failed task.");
-            return;
-          }
-          await api.reopenTask(locked.id);
-          toast.success("Task reopened.");
-        }}
-      >
-        Reopen a locked task
-      </Button>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={async () => {
+            const tasks = await api.listTasks(id, "?status=failed");
+            const locked = tasks.items.find((t) => t.attempts_remaining === 0);
+            if (!locked) {
+              toast.message("No locked failed task.");
+              return;
+            }
+            await api.reopenTask(locked.id);
+            toast.success("Task reopened.");
+          }}
+        >
+          Reopen a locked task
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={async () => {
+            const page = await api.exportCorpus(queryString({ startup_id: id, limit: 1 }));
+            const record = page.items[0];
+            if (!record) {
+              toast.message("No corpus record for this startup.");
+              return;
+            }
+            const blob = new Blob([JSON.stringify(record, null, 2)], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `fundready-corpus-${id.slice(0, 8)}.json`;
+            link.click();
+            URL.revokeObjectURL(url);
+            toast.success("Downloaded identity-stripped record.");
+          }}
+        >
+          Download training record
+        </Button>
+      </div>
     </div>
   );
 }

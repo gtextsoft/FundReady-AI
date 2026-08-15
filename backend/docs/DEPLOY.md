@@ -238,7 +238,16 @@ no-ops rather than failing.
 `DATABASE_URL`, so all ten `requires_database` files skip — including tenant
 isolation and ownership. For a codebase whose §4 is non-negotiable that is the
 gap worth closing first: add a throwaway Neon branch as a `TEST_DATABASE_URL`
-repository secret.
+repository secret. Point `APP_LINK_BASE_URL` at `https://fundreadyai.vercel.app`
+for the web client.
+
+**RLS is enabled as a backstop (migration `0023`) but the table owner still
+bypasses it.** Create a least-privilege `fundready_app` role with `NOBYPASSRLS`,
+`GRANT` DML only, and switch `DATABASE_URL` to that role. Until then policies
+are cosmetic (D19).
+
+**Rotate credentials that were pasted into chat** (Cloudflare account token,
+Upstash REST token, Resend key) — see `STATUS.md`.
 
 **The worker holds no request context.** Errors there never reach a user. Set
 `SENTRY_DSN` or accept that a failed audit is visible only as a `failed` run and
@@ -272,3 +281,10 @@ It does **not** get you:
 (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_UNLOCK`),
 point Stripe webhooks at `POST /v1/billing/webhooks/stripe`, and keep
 `AI_DAILY_BUDGET_TOKENS_PER_USER` at a sane cap (default 500000).
+
+**Catalogue prices.** The founder unlock uses `STRIPE_PRICE_ID_UNLOCK`. Each
+priced programme or event needs its own Stripe Price created in the Dashboard.
+Paste the `price_…` id (and the matching amount/currency) on
+`POST /v1/admin/products` or the admin Products screen. Do not invent price
+ids in code. A priced item without a Price id lists as “Needs Stripe price”
+and enrol returns `422 checkout_not_configured`.

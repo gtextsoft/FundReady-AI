@@ -7,7 +7,7 @@ import { EmptyState, ErrorState, LockedCard } from "@/components/ui/states";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { Panel, SectionLabel } from "@/components/ui/panel";
-import { api, type AuditReport, type AuditRun, type ReadinessSummary } from "@/lib/api";
+import { api, type AuditReport, type AuditRun, type Product, type ReadinessSummary } from "@/lib/api";
 import { daysLeftInTrial, gate, gateCopy, hasAccess } from "@/lib/domain/access";
 import { founderAccount } from "@/lib/format";
 import { useStartup } from "@/lib/hooks/use-startup";
@@ -22,6 +22,7 @@ export default function FounderHome() {
   const [run, setRun] = useState<AuditRun | null>(null);
   const [deskError, setDeskError] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
+  const [recs, setRecs] = useState<Product[]>([]);
 
   useEffect(() => {
     if (!profile) return;
@@ -35,6 +36,8 @@ export default function FounderHome() {
         if (latest?.status === "succeeded") {
           setReport(await api.getAuditReport(profile.id, latest.id));
         }
+        const recPage = await api.listRecommendations(profile.id).catch(() => null);
+        setRecs(recPage?.items ?? []);
         setDeskError(null);
       } catch (err) {
         setDeskError(err instanceof Error ? err.message : "Could not load desk details.");
@@ -54,7 +57,7 @@ export default function FounderHome() {
     );
   }
 
-  const account = founderAccount(session);
+  const account = founderAccount(session, profile.company_verification_status);
   const paid = hasAccess(account);
   const days = daysLeftInTrial(account);
   const vis = gate(account, "investorVisibility");
@@ -223,6 +226,23 @@ export default function FounderHome() {
           )}
         </Panel>
       </div>
+
+      {recs.length > 0 ? (
+        <Panel>
+          <SectionLabel>Recommended next</SectionLabel>
+          <ul className="mt-3 space-y-2">
+            {recs.slice(0, 3).map((item) => (
+              <li key={item.id} className="text-sm text-cream">
+                {item.title}
+                <span className="ml-2 text-mist">{item.kind}</span>
+              </li>
+            ))}
+          </ul>
+          <Button href="/founder/programmes" variant="quiet" size="sm" className="mt-3 px-0">
+            Browse programmes →
+          </Button>
+        </Panel>
+      ) : null}
     </div>
   );
 }

@@ -67,7 +67,16 @@ async def _user(session: AsyncSession, role: Role = Role.FOUNDER) -> CurrentUser
     assert user is not None
     user.role = role
     user.status = AccountStatus.ACTIVE
+    if role is Role.ADMIN:
+        user.mfa_enabled = True
     await session.flush()
+    if role is Role.INVESTOR:
+        from app.modules.investor.models import ThesisReviewStatus
+        from app.modules.investor.repository import InvestorProfileRepository
+
+        row = await InvestorProfileRepository(session).get_or_create(user.id)
+        row.review_status = ThesisReviewStatus.ACCEPTED
+        await session.flush()
     return CurrentUser(
         id=user.id,
         role=role,

@@ -7,11 +7,12 @@ import { Button } from '@/components/ui/button';
 import { Chip } from '@/components/ui/controls';
 import { Mark } from '@/components/ui/mark';
 import { Mono, Txt, TxtSemi } from '@/components/ui/text';
-import { CompanyCard } from './company-card';
+import { DiscoveryCard } from './company-card';
 import { FilterSheet } from './filter-sheet';
 import { C, Font } from '@/theme/tokens';
 import { Unavailable } from '@/components/unavailable';
-import { api, type CompanySummary } from '@/api';
+import { api } from '@/api';
+import type { DiscoveredStartup } from '@/domain/discovery';
 import type { SortKey } from '@/domain/types';
 import { route } from '@/lib/routes';
 import { useInvestor } from '@/store/investor';
@@ -33,7 +34,7 @@ const SORTS: { value: SortKey; label: string }[] = [
 export function DealflowScreen({ mode }: { mode: 'deal' | 'watch' }) {
   const insets = useSafeAreaInsets();
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [rows, setRows] = useState<CompanySummary[]>([]);
+  const [rows, setRows] = useState<DiscoveredStartup[]>([]);
   const [total, setTotal] = useState(0);
   const [limit, setLimit] = useState(PAGE);
   const [error, setError] = useState<unknown>(null);
@@ -70,11 +71,23 @@ export function DealflowScreen({ mode }: { mode: 'deal' | 'watch' }) {
     let live = true;
     // `limit` grows as the list is scrolled — one page request covers it all.
     api
-      .listCompanies(request, 1, limit)
+      .discoverStartups({
+        sector: request.sectors[0],
+        stage: request.stages[0] as never,
+        limit,
+        offset: 0,
+      })
       .then((page) => {
         if (!live) return;
-        setRows(page.rows);
-        setTotal(page.total);
+        let items = page.items;
+        if (mode === 'watch') {
+          items = items.filter((row) => watchlist.includes(row.startupId));
+        }
+        if (request.minScore > 0) {
+          items = items.filter((row) => (row.fundability.score ?? 0) >= request.minScore);
+        }
+        setRows(items);
+        setTotal(mode === 'watch' ? items.length : page.total);
         setError(null);
       })
       .catch((e: unknown) => {
@@ -183,17 +196,17 @@ export function DealflowScreen({ mode }: { mode: 'deal' | 'watch' }) {
       {/* list */}
       <FlatList
         data={rows}
-        keyExtractor={(c) => String(c.id)}
+        keyExtractor={(c) => c.startupId}
         contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 12, gap: 9 }}
         showsVerticalScrollIndicator={false}
         onEndReached={loadMore}
         onEndReachedThreshold={0.4}
         renderItem={({ item }) => (
-          <CompanyCard
+          <DiscoveryCard
             company={item}
-            watched={watchlist.includes(item.id)}
-            onPress={() => router.push(route(`/investor/company/${item.id}`))}
-            onToggleWatch={() => toggleWatch(item.id)}
+            watched={watchlist.includes(item.startupId)}
+            onPress={() => router.push(route(`/investor/company/${item.startupId}`))}
+            onToggleWatch={() => toggleWatch(item.startupId)}
           />
         )}
         ListFooterComponent={

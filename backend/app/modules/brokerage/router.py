@@ -20,6 +20,10 @@ from app.modules.brokerage.models import InterestStatus
 from app.modules.brokerage.schemas import (
     InterestCreate,
     InterestResponse,
+    MeetingConfirm,
+    MeetingCreate,
+    MeetingPropose,
+    MeetingResponse,
     RevealResponse,
 )
 
@@ -167,3 +171,138 @@ async def read_revealed_report(
     session: SessionDep,
 ) -> AdminReport:
     return await service.read_revealed_report(session, actor, interest_id, run_id)
+
+
+@router.post(
+    "/interests/{interest_id}/withdraw",
+    response_model=InterestResponse,
+    summary="Withdraw a pending interest",
+    description=(
+        "The investor cancels a request that SACI has not decided yet. "
+        "`409` if it is already decided." + BROKERAGE_NOTE
+    ),
+    responses=error_responses(401, 403, 404, 409, 422),
+)
+async def withdraw_interest(
+    interest_id: uuid.UUID, actor: CurrentUserDep, session: SessionDep
+) -> InterestResponse:
+    return await service.withdraw_interest(session, actor, interest_id)
+
+
+@router.post(
+    "/interests/{interest_id}/meetings/propose",
+    status_code=status.HTTP_201_CREATED,
+    response_model=MeetingResponse,
+    summary="Propose a meeting slot",
+    description=(
+        "The investor who owns an **approved** interest proposes a time. "
+        "SACI still has to confirm — the founder is not notified until then. "
+        "`409` if the interest is not approved." + BROKERAGE_NOTE
+    ),
+    responses=error_responses(401, 403, 404, 409, 422),
+)
+async def propose_meeting(
+    interest_id: uuid.UUID,
+    payload: MeetingPropose,
+    actor: CurrentUserDep,
+    session: SessionDep,
+) -> MeetingResponse:
+    return await service.propose_meeting(
+        session,
+        actor,
+        interest_id,
+        scheduled_at=payload.scheduled_at,
+        duration_minutes=payload.duration_minutes,
+        message=payload.message,
+    )
+
+
+@router.post(
+    "/admin/interests/{interest_id}/meetings",
+    response_model=MeetingResponse,
+    summary="Schedule a SACI-brokered meeting",
+    description=(
+        "**SACI admins with MFA only.** Books a meeting against an "
+        "**approved** interest. SACI is the required host — only an admin "
+        "can create a confirmed row. `409` if the interest is not approved."
+    ),
+    responses=error_responses(401, 403, 404, 409, 422),
+)
+async def schedule_meeting(
+    interest_id: uuid.UUID,
+    payload: MeetingCreate,
+    actor: CurrentAdmin,
+    session: SessionDep,
+) -> MeetingResponse:
+    return await service.schedule_meeting(
+        session,
+        actor,
+        interest_id,
+        scheduled_at=payload.scheduled_at,
+        duration_minutes=payload.duration_minutes,
+        location=payload.location,
+        notes=payload.notes,
+    )
+
+
+@router.post(
+    "/admin/interests/{interest_id}/meetings/{meeting_id}/confirm",
+    response_model=MeetingResponse,
+    summary="Confirm a proposed meeting",
+    description=(
+        "**SACI admins with MFA only.** Accepts an investor proposal and "
+        "notifies both sides. May override time, location, or notes. "
+        "`409` if the row is not `proposed`."
+    ),
+    responses=error_responses(401, 403, 404, 409, 422),
+)
+async def confirm_meeting(
+    interest_id: uuid.UUID,
+    meeting_id: uuid.UUID,
+    payload: MeetingConfirm,
+    actor: CurrentAdmin,
+    session: SessionDep,
+) -> MeetingResponse:
+    return await service.confirm_meeting(
+        session,
+        actor,
+        interest_id,
+        meeting_id,
+        scheduled_at=payload.scheduled_at,
+        duration_minutes=payload.duration_minutes,
+        location=payload.location,
+        notes=payload.notes,
+    )
+
+
+@router.get(
+    "/interests/{interest_id}/meetings",
+    response_model=list[MeetingResponse],
+    summary="List meetings for an interest",
+    description=(
+        "The investor who owns the interest, or a SACI admin with MFA. "
+        "Newest first." + BROKERAGE_NOTE
+    ),
+    responses=error_responses(401, 403, 404, 422),
+)
+async def list_meetings(
+    interest_id: uuid.UUID, actor: CurrentUserDep, session: SessionDep
+) -> list[MeetingResponse]:
+    return await service.list_meetings(session, actor, interest_id)
+
+
+@router.get(
+    "/me/meetings",
+    response_model=list[MeetingResponse],
+    summary="List meetings for the caller",
+    description=(
+        "Investors see proposed and scheduled meetings on their interests. "
+        "Founders see **scheduled** meetings only — a proposal is not an "
+        "introduction. Admins with MFA see every meeting." + BROKERAGE_NOTE
+    ),
+    responses=error_responses(401, 403, 422),
+)
+async def list_my_meetings(
+    actor: CurrentUserDep, session: SessionDep
+) -> list[MeetingResponse]:
+    return await service.list_my_meetings(session, actor)

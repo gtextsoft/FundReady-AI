@@ -68,6 +68,12 @@ export type WireProfileResponse = {
   currency: string | null;
   fields: Record<string, WireField>;
   missing_fields: string[];
+  company_verification_status?:
+    | 'none'
+    | 'submitted'
+    | 'in_review'
+    | 'accepted'
+    | 'rejected';
   created_at: string;
   updated_at: string;
 };

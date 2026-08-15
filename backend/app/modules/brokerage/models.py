@@ -21,7 +21,13 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
 
-__all__ = ["Interest", "InterestStatus", "ReportReveal"]
+__all__ = [
+    "Interest",
+    "InterestStatus",
+    "Meeting",
+    "MeetingStatus",
+    "ReportReveal",
+]
 
 
 class InterestStatus(StrEnum):
@@ -144,3 +150,41 @@ class ReportReveal(Base):
 
     def __repr__(self) -> str:
         return f"<ReportReveal {self.id} run={self.audit_run_id}>"
+
+
+class MeetingStatus(StrEnum):
+    PROPOSED = "proposed"
+    SCHEDULED = "scheduled"
+    CANCELLED = "cancelled"
+
+
+class Meeting(Base):
+    """A SACI-brokered meeting. SACI is a required participant."""
+
+    __tablename__ = "meetings"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    interest_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("interests.id", ondelete="CASCADE"), index=True
+    )
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    duration_minutes: Mapped[int]
+    location: Mapped[str | None] = mapped_column(String(400))
+    notes: Mapped[str | None] = mapped_column(String(2000))
+    status: Mapped[MeetingStatus] = mapped_column(
+        SAEnum(
+            MeetingStatus,
+            native_enum=False,
+            length=16,
+            name="meeting_status",
+            values_callable=lambda enum: [member.value for member in enum],
+        ),
+        default=MeetingStatus.SCHEDULED,
+        server_default=MeetingStatus.SCHEDULED.value,
+    )
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

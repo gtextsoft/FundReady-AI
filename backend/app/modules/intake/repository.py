@@ -13,12 +13,16 @@ query someone added without the filter would be the hole.
 import uuid
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.intake.documents import DocumentKind
 from app.modules.intake.fields import Stage
-from app.modules.intake.models import Document, StartupProfile
+from app.modules.intake.models import (
+    CompanyVerificationStatus,
+    Document,
+    StartupProfile,
+)
 
 
 class StartupProfileRepository:
@@ -59,6 +63,60 @@ class StartupProfileRepository:
         self._session.add(profile)
         await self._session.flush()
         return profile
+
+    async def list_all(
+        self,
+        *,
+        verification: CompanyVerificationStatus | None,
+        q: str | None = None,
+        country: str | None = None,
+        sector: str | None = None,
+        stage: Stage | None = None,
+        published: bool | None = None,
+        startup_id: uuid.UUID | None = None,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[StartupProfile], int]:
+        statement = select(StartupProfile)
+        if startup_id is not None:
+            statement = statement.where(StartupProfile.id == startup_id)
+        if verification is not None:
+            statement = statement.where(
+                StartupProfile.company_verification_status == verification
+            )
+        if country:
+            statement = statement.where(
+                StartupProfile.country == country.strip().upper()
+            )
+        if sector:
+            statement = statement.where(
+                func.lower(StartupProfile.sector) == sector.strip().lower()
+            )
+        if stage is not None:
+            statement = statement.where(StartupProfile.stage == stage)
+        if published is not None:
+            statement = statement.where(StartupProfile.investor_visible.is_(published))
+        if q and q.strip():
+            needle = f"%{q.strip().lower()}%"
+            statement = statement.where(
+                func.lower(func.coalesce(StartupProfile.name, "")).like(needle)
+                | func.lower(func.coalesce(StartupProfile.sector, "")).like(needle)
+                | func.lower(func.coalesce(StartupProfile.country, "")).like(needle)
+            )
+        total = int(
+            await self._session.scalar(
+                select(func.count()).select_from(statement.subquery())
+            )
+            or 0
+        )
+        rows = list(
+            await self._session.scalars(
+                statement.order_by(StartupProfile.updated_at.desc())
+                .limit(limit)
+                .offset(offset)
+            )
+        )
+        return rows, total
 
 
 class DocumentRepository:

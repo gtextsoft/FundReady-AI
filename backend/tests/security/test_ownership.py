@@ -35,12 +35,19 @@ class Owned:
     owner_id: uuid.UUID
 
 
-def actor(role: Role = Role.FOUNDER, user_id: uuid.UUID | None = None) -> CurrentUser:
+def actor(
+    role: Role = Role.FOUNDER,
+    user_id: uuid.UUID | None = None,
+    *,
+    mfa_enabled: bool | None = None,
+) -> CurrentUser:
+    enrolled = role is Role.ADMIN if mfa_enabled is None else mfa_enabled
     return CurrentUser(
         id=user_id or uuid.uuid4(),
         role=role,
         status=AccountStatus.ACTIVE,
         email_verified=True,
+        mfa_enabled=enrolled,
     )
 
 
@@ -139,6 +146,15 @@ class TestAdmin:
         """Exempt from ownership, not from existence."""
         with pytest.raises(NotFoundError):
             owned_or_404(None, actor(role=Role.ADMIN), message=MESSAGE)
+
+    def test_an_unenrolled_admin_is_refused(self) -> None:
+        """Cross-tenant reads are an admin capability and need MFA."""
+        with pytest.raises(ForbiddenError):
+            owned_or_404(
+                Owned(owner_id=uuid.uuid4()),
+                actor(role=Role.ADMIN, mfa_enabled=False),
+                message=MESSAGE,
+            )
 
 
 class TestTheRefusalLogLeaksNothing:

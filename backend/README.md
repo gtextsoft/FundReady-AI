@@ -70,11 +70,11 @@ python -m app                            # API (works on every platform)
 uvicorn app.main:app --reload            # API (dev, with reload)
 python -m app.workers.queue              # background worker
 
-# Database
-alembic revision --autogenerate -m "msg" # create a migration
-alembic upgrade head                     # apply migrations
-alembic current                          # which revision is applied
-alembic downgrade -1                     # roll back one revision
+# Database (use `python -m alembic` on Windows — `alembic` is often not on PATH)
+python -m alembic revision --autogenerate -m "msg"
+python -m alembic upgrade head
+python -m alembic current
+python -m alembic downgrade -1
 
 # Quality
 pytest                                   # all tests

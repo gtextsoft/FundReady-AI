@@ -36,7 +36,7 @@ import uuid
 from typing import Protocol, TypeVar
 
 from app.core.errors import NotFoundError
-from app.core.security import CurrentUser, Role
+from app.core.security import CurrentUser, Role, assert_admin
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +84,8 @@ def owned_or_404(
     if resource is None:
         raise NotFoundError(message)
     if actor.role is Role.ADMIN:
+        # Cross-tenant reads are an admin capability (AUTH.md section 9).
+        assert_admin(actor)
         return resource
     if resource.owner_id != actor.id:
         # Role only. Logging the actor id, the resource id, or the owner id

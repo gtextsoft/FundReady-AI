@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import AsyncIterator
 from typing import Any
+
+from pydantic import ValidationError
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,16 +38,14 @@ from app.modules.mentor.schemas import (
 from app.modules.readiness import service as readiness
 
 
-async def chat(
+async def _prepare_turn(
     session: AsyncSession,
     actor: CurrentUser,
     startup_id: uuid.UUID,
     message: str,
     history: list[ChatTurn],
-    *,
-    client: AiClient | None = None,
-) -> MentorChatResponse:
-    """Answer one mentor turn for the owner of `startup_id`."""
+) -> str:
+    """Ownership-checked CONTEXT + fenced user payload for one mentor turn."""
     profile = await intake.get_profile(session, actor, startup_id)
     runs = await audit.list_audit_runs(session, actor, profile.id)
     succeeded = next((r for r in runs if r.status is AuditStatus.SUCCEEDED), None)
@@ -86,26 +87,16 @@ async def chat(
             for t in task_rows
         ],
     )
-
-    ai = client or AiClient(get_settings())
     history_block = _format_history(history)
     user_payload = (
         f"CONTEXT:\n{context}\n\n"
         f"PRIOR_TURNS:\n{history_block}\n\n"
         f"FOUNDER_QUESTION:\n{message.strip()}"
     )
-    fenced = fence(user_payload, label="founder_mentor_turn")
+    return fence(user_payload, label="founder_mentor_turn").text
 
-    result = await ai.complete(
-        tier=ModelTier.CHAT,
-        prompt=MENTOR_SYSTEM_V1,
-        schema=MentorReplyOut,
-        system=uncached_system(UNTRUSTED_RULE, MENTOR_SYSTEM_V1.text),
-        messages=[{"role": "user", "content": fenced.text}],
-        user_id=str(actor.id),
-    )
 
-    out = result.output
+def _response_from_output(out: MentorReplyOut) -> MentorChatResponse:
     return MentorChatResponse(
         reply=out.reply,
         citations=[
@@ -113,6 +104,71 @@ async def chat(
             for c in out.citations
         ],
     )
+
+
+async def chat(
+    session: AsyncSession,
+    actor: CurrentUser,
+    startup_id: uuid.UUID,
+    message: str,
+    history: list[ChatTurn],
+    *,
+    client: AiClient | None = None,
+) -> MentorChatResponse:
+    """Answer one mentor turn for the owner of `startup_id`."""
+    fenced = await _prepare_turn(session, actor, startup_id, message, history)
+    ai = client or AiClient(get_settings())
+    result = await ai.complete(
+        tier=ModelTier.CHAT,
+        prompt=MENTOR_SYSTEM_V1,
+        schema=MentorReplyOut,
+        system=uncached_system(UNTRUSTED_RULE, MENTOR_SYSTEM_V1.text),
+        messages=[{"role": "user", "content": fenced}],
+        user_id=str(actor.id),
+    )
+    return _response_from_output(result.output)
+
+
+async def chat_stream(
+    session: AsyncSession,
+    actor: CurrentUser,
+    startup_id: uuid.UUID,
+    message: str,
+    history: list[ChatTurn],
+    *,
+    client: AiClient | None = None,
+) -> AsyncIterator[tuple[str, dict[str, Any]]]:
+    """Same grounding as `chat`, yielded as SSE event payloads."""
+    fenced = await _prepare_turn(session, actor, startup_id, message, history)
+    ai = client or AiClient(get_settings())
+    accumulated = ""
+    async for chunk in ai.stream_text(
+        tier=ModelTier.CHAT,
+        schema=MentorReplyOut,
+        system=uncached_system(UNTRUSTED_RULE, MENTOR_SYSTEM_V1.text),
+        messages=[{"role": "user", "content": fenced}],
+        user_id=str(actor.id),
+    ):
+        accumulated += chunk
+        yield ("delta", {"text": chunk})
+    try:
+        out = MentorReplyOut.model_validate_json(accumulated)
+        done = _response_from_output(out)
+        yield (
+            "done",
+            {
+                "reply": done.reply,
+                "citations": [c.model_dump() for c in done.citations],
+            },
+        )
+    except ValidationError:
+        yield (
+            "done",
+            {
+                "reply": accumulated.strip() or "The mentor could not finish that answer.",
+                "citations": [],
+            },
+        )
 
 
 def _build_context(

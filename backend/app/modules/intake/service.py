@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.email_domains import company_name_from_email
 from app.core.errors import ConflictError, InvalidRequestError, NotFoundError
 from app.core.ownership import owned_or_404
-from app.core.security import CurrentUser, Role
+from app.core.security import CurrentUser, Role, assert_admin
 from app.core.storage import (
     ObjectTooLargeError,
     StoredObject,
@@ -39,6 +39,7 @@ from app.core.storage import (
     signed_upload_url,
 )
 from app.modules.identity import service as identity
+from app.modules.identity.models import AuditAction
 from app.modules.intake.documents import (
     MAX_UPLOAD_BYTES,
     DocumentKind,
@@ -47,8 +48,12 @@ from app.modules.intake.documents import (
     ScanStatus,
     is_allowed_content_type,
 )
-from app.modules.intake.fields import REQUIRED_COLUMNS, REQUIRED_FIELDS
-from app.modules.intake.models import Document, StartupProfile
+from app.modules.intake.fields import REQUIRED_COLUMNS, REQUIRED_FIELDS, Stage
+from app.modules.intake.models import (
+    CompanyVerificationStatus,
+    Document,
+    StartupProfile,
+)
 from app.modules.intake.repository import DocumentRepository, StartupProfileRepository
 
 logger = logging.getLogger(__name__)
@@ -239,6 +244,83 @@ async def update_profile(
 
     await session.flush()
     return profile
+
+
+async def submit_company_verification(
+    session: AsyncSession, actor: CurrentUser, profile_id: uuid.UUID
+) -> StartupProfile:
+    profile = _authorise(await StartupProfileRepository(session).get(profile_id), actor)
+    if profile.company_verification_status is CompanyVerificationStatus.ACCEPTED:
+        raise ConflictError("This company is already verified.")
+    profile.company_verification_status = CompanyVerificationStatus.IN_REVIEW
+    await session.flush()
+    return profile
+
+
+async def decide_company_verification(
+    session: AsyncSession,
+    actor: CurrentUser,
+    profile_id: uuid.UUID,
+    *,
+    accept: bool,
+) -> StartupProfile:
+    assert_admin(actor)
+    profile = await StartupProfileRepository(session).get(profile_id)
+    if profile is None:
+        raise NotFoundError(_DENIED)
+    profile.company_verification_status = (
+        CompanyVerificationStatus.ACCEPTED
+        if accept
+        else CompanyVerificationStatus.REJECTED
+    )
+    await session.flush()
+    await identity.record_action(
+        session,
+        AuditAction.COMPANY_VERIFICATION_DECIDED,
+        actor_id=actor.id,
+        target_type="startup_profile",
+        target_id=profile.id,
+        details={"accepted": accept},
+    )
+    from app.modules.notifications import inbox
+
+    await inbox.notify(
+        session,
+        profile.owner_id,
+        kind="company_verification",
+        title="Company verification decided",
+        body="SACI accepted your registration."
+        if accept
+        else "SACI declined your registration.",
+        payload={"accepted": accept},
+    )
+    return profile
+
+
+async def list_admin_startups(
+    session: AsyncSession,
+    actor: CurrentUser,
+    *,
+    verification: CompanyVerificationStatus | None,
+    q: str | None = None,
+    country: str | None = None,
+    sector: str | None = None,
+    stage: Stage | None = None,
+    published: bool | None = None,
+    limit: int,
+    offset: int,
+) -> tuple[list[StartupProfile], int]:
+    assert_admin(actor)
+    return await StartupProfileRepository(session).list_all(
+        verification=verification,
+        q=q,
+        country=country,
+        sector=sector,
+        stage=stage,
+        published=published,
+        limit=limit,
+        offset=offset,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -529,6 +611,167 @@ def _rejection_reason(stored: StoredObject) -> str | None:
     if not is_allowed_content_type(stored.content_type):
         return "unsupported_content_type"
     return None
+
+
+_IDENTITY_FIELD_KEYS = frozenset(
+    {
+        "legal_name",
+        "registration_number",
+        "founder_name",
+        "founder_email",
+        "contact_email",
+        "phone",
+        "website",
+    }
+)
+
+
+async def admin_stats(session: AsyncSession, actor: CurrentUser):
+    """Counts for the admin desk. MFA-enrolled admins only."""
+    from sqlalchemy import func, select
+
+    from app.modules.audit.models import AuditRun
+    from app.modules.audit.runs import AuditStatus
+    from app.modules.brokerage.models import Interest, InterestStatus
+    from app.modules.identity.models import User
+    from app.modules.intake.schemas import AdminStats
+
+    assert_admin(actor)
+    startups_total = int(
+        await session.scalar(select(func.count()).select_from(StartupProfile)) or 0
+    )
+    startups_published = int(
+        await session.scalar(
+            select(func.count())
+            .select_from(StartupProfile)
+            .where(StartupProfile.investor_visible.is_(True))
+        )
+        or 0
+    )
+    startups_with_audit = int(
+        await session.scalar(
+            select(func.count(func.distinct(AuditRun.startup_id))).where(
+                AuditRun.status == AuditStatus.SUCCEEDED,
+                AuditRun.report.isnot(None),
+            )
+        )
+        or 0
+    )
+    users_founders = int(
+        await session.scalar(
+            select(func.count()).select_from(User).where(User.role == Role.FOUNDER)
+        )
+        or 0
+    )
+    users_investors = int(
+        await session.scalar(
+            select(func.count()).select_from(User).where(User.role == Role.INVESTOR)
+        )
+        or 0
+    )
+    users_admins = int(
+        await session.scalar(
+            select(func.count()).select_from(User).where(User.role == Role.ADMIN)
+        )
+        or 0
+    )
+    interests_pending = int(
+        await session.scalar(
+            select(func.count())
+            .select_from(Interest)
+            .where(Interest.status == InterestStatus.PENDING)
+        )
+        or 0
+    )
+    return AdminStats(
+        startups_total=startups_total,
+        startups_published=startups_published,
+        startups_with_succeeded_audit=startups_with_audit,
+        users_founders=users_founders,
+        users_investors=users_investors,
+        users_admins=users_admins,
+        interests_pending=interests_pending,
+    )
+
+
+async def export_training_corpus(
+    session: AsyncSession,
+    actor: CurrentUser,
+    *,
+    verification: CompanyVerificationStatus | None = None,
+    q: str | None = None,
+    country: str | None = None,
+    sector: str | None = None,
+    stage: Stage | None = None,
+    published: bool | None = None,
+    startup_id: uuid.UUID | None = None,
+    limit: int,
+    offset: int,
+):
+    """Identity-stripped scored files for later rubric training. Admins only."""
+    from app.modules.audit.reports import admin_report
+    from app.modules.audit.repository import AuditRunRepository
+    from app.modules.intake.schemas import CorpusPage, CorpusRecord
+    from app.modules.readiness import service as readiness
+
+    assert_admin(actor)
+    rows, total = await StartupProfileRepository(session).list_all(
+        verification=verification,
+        q=q,
+        country=country,
+        sector=sector,
+        stage=stage,
+        published=published,
+        startup_id=startup_id,
+        limit=limit,
+        offset=offset,
+    )
+    items: list[CorpusRecord] = []
+    audits = AuditRunRepository(session)
+    for profile in rows:
+        run = await audits.latest_succeeded(profile.id)
+        latest = None
+        if run is not None and run.report is not None:
+            latest = admin_report(run.report).model_dump(mode="json")
+        task_rows, _ = await readiness.list_tasks(
+            session, actor, profile.id, limit=50, offset=0
+        )
+        fields = {
+            key: value
+            for key, value in (profile.fields or {}).items()
+            if key not in _IDENTITY_FIELD_KEYS
+        }
+        items.append(
+            CorpusRecord(
+                startup_id=profile.id,
+                sector=profile.sector,
+                stage=getattr(profile.stage, "value", profile.stage),
+                country=profile.country,
+                currency=profile.currency,
+                verification=profile.company_verification_status,
+                published=profile.investor_visible,
+                fields=fields,
+                latest_audit=latest,
+                tasks=[
+                    {
+                        "dimension": t.dimension.value,
+                        "action": t.action,
+                        "status": t.status.value,
+                        "requirement": t.requirement.value,
+                    }
+                    for t in task_rows
+                ],
+            )
+        )
+    await identity.record_action(
+        session,
+        AuditAction.CORPUS_EXPORTED,
+        actor_id=actor.id,
+        target_type="startup_profile",
+        target_id=None,
+        details={"count": len(items), "total": total, "offset": offset},
+    )
+    return CorpusPage(items=items, total=total, limit=limit, offset=offset)
 
 
 def safe_filename(filename: str) -> str:

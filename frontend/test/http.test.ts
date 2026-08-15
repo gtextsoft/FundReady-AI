@@ -396,12 +396,12 @@ describe('api/http transport', () => {
       await signedIn();
       serve(() => res(204));
 
-      await httpApi.resetPassword('  reset-token\n', 'correct-horse-battery');
+      await httpApi.resetPassword('ada@acme.test', '  123456\n', 'correct-horse-battery');
 
       expect(calls[0]).toMatchObject({
         url: 'http://api.test/v1/auth/password-reset/confirm',
         method: 'POST',
-        body: { token: 'reset-token', password: 'correct-horse-battery' },
+        body: { email: 'ada@acme.test', code: '123456', password: 'correct-horse-battery' },
       });
       // The server has just revoked every refresh token, so the pair on this
       // device is dead — holding it would leave a live-looking session behind.
@@ -418,7 +418,7 @@ describe('api/http transport', () => {
           : res(200, ME),
       );
 
-      await expect(httpApi.resetPassword('stale', 'correct-horse-battery')).rejects.toMatchObject({
+      await expect(httpApi.resetPassword('ada@acme.test', 'stale', 'correct-horse-battery')).rejects.toMatchObject({
         code: 'validation',
       });
 
@@ -536,10 +536,32 @@ describe('api/http transport', () => {
   });
 
   describe('unbuilt endpoints', () => {
-    it('names the missing backend task rather than inventing an answer', async () => {
-      const error = await httpApi.askMentor('how am I doing?').catch((e: unknown) => e);
-      expect((error as InstanceType<typeof ApiFailure>).code).toBe('not_implemented');
-      expect((error as Error).message).toMatch(/T3\.7/);
+    it('asks the live mentor rather than inventing an answer', async () => {
+      await signedIn();
+      serve((call) => {
+        if (call.url.endsWith('/v1/startups/me')) {
+          return res(200, {
+            id: 'profile-1',
+            owner_id: 'user-1',
+            name: 'Northwind Labs',
+            sector: 'Fintech',
+            stage: 'seed',
+            country: 'NG',
+            currency: 'NGN',
+            fields: {},
+            missing_fields: [],
+            created_at: '2026-08-01T00:00:00Z',
+            updated_at: '2026-08-01T00:00:00Z',
+          });
+        }
+        if (call.url.includes('/mentor/chat')) {
+          return res(200, { reply: 'Grounded from your report.', citations: [] });
+        }
+        return res(200, ME);
+      });
+      await expect(httpApi.askMentor('how am I doing?')).resolves.toBe(
+        'Grounded from your report.',
+      );
     });
 
     it('refuses the prototype dealflow shape rather than inventing its numbers', async () => {

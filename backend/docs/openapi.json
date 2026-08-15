@@ -194,6 +194,124 @@
         "title": "AdminReport",
         "type": "object"
       },
+      "AdminStats": {
+        "additionalProperties": false,
+        "description": "Console totals so the desk can scale past a single page of rows.",
+        "example": {
+          "interests_pending": 8,
+          "startups_published": 40,
+          "startups_total": 120,
+          "startups_with_succeeded_audit": 55,
+          "users_admins": 3,
+          "users_founders": 90,
+          "users_investors": 25
+        },
+        "properties": {
+          "interests_pending": {
+            "title": "Interests Pending",
+            "type": "integer"
+          },
+          "startups_published": {
+            "title": "Startups Published",
+            "type": "integer"
+          },
+          "startups_total": {
+            "title": "Startups Total",
+            "type": "integer"
+          },
+          "startups_with_succeeded_audit": {
+            "title": "Startups With Succeeded Audit",
+            "type": "integer"
+          },
+          "users_admins": {
+            "title": "Users Admins",
+            "type": "integer"
+          },
+          "users_founders": {
+            "title": "Users Founders",
+            "type": "integer"
+          },
+          "users_investors": {
+            "title": "Users Investors",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "startups_total",
+          "startups_published",
+          "startups_with_succeeded_audit",
+          "users_founders",
+          "users_investors",
+          "users_admins",
+          "interests_pending"
+        ],
+        "title": "AdminStats",
+        "type": "object"
+      },
+      "AnalystChatRequest": {
+        "additionalProperties": false,
+        "example": {
+          "history": [],
+          "message": "What stage is this company?"
+        },
+        "properties": {
+          "history": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "maxItems": 10,
+            "title": "History",
+            "type": "array"
+          },
+          "message": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "AnalystChatRequest",
+        "type": "object"
+      },
+      "AnalystChatResponse": {
+        "additionalProperties": false,
+        "example": {
+          "citations": [
+            {
+              "kind": "card",
+              "ref": "stage"
+            }
+          ],
+          "reply": "The card lists stage as seed."
+        },
+        "properties": {
+          "citations": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "reply": {
+            "title": "Reply",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reply"
+        ],
+        "title": "AnalystChatResponse",
+        "type": "object"
+      },
       "AssessmentOutcome": {
         "description": "What the grader concluded about one submission.\n\nThree values rather than a boolean, and the third is the important one:\n`CLAUDE.md` section 5 forbids a confident verdict on thin evidence, so\n\"plausible but unproven\" needs somewhere to land that is neither a pass nor\nan accusation.\n\n**Lives here rather than in `assessment.py`** so `models.py` can describe the\ncolumn without importing the AI client. A model layer that pulls in\n`anthropic` to declare an enum has the dependency arrow backwards.",
         "enum": [
@@ -755,6 +873,175 @@
         "title": "CitationKind",
         "type": "string"
       },
+      "CompanyVerificationStatus": {
+        "description": "Admin review of a founder's registration certificate (not a registry API).",
+        "enum": [
+          "none",
+          "submitted",
+          "in_review",
+          "accepted",
+          "rejected"
+        ],
+        "title": "CompanyVerificationStatus",
+        "type": "string"
+      },
+      "CorpusPage": {
+        "additionalProperties": false,
+        "example": {
+          "items": [],
+          "limit": 50,
+          "offset": 0,
+          "purpose": "model_training",
+          "total": 0
+        },
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CorpusRecord"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "purpose": {
+            "const": "model_training",
+            "default": "model_training",
+            "title": "Purpose",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "CorpusPage",
+        "type": "object"
+      },
+      "CorpusRecord": {
+        "additionalProperties": false,
+        "description": "One startup's scored file, stripped of identity, for later model training.\n\nNo owner email, no legal name, no document bytes. The figures, verdicts,\nfindings, and tasks are what a later rubric pass learns from.",
+        "example": {
+          "country": "NG",
+          "currency": "NGN",
+          "fields": {},
+          "published": true,
+          "sector": "fintech",
+          "stage": "seed",
+          "startup_id": "5f2b1c9e-0000-4000-8000-000000000001",
+          "tasks": [],
+          "verification": "accepted"
+        },
+        "properties": {
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "fields": {
+            "additionalProperties": true,
+            "title": "Fields",
+            "type": "object"
+          },
+          "latest_audit": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Audit"
+          },
+          "published": {
+            "title": "Published",
+            "type": "boolean"
+          },
+          "sector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sector"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          },
+          "startup_id": {
+            "format": "uuid",
+            "title": "Startup Id",
+            "type": "string"
+          },
+          "tasks": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Tasks",
+            "type": "array"
+          },
+          "verification": {
+            "$ref": "#/components/schemas/CompanyVerificationStatus"
+          }
+        },
+        "required": [
+          "startup_id",
+          "sector",
+          "stage",
+          "country",
+          "currency",
+          "verification",
+          "published",
+          "fields",
+          "latest_audit",
+          "tasks"
+        ],
+        "title": "CorpusRecord",
+        "type": "object"
+      },
       "Dimension": {
         "description": "The scored dimensions of rubric v1.\n\nStable identifiers: a stored AuditRun cites these, so a value is never\nrenamed in place. A new dimension means a new rubric version (D12).",
         "enum": [
@@ -1036,6 +1323,7 @@
           "id": "8d3b2c1d-5e6f-7890-bcde-f01234567890",
           "product": {
             "active": true,
+            "checkout_configured": true,
             "description": "A four-week programme on pricing, CAC, and contribution margin.",
             "gap_tags": [
               "unit_economics"
@@ -1746,6 +2034,504 @@
         "title": "InterestStatus",
         "type": "string"
       },
+      "InvestorProfileResponse": {
+        "additionalProperties": false,
+        "example": {
+          "country": "NG",
+          "firm": "Sahel Capital",
+          "investor_type": "vc",
+          "kyc_status": "none",
+          "review_status": "in_review",
+          "thesis_geographies": [
+            "NG"
+          ],
+          "thesis_sectors": [
+            "fintech"
+          ],
+          "thesis_stages": [
+            "seed"
+          ],
+          "ticket_currency": "USD",
+          "ticket_max_minor": 25000000,
+          "ticket_min_minor": 5000000
+        },
+        "properties": {
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
+          "firm": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Firm"
+          },
+          "investor_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Investor Type"
+          },
+          "kyc_status": {
+            "$ref": "#/components/schemas/KycStatus"
+          },
+          "linkedin_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linkedin Url"
+          },
+          "review_status": {
+            "$ref": "#/components/schemas/ThesisReviewStatus"
+          },
+          "risk_notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Notes"
+          },
+          "thesis_geographies": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Thesis Geographies",
+            "type": "array"
+          },
+          "thesis_sectors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Thesis Sectors",
+            "type": "array"
+          },
+          "thesis_stages": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Thesis Stages",
+            "type": "array"
+          },
+          "ticket_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticket Currency"
+          },
+          "ticket_max_minor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticket Max Minor"
+          },
+          "ticket_min_minor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticket Min Minor"
+          }
+        },
+        "required": [
+          "kyc_status",
+          "review_status"
+        ],
+        "title": "InvestorProfileResponse",
+        "type": "object"
+      },
+      "InvestorProfileUpdate": {
+        "additionalProperties": false,
+        "description": "Thesis fields an investor may write. Review status is server-set.",
+        "example": {
+          "country": "NG",
+          "firm": "Sahel Capital",
+          "investor_type": "vc",
+          "linkedin_url": "https://www.linkedin.com/in/example",
+          "risk_notes": "Prefer revenue-generating B2B.",
+          "thesis_geographies": [
+            "NG",
+            "KE"
+          ],
+          "thesis_sectors": [
+            "fintech"
+          ],
+          "thesis_stages": [
+            "seed"
+          ],
+          "ticket_currency": "USD",
+          "ticket_max_minor": 25000000,
+          "ticket_min_minor": 5000000
+        },
+        "properties": {
+          "country": {
+            "anyOf": [
+              {
+                "maxLength": 2,
+                "minLength": 2,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
+          "firm": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Firm"
+          },
+          "investor_type": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Investor Type"
+          },
+          "linkedin_url": {
+            "anyOf": [
+              {
+                "maxLength": 400,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linkedin Url"
+          },
+          "risk_notes": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Notes"
+          },
+          "thesis_geographies": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Thesis Geographies",
+            "type": "array"
+          },
+          "thesis_sectors": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Thesis Sectors",
+            "type": "array"
+          },
+          "thesis_stages": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Thesis Stages",
+            "type": "array"
+          },
+          "ticket_currency": {
+            "anyOf": [
+              {
+                "maxLength": 3,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticket Currency"
+          },
+          "ticket_max_minor": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticket Max Minor"
+          },
+          "ticket_min_minor": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticket Min Minor"
+          }
+        },
+        "title": "InvestorProfileUpdate",
+        "type": "object"
+      },
+      "InvestorReviewCard": {
+        "additionalProperties": false,
+        "example": {
+          "country": "NG",
+          "email": "lp@example.com",
+          "firm": "Sahel Capital",
+          "first_name": "Ada",
+          "investor_type": "vc",
+          "last_name": "Okoye",
+          "review_status": "in_review",
+          "thesis_geographies": [
+            "NG"
+          ],
+          "thesis_sectors": [
+            "fintech"
+          ],
+          "thesis_stages": [
+            "seed"
+          ],
+          "updated_at": "2026-08-15T12:00:00Z",
+          "user_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+        },
+        "properties": {
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "firm": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Firm"
+          },
+          "first_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Name"
+          },
+          "investor_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Investor Type"
+          },
+          "last_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Name"
+          },
+          "linkedin_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linkedin Url"
+          },
+          "review_status": {
+            "$ref": "#/components/schemas/ThesisReviewStatus"
+          },
+          "risk_notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Notes"
+          },
+          "thesis_geographies": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Thesis Geographies",
+            "type": "array"
+          },
+          "thesis_sectors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Thesis Sectors",
+            "type": "array"
+          },
+          "thesis_stages": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Thesis Stages",
+            "type": "array"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "email",
+          "first_name",
+          "last_name",
+          "firm",
+          "investor_type",
+          "country",
+          "linkedin_url",
+          "thesis_sectors",
+          "thesis_stages",
+          "thesis_geographies",
+          "risk_notes",
+          "review_status",
+          "updated_at"
+        ],
+        "title": "InvestorReviewCard",
+        "type": "object"
+      },
+      "InvestorReviewPage": {
+        "additionalProperties": false,
+        "example": {
+          "items": [],
+          "limit": 20,
+          "offset": 0,
+          "total": 0
+        },
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InvestorReviewCard"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "InvestorReviewPage",
+        "type": "object"
+      },
       "KycStatus": {
         "description": "Investor identity verification, trusted from Stripe only (AUTH.md 8).",
         "enum": [
@@ -1864,6 +2650,271 @@
         ],
         "title": "LogoutRequest",
         "type": "object"
+      },
+      "MarkReadRequest": {
+        "additionalProperties": false,
+        "example": {
+          "ids": [
+            "a1b2c3d4-0000-4000-8000-000000000001"
+          ]
+        },
+        "properties": {
+          "ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "title": "MarkReadRequest",
+        "type": "object"
+      },
+      "MeetingConfirm": {
+        "additionalProperties": false,
+        "description": "Admin overrides when confirming a proposed slot. Omitted fields stay.",
+        "example": {
+          "duration_minutes": 45,
+          "location": "https://meet.saci.example/intro",
+          "notes": "SACI hosts.",
+          "scheduled_at": "2026-08-20T10:00:00Z"
+        },
+        "properties": {
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "maximum": 180.0,
+                "minimum": 15.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Minutes"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "maxLength": 400,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "scheduled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled At"
+          }
+        },
+        "title": "MeetingConfirm",
+        "type": "object"
+      },
+      "MeetingCreate": {
+        "additionalProperties": false,
+        "example": {
+          "duration_minutes": 45,
+          "location": "https://meet.saci.example/intro",
+          "notes": "SACI hosts. Founder and investor both attend.",
+          "scheduled_at": "2026-08-20T10:00:00Z"
+        },
+        "properties": {
+          "duration_minutes": {
+            "maximum": 180.0,
+            "minimum": 15.0,
+            "title": "Duration Minutes",
+            "type": "integer"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "maxLength": 400,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "scheduled_at": {
+            "format": "date-time",
+            "title": "Scheduled At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scheduled_at",
+          "duration_minutes"
+        ],
+        "title": "MeetingCreate",
+        "type": "object"
+      },
+      "MeetingPropose": {
+        "additionalProperties": false,
+        "description": "An investor proposing a slot. SACI still has to confirm.",
+        "example": {
+          "duration_minutes": 45,
+          "message": "Any time after 10:00 WAT works.",
+          "scheduled_at": "2026-08-20T10:00:00Z"
+        },
+        "properties": {
+          "duration_minutes": {
+            "default": 45,
+            "maximum": 180.0,
+            "minimum": 15.0,
+            "title": "Duration Minutes",
+            "type": "integer"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "scheduled_at": {
+            "format": "date-time",
+            "title": "Scheduled At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scheduled_at"
+        ],
+        "title": "MeetingPropose",
+        "type": "object"
+      },
+      "MeetingResponse": {
+        "additionalProperties": false,
+        "example": {
+          "created_at": "2026-08-15T12:00:00Z",
+          "duration_minutes": 45,
+          "id": "8c2f0e2a-0000-4000-8000-000000000001",
+          "interest_id": "6b1f0e2a-0000-4000-8000-000000000001",
+          "location": "https://meet.saci.example/intro",
+          "notes": "SACI hosts.",
+          "scheduled_at": "2026-08-20T10:00:00Z",
+          "status": "scheduled"
+        },
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "duration_minutes": {
+            "title": "Duration Minutes",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "interest_id": {
+            "format": "uuid",
+            "title": "Interest Id",
+            "type": "string"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "scheduled_at": {
+            "format": "date-time",
+            "title": "Scheduled At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MeetingStatus"
+          }
+        },
+        "required": [
+          "id",
+          "interest_id",
+          "scheduled_at",
+          "duration_minutes",
+          "location",
+          "notes",
+          "status",
+          "created_at"
+        ],
+        "title": "MeetingResponse",
+        "type": "object"
+      },
+      "MeetingStatus": {
+        "enum": [
+          "proposed",
+          "scheduled",
+          "cancelled"
+        ],
+        "title": "MeetingStatus",
+        "type": "string"
       },
       "MentorChatRequest": {
         "additionalProperties": false,
@@ -2066,6 +3117,119 @@
           "code"
         ],
         "title": "MfaVerifyRequest",
+        "type": "object"
+      },
+      "NotificationItem": {
+        "additionalProperties": false,
+        "example": {
+          "body": "Open FundReady to read the report.",
+          "created_at": "2026-08-15T12:00:00Z",
+          "id": "a1b2c3d4-0000-4000-8000-000000000001",
+          "kind": "audit_ready",
+          "payload": {},
+          "title": "Your assessment is ready"
+        },
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/NotificationKind"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read At"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "body",
+          "payload",
+          "read_at",
+          "created_at"
+        ],
+        "title": "NotificationItem",
+        "type": "object"
+      },
+      "NotificationKind": {
+        "enum": [
+          "audit_ready",
+          "task_assigned",
+          "evidence_result",
+          "meeting_booked",
+          "interest_decided",
+          "company_verification",
+          "thesis_review"
+        ],
+        "title": "NotificationKind",
+        "type": "string"
+      },
+      "NotificationPage": {
+        "additionalProperties": false,
+        "example": {
+          "items": [],
+          "limit": 20,
+          "offset": 0,
+          "total": 0
+        },
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "NotificationPage",
         "type": "object"
       },
       "PasswordResetConfirmRequest": {
@@ -2285,6 +3449,7 @@
           "items": [
             {
               "active": true,
+              "checkout_configured": true,
               "description": "A four-week programme on pricing, CAC, and contribution margin.",
               "gap_tags": [
                 "unit_economics"
@@ -2337,6 +3502,7 @@
         "description": "One catalogue item as any signed-in caller sees it.",
         "example": {
           "active": true,
+          "checkout_configured": true,
           "description": "A four-week programme on pricing, CAC, and contribution margin.",
           "gap_tags": [
             "unit_economics"
@@ -2364,6 +3530,11 @@
               }
             ],
             "title": "Amount Minor"
+          },
+          "checkout_configured": {
+            "description": "True when the item is free, or when a Stripe Price is attached. A priced item without `stripe_price_id` is listed but cannot enrol.",
+            "title": "Checkout Configured",
+            "type": "boolean"
           },
           "currency": {
             "anyOf": [
@@ -2446,7 +3617,8 @@
           "currency",
           "event_starts_at",
           "event_location",
-          "active"
+          "active",
+          "checkout_configured"
         ],
         "title": "ProductResponse",
         "type": "object"
@@ -2689,10 +3861,49 @@
         "title": "ProfileFieldValue",
         "type": "object"
       },
+      "ProfilePage": {
+        "additionalProperties": false,
+        "example": {
+          "items": [],
+          "limit": 20,
+          "offset": 0,
+          "total": 0
+        },
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProfileResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "ProfilePage",
+        "type": "object"
+      },
       "ProfileResponse": {
         "description": "A startup profile as its owner (or a SACI admin) sees it.\n\nThis is the **full** founder-facing view. The investor-facing summary tier\nis a separate serializer, built in T4.2 -- deliberately not a flag on this\none, because a shared model with a hidden switch is how a full report leaks\nto the wrong tier (DECISIONS.md D8).",
         "examples": [
           {
+            "company_verification_status": "none",
             "country": "NG",
             "created_at": "2026-07-30T08:00:00Z",
             "currency": "NGN",
@@ -2704,6 +3915,7 @@
               }
             },
             "id": "3f2b1c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "investor_visible": false,
             "missing_fields": [
               "business_model",
               "cash_on_hand_minor",
@@ -2718,6 +3930,11 @@
           }
         ],
         "properties": {
+          "company_verification_status": {
+            "$ref": "#/components/schemas/CompanyVerificationStatus",
+            "default": "none",
+            "description": "Admin review of the registration certificate. Self-reported until accepted. Not a call to a company register (D7)."
+          },
           "country": {
             "anyOf": [
               {
@@ -3796,6 +5013,34 @@
         "title": "TaskStatus",
         "type": "string"
       },
+      "ThesisDecision": {
+        "additionalProperties": false,
+        "example": {
+          "accept": true
+        },
+        "properties": {
+          "accept": {
+            "title": "Accept",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accept"
+        ],
+        "title": "ThesisDecision",
+        "type": "object"
+      },
+      "ThesisReviewStatus": {
+        "description": "Admin review of an investor thesis. Discovery requires `accepted`.",
+        "enum": [
+          "none",
+          "in_review",
+          "accepted",
+          "rejected"
+        ],
+        "title": "ThesisReviewStatus",
+        "type": "string"
+      },
       "TokenPairResponse": {
         "description": "The tokens, and how the client should treat them.\n\nStore both in secure device storage. On `401`, exchange the refresh token\nonce and retry; if that fails, send the user to login (AUTH.md section 16).",
         "examples": [
@@ -3957,6 +5202,44 @@
         "title": "UploadTicket",
         "type": "object"
       },
+      "UserPage": {
+        "additionalProperties": false,
+        "example": {
+          "items": [],
+          "limit": 20,
+          "offset": 0,
+          "total": 0
+        },
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/UserResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "UserPage",
+        "type": "object"
+      },
       "UserResponse": {
         "description": "The caller's own account. Never another user's.",
         "examples": [
@@ -3969,6 +5252,7 @@
             "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
             "kyc_status": "none",
             "last_name": "Okonkwo",
+            "mfa_enabled": false,
             "role": "founder",
             "status": "pending_verification",
             "subscription_status": "none",
@@ -4022,6 +5306,11 @@
               }
             ],
             "title": "Last Name"
+          },
+          "mfa_enabled": {
+            "default": false,
+            "title": "Mfa Enabled",
+            "type": "boolean"
           },
           "role": {
             "$ref": "#/components/schemas/Role"
@@ -4169,6 +5458,23 @@
         "title": "VerdictSummary",
         "type": "object"
       },
+      "VerificationDecision": {
+        "additionalProperties": false,
+        "example": {
+          "accept": true
+        },
+        "properties": {
+          "accept": {
+            "title": "Accept",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accept"
+        ],
+        "title": "VerificationDecision",
+        "type": "object"
+      },
       "VerifyEmailRequest": {
         "additionalProperties": false,
         "description": "The address being confirmed, and the code that was emailed to it.\n\nBoth, always. The code is six digits, so it is checked against one account\nrather than looked up across all of them -- otherwise a guessed code would\nmatch whichever account happened to hold it (AUTH.md section 3.2).",
@@ -4203,6 +5509,41 @@
         ],
         "title": "VerifyEmailRequest",
         "type": "object"
+      },
+      "WatchlistResponse": {
+        "additionalProperties": false,
+        "example": {
+          "startup_ids": [
+            "5f2b1c9e-0000-4000-8000-000000000001"
+          ],
+          "watching": true
+        },
+        "properties": {
+          "startup_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Startup Ids",
+            "type": "array"
+          },
+          "watching": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Watching"
+          }
+        },
+        "required": [
+          "startup_ids"
+        ],
+        "title": "WatchlistResponse",
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -4221,6 +5562,205 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/v1/admin/corpus": {
+      "get": {
+        "description": "**SACI admins with MFA only.** Paginated corpus for later model training. Legal names, registration numbers, founder contacts, and emails are stripped. Each export is audit-logged. Same filters as `GET /admin/startups` plus optional `startup_id`.",
+        "operationId": "export_admin_corpus_v1_admin_corpus_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "company_verification_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CompanyVerificationStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Company Verification Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "country",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2,
+                  "minLength": 2,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Country"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sector",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sector"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stage",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Stage"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stage"
+            }
+          },
+          {
+            "in": "query",
+            "name": "published",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Published"
+            }
+          },
+          {
+            "in": "query",
+            "name": "startup_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Startup Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorpusPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Export identity-stripped training records",
+        "tags": [
+          "intake"
+        ]
+      }
+    },
     "/v1/admin/interests/{interest_id}/approve": {
       "post": {
         "description": "**SACI admins only.** Agrees to broker this introduction.\n\n**This is not a reveal.** The investor still sees only the summary card; opening the full report is a separate, deliberate action taken at the meeting.\n\n`409` if the interest has already been decided \u2014 the audit log records the decision that was taken, and a reversal would leave two contradictory rows. Reversing is a support conversation.\n\n**SACI is the broker.** An investor never reaches a founder's full report by their own entitlement: they express interest, a SACI admin decides, and a separate admin action opens one report. Approval is not disclosure \u2014 an approved interest still sees only the summary card.",
@@ -4399,6 +5939,214 @@
         ]
       }
     },
+    "/v1/admin/interests/{interest_id}/meetings": {
+      "post": {
+        "description": "**SACI admins with MFA only.** Books a meeting against an **approved** interest. SACI is the required host \u2014 only an admin can create a confirmed row. `409` if the interest is not approved.",
+        "operationId": "schedule_meeting_v1_admin_interests__interest_id__meetings_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "interest_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Interest Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeetingCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Schedule a SACI-brokered meeting",
+        "tags": [
+          "brokerage"
+        ]
+      }
+    },
+    "/v1/admin/interests/{interest_id}/meetings/{meeting_id}/confirm": {
+      "post": {
+        "description": "**SACI admins with MFA only.** Accepts an investor proposal and notifies both sides. May override time, location, or notes. `409` if the row is not `proposed`.",
+        "operationId": "confirm_meeting_v1_admin_interests__interest_id__meetings__meeting_id__confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "interest_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Interest Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "meeting_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Meeting Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeetingConfirm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Confirm a proposed meeting",
+        "tags": [
+          "brokerage"
+        ]
+      }
+    },
     "/v1/admin/interests/{interest_id}/reveal": {
       "post": {
         "description": "**SACI admins only, and the most consequential call in the API.** Opens the startup's latest completed audit \u2014 in full \u2014 to this one investor. Every call writes an immutable audit-log entry naming who opened what, for whom.\n\nRequires an **approved** interest; `409` otherwise, because revealing against a pending or declined one would make approval decorative.\n\n**Scoped to an audit run, not a startup.** A founder who re-audits produces a different report, and this investor's access is to what they were actually shown. Revealing again is idempotent \u2014 the same disclosure is returned, not a second one.\n\n`404` if the startup has no completed audit to reveal.",
@@ -4485,6 +6233,193 @@
         "summary": "Reveal the full report to an investor",
         "tags": [
           "brokerage"
+        ]
+      }
+    },
+    "/v1/admin/investors": {
+      "get": {
+        "description": "**SACI admins with MFA only.** Filter with `review_status`.",
+        "operationId": "list_investor_theses_v1_admin_investors_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "review_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ThesisReviewStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Review Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvestorReviewPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "List investor theses for review",
+        "tags": [
+          "investor"
+        ]
+      }
+    },
+    "/v1/admin/investors/{user_id}/thesis-review": {
+      "post": {
+        "description": "**SACI admins with MFA only.** Acceptance sets `kyc_status=verified`.",
+        "operationId": "decide_thesis_v1_admin_investors__user_id__thesis_review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ThesisDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvestorReviewCard"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Accept or reject an investor thesis",
+        "tags": [
+          "investor"
         ]
       }
     },
@@ -4664,6 +6599,277 @@
         ]
       }
     },
+    "/v1/admin/startups": {
+      "get": {
+        "description": "**SACI admins with MFA only.** Newest first. Filter with `company_verification_status`, `q` (name/sector/country), `country`, `sector`, `stage`, and `published`.",
+        "operationId": "list_admin_startups_v1_admin_startups_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "company_verification_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CompanyVerificationStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Company Verification Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "country",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2,
+                  "minLength": 2,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Country"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sector",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sector"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stage",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Stage"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stage"
+            }
+          },
+          {
+            "in": "query",
+            "name": "published",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Published"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfilePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "List every startup profile",
+        "tags": [
+          "intake"
+        ]
+      }
+    },
+    "/v1/admin/startups/{profile_id}/company-verification": {
+      "post": {
+        "description": "**SACI admins with MFA only.** Sets `accepted` or `rejected` and notifies the founder.",
+        "operationId": "decide_company_verification_v1_admin_startups__profile_id__company_verification_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "profile_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Profile Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerificationDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Accept or reject company verification",
+        "tags": [
+          "intake"
+        ]
+      }
+    },
     "/v1/admin/startups/{startup_id}/audits/{run_id}/report": {
       "get": {
         "description": "**SACI admins only.** Everything the run concluded, including the engineer-facing `detail` on each finding that the founder tier withholds.\n\nThis is the read behind the brokerage: an investor never reaches a full report through their own entitlement, only through a SACI reveal at the meeting. Serving it on a separate admin-only path -- rather than widening the founder endpoint by role -- keeps the two audiences in two routes, so a change to one cannot silently widen the other.",
@@ -4753,6 +6959,53 @@
         ]
       }
     },
+    "/v1/admin/stats": {
+      "get": {
+        "description": "**SACI admins with MFA only.** Totals for startups, published profiles, succeeded audits, users by role, and pending interests.",
+        "operationId": "get_admin_stats_v1_admin_stats_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminStats"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Platform counters for the admin home",
+        "tags": [
+          "intake"
+        ]
+      }
+    },
     "/v1/admin/tasks/{task_id}/reopen": {
       "post": {
         "description": "**SACI admins only.** Resets a task's assessment attempts to zero and returns it to `open`, so the founder can submit again.\n\nThis is the only way past the attempt cap, and therefore the only lever that undoes the guard on the investor-visibility gate \u2014 every call is written to the immutable audit log with the admin who made it.\n\nA `passed` task can be reopened too. That is the dispute path for a grading somebody believes was wrong, in either direction.",
@@ -4833,6 +7086,135 @@
       }
     },
     "/v1/admin/users": {
+      "get": {
+        "description": "Every user, newest first. Filter with `role`, `status`, and `q` (email or name).\n\nRequires an admin account **with MFA enrolled**. An admin who has not enrolled receives `403` here until they do.",
+        "operationId": "list_users_v1_admin_users_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Role"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Role"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AccountStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "List accounts",
+        "tags": [
+          "identity"
+        ]
+      },
       "post": {
         "description": "Creates an admin. This is the only way one comes into existence -- `/v1/auth/register` refuses the role.\n\nThe new admin lands `pending_verification` and without MFA, so they must verify their address and enrol a second factor before any admin capability opens to them. A verification email is sent.\n\nUnlike self-registration, a duplicate address returns `409` rather than a uniform success: the caller is already trusted, so there is no enumeration concern.\n\nRequires an admin account **with MFA enrolled**. An admin who has not enrolled receives `403` here until they do.",
         "operationId": "provision_admin_v1_admin_users_post",
@@ -6399,7 +8781,7 @@
     },
     "/v1/discover": {
       "get": {
-        "description": "Startups that have published themselves, newest first.\n\nFilters are the four indexed columns. `sector` matches case-insensitively because sector is free text \u2014 a founder who typed `Fintech` and a filter of `fintech` mean the same thing.\n\n`total` is the count ignoring pagination, so a client can render \"page N of M\".\n\nA startup appears only once it has a **succeeded** audit. A published profile with no verdict is not listed: a card with nothing on it invites a direct approach, which is what the brokerage prevents.\n\n**Investors and SACI admins only; `403` for a founder.**\n\nEvery startup here opted in explicitly \u2014 running an audit does not make a founder discoverable, publishing does. Results carry the **summary tier** only: the two verdicts and the four discovery columns. There is no founder name, no contact detail, and none of the submitted figures. That is the brokerage: the verdict is enough to decide whether to ask for an introduction, and not enough to skip one.",
+        "description": "Startups that have published themselves, newest first.\n\nFilters are the four indexed columns. `total` is the count ignoring pagination.\n\n**Investors and SACI admins only; `403` for a founder.**\n\nInvestors must have an **accepted thesis** (T4.1) before this list returns rows. Admins need MFA.\n\nEvery startup here opted in explicitly. Results carry the **summary tier** only: the two verdicts and the four discovery columns.",
         "operationId": "discover_v1_discover_get",
         "parameters": [
           {
@@ -6532,7 +8914,7 @@
     },
     "/v1/discover/{startup_id}": {
       "get": {
-        "description": "The same card the list returns.\n\n**`404` for a startup that has not published**, exactly as for one that does not exist \u2014 a distinguishable answer would turn this into an oracle for which startup ids are real.\n\n**Investors and SACI admins only; `403` for a founder.**\n\nEvery startup here opted in explicitly \u2014 running an audit does not make a founder discoverable, publishing does. Results carry the **summary tier** only: the two verdicts and the four discovery columns. There is no founder name, no contact detail, and none of the submitted figures. That is the brokerage: the verdict is enough to decide whether to ask for an introduction, and not enough to skip one.",
+        "description": "The same card the list returns. `404` if not published.\n\n**Investors and SACI admins only; `403` for a founder.**\n\nInvestors must have an **accepted thesis** (T4.1) before this list returns rows. Admins need MFA.\n\nEvery startup here opted in explicitly. Results carry the **summary tier** only: the two verdicts and the four discovery columns.",
         "operationId": "read_startup_card_v1_discover__startup_id__get",
         "parameters": [
           {
@@ -6604,6 +8986,95 @@
           }
         ],
         "summary": "Read one discoverable startup",
+        "tags": [
+          "investor"
+        ]
+      }
+    },
+    "/v1/discover/{startup_id}/analyst/chat": {
+      "post": {
+        "description": "Retrieval is **summary-tier only**. The model is given the discovery card and nothing from the stored full report, even if the prompt asks.",
+        "operationId": "analyst_chat_v1_discover__startup_id__analyst_chat_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "startup_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Startup Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalystChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalystChatResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Ask the AI analyst about a summary card",
         "tags": [
           "investor"
         ]
@@ -7115,6 +9586,188 @@
         ]
       }
     },
+    "/v1/interests/{interest_id}/meetings": {
+      "get": {
+        "description": "The investor who owns the interest, or a SACI admin with MFA. Newest first.\n\n**SACI is the broker.** An investor never reaches a founder's full report by their own entitlement: they express interest, a SACI admin decides, and a separate admin action opens one report. Approval is not disclosure \u2014 an approved interest still sees only the summary card.",
+        "operationId": "list_meetings_v1_interests__interest_id__meetings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "interest_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Interest Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MeetingResponse"
+                  },
+                  "title": "Response List Meetings V1 Interests  Interest Id  Meetings Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "List meetings for an interest",
+        "tags": [
+          "brokerage"
+        ]
+      }
+    },
+    "/v1/interests/{interest_id}/meetings/propose": {
+      "post": {
+        "description": "The investor who owns an **approved** interest proposes a time. SACI still has to confirm \u2014 the founder is not notified until then. `409` if the interest is not approved.\n\n**SACI is the broker.** An investor never reaches a founder's full report by their own entitlement: they express interest, a SACI admin decides, and a separate admin action opens one report. Approval is not disclosure \u2014 an approved interest still sees only the summary card.",
+        "operationId": "propose_meeting_v1_interests__interest_id__meetings_propose_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "interest_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Interest Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeetingPropose"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Propose a meeting slot",
+        "tags": [
+          "brokerage"
+        ]
+      }
+    },
     "/v1/interests/{interest_id}/reports/{run_id}": {
       "get": {
         "description": "The full report SACI opened to you at the meeting: both verdicts with their reasoning, the data-integrity score, every finding, and the action plan.\n\n**This is the only path by which an investor reads full report content.** Access is checked against an actual reveal, not against the interest's status \u2014 an approved interest with no reveal returns `404`.\n\nThe same rendering rules as the founder report apply: `insufficient_data` is an absence and must never read as 'not fundable', and `provisional` must be labelled as provisional.",
@@ -7204,6 +9857,207 @@
         ]
       }
     },
+    "/v1/interests/{interest_id}/withdraw": {
+      "post": {
+        "description": "The investor cancels a request that SACI has not decided yet. `409` if it is already decided.\n\n**SACI is the broker.** An investor never reaches a founder's full report by their own entitlement: they express interest, a SACI admin decides, and a separate admin action opens one report. Approval is not disclosure \u2014 an approved interest still sees only the summary card.",
+        "operationId": "withdraw_interest_v1_interests__interest_id__withdraw_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "interest_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Interest Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Withdraw a pending interest",
+        "tags": [
+          "brokerage"
+        ]
+      }
+    },
+    "/v1/investor/me": {
+      "get": {
+        "description": "Creates an empty thesis row on first read. Investors only.",
+        "operationId": "read_investor_me_v1_investor_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvestorProfileResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Read your investor thesis",
+        "tags": [
+          "investor"
+        ]
+      },
+      "put": {
+        "description": "Writes thesis fields and sets `review_status` to `in_review`. An accepted thesis cannot be edited.",
+        "operationId": "write_investor_me_v1_investor_me_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvestorProfileUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvestorProfileResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Submit your investor thesis for review",
+        "tags": [
+          "investor"
+        ]
+      }
+    },
     "/v1/me/enrolments": {
       "get": {
         "description": "Newest first. The nested `product` is `null` if the item was deleted.",
@@ -7283,6 +10137,216 @@
         "summary": "List the caller's enrolments",
         "tags": [
           "commerce"
+        ]
+      }
+    },
+    "/v1/me/meetings": {
+      "get": {
+        "description": "Investors see proposed and scheduled meetings on their interests. Founders see **scheduled** meetings only \u2014 a proposal is not an introduction. Admins with MFA see every meeting.\n\n**SACI is the broker.** An investor never reaches a founder's full report by their own entitlement: they express interest, a SACI admin decides, and a separate admin action opens one report. Approval is not disclosure \u2014 an approved interest still sees only the summary card.",
+        "operationId": "list_my_meetings_v1_me_meetings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MeetingResponse"
+                  },
+                  "title": "Response List My Meetings V1 Me Meetings Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "List meetings for the caller",
+        "tags": [
+          "brokerage"
+        ]
+      }
+    },
+    "/v1/notifications": {
+      "get": {
+        "description": "Newest first. Only the caller's own rows. Empty until an event (audit ready, task assigned, evidence result, meeting booked) writes one.",
+        "operationId": "list_notifications_v1_notifications_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Your in-app inbox",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/v1/notifications/read": {
+      "post": {
+        "description": "Idempotent. Ids that are not yours, already read, or unknown are ignored \u2014 the response is the inbox after the write.",
+        "operationId": "mark_notifications_read_v1_notifications_read_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkReadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Mark notifications as read",
+        "tags": [
+          "notifications"
         ]
       }
     },
@@ -7934,6 +10998,95 @@
           }
         ],
         "summary": "Update a startup profile",
+        "tags": [
+          "intake"
+        ]
+      }
+    },
+    "/v1/startups/{profile_id}/company-verification/submit": {
+      "post": {
+        "description": "Moves `company_verification_status` to `in_review`. This is an admin badge, not a call to a company register (D7). Resubmitting a rejected profile is allowed; an already-accepted one is `409`.\n\nYou can only reach your own profile. Another founder's id returns `404`, not `403` -- deliberately, so the API does not confirm which ids exist. SACI admins can read any profile.",
+        "operationId": "submit_company_verification_v1_startups__profile_id__company_verification_submit_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "profile_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Profile Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Submit company registration for review",
         "tags": [
           "intake"
         ]
@@ -8789,6 +11942,93 @@
         ]
       }
     },
+    "/v1/startups/{startup_id}/mentor/chat/stream": {
+      "post": {
+        "description": "Same grounding and access rules as `POST .../mentor/chat`. Responds with `text/event-stream`: `delta` events carry `{text}`, then a `done` event carries `{reply, citations}`.",
+        "operationId": "mentor_chat_stream_v1_startups__startup_id__mentor_chat_stream_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "startup_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Startup Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MentorChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Stream a mentor reply",
+        "tags": [
+          "mentor"
+        ]
+      }
+    },
     "/v1/startups/{startup_id}/recommendations": {
       "get": {
         "description": "Active items whose `gap_tags` overlap this startup's **open** readiness-task dimensions, and whose `regions` include the profile country or `*`.\n\nOwnership-checked: another founder's startup is `404`. An item with no `gap_tags` is browse-only and never appears here.\n\n**One catalogue, three kinds** (`program` \u00b7 `mentorship` \u00b7 `event`) per `DECISIONS.md` D18. Events carry `event_starts_at` and `event_location`. `regions` is ISO alpha-2 or `*` for everywhere. `gap_tags` match rubric dimensions (for example `unit_economics`) so a startup's open tasks can recommend the right item.",
@@ -9440,6 +12680,132 @@
         "summary": "The caller's own account",
         "tags": [
           "identity"
+        ]
+      }
+    },
+    "/v1/watchlist": {
+      "get": {
+        "description": "Startup ids this investor starred. Empty until any are starred.",
+        "operationId": "read_watchlist_v1_watchlist_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Your watched startups",
+        "tags": [
+          "investor"
+        ]
+      }
+    },
+    "/v1/watchlist/{startup_id}": {
+      "post": {
+        "description": "Adds if absent, removes if present. Startup must be discoverable.",
+        "operationId": "toggle_watch_v1_watchlist__startup_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "startup_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Startup Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "validation_error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "summary": "Toggle a startup on your watchlist",
+        "tags": [
+          "investor"
         ]
       }
     }

@@ -149,11 +149,10 @@ independent of it, so rolling it breaks nothing that is running.
 
 ## Known gaps that will bite
 
-- **`APP_LINK_BASE_URL` is a placeholder** (`https://stephenakintayofoundation.org/app`).
-  Verification emails point there; it should be the mobile deep link, and only
-  the mobile developer can supply the scheme.
-- **Mobile registration still returns `422`** — the client does not send
-  `first_name`/`last_name`. One-line fix in their tree.
+- **`APP_LINK_BASE_URL` should be `https://fundreadyai.vercel.app` for web.**
+  Rotate the leaked Cloudflare / Upstash / Resend credentials listed above.
+- **Mobile registration now sends `first_name`/`last_name`.** A 422 is a real
+  validation failure.
 - **The four market/growth questions are not in the mobile form.** Until they
   are, no founder can reach a `ready` verdict.
 - **Document bytes are capped per object, not in aggregate.** `_score` pulls

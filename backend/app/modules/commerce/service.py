@@ -183,8 +183,28 @@ async def get_unlock_receipt(
     )
 
 
+def _checkout_configured(product: Product) -> bool:
+    if not product.amount_minor and not (product.stripe_price_id or "").strip():
+        return True
+    return bool((product.stripe_price_id or "").strip())
+
+
 def _to_product(product: Product) -> ProductResponse:
-    return ProductResponse.model_validate(product)
+    return ProductResponse(
+        id=product.id,
+        kind=product.kind,
+        slug=product.slug,
+        title=product.title,
+        description=product.description,
+        regions=list(product.regions),
+        gap_tags=list(product.gap_tags),
+        amount_minor=product.amount_minor,
+        currency=product.currency,
+        event_starts_at=product.event_starts_at,
+        event_location=product.event_location,
+        active=product.active,
+        checkout_configured=_checkout_configured(product),
+    )
 
 
 async def create_product(

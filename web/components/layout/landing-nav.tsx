@@ -13,12 +13,18 @@ export function LandingNav() {
         <BrandMark />
       </Link>
       <div className="hidden items-center gap-8 text-[13px] text-mist md:flex">
-        <a href="#how" className="hover:text-cream">
+        <a href="/#how" className="hover:text-cream">
           How it works
         </a>
-        <a href="#checks" className="hover:text-cream">
+        <a href="/#checks" className="hover:text-cream">
           Audit framework
         </a>
+        <Link href="/pricing" className="hover:text-cream">
+          Pricing
+        </Link>
+        <Link href="/faq" className="hover:text-cream">
+          FAQ
+        </Link>
         <Link href="/sign-in" className="hover:text-cream">
           Sign in
         </Link>
@@ -46,12 +52,18 @@ export function LandingNav() {
       {open ? (
         <div className="absolute left-0 right-0 top-[82px] z-20 border-b border-line bg-surface px-5 py-4 md:hidden">
           <div className="flex flex-col gap-1">
-            <a href="#how" className="min-h-11 py-3 text-sm text-cream" onClick={() => setOpen(false)}>
+            <a href="/#how" className="min-h-11 py-3 text-sm text-cream" onClick={() => setOpen(false)}>
               How it works
             </a>
-            <a href="#checks" className="min-h-11 py-3 text-sm text-cream" onClick={() => setOpen(false)}>
+            <a href="/#checks" className="min-h-11 py-3 text-sm text-cream" onClick={() => setOpen(false)}>
               Audit framework
             </a>
+            <Link href="/pricing" className="min-h-11 py-3 text-sm text-cream" onClick={() => setOpen(false)}>
+              Pricing
+            </Link>
+            <Link href="/faq" className="min-h-11 py-3 text-sm text-cream" onClick={() => setOpen(false)}>
+              FAQ
+            </Link>
             <Link href="/sign-in" className="min-h-11 py-3 text-sm text-cream" onClick={() => setOpen(false)}>
               Sign in
             </Link>

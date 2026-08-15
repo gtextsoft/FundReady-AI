@@ -95,7 +95,7 @@ export function MentorDesk({
     if (!el) return;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     el.scrollTo({ top: el.scrollHeight, behavior: reduce ? "auto" : "smooth" });
-  }, [history.length, busy]);
+  }, [history, busy]);
 
   async function send(text: string) {
     const trimmed = text.trim();
@@ -144,7 +144,9 @@ export function MentorDesk({
                 {history.map((turn) => (
                   <TurnBubble key={turn.id} turn={turn} />
                 ))}
-                {busy ? <TypingIndicator /> : null}
+                {busy && !history.some((t) => t.role === "assistant" && t.content) ? (
+                  <TypingIndicator />
+                ) : null}
               </>
             )}
           </div>

@@ -305,6 +305,8 @@ export type FounderAccount = EmailVerification & {
    * because the server reports the subscription's state and not when it began.
    */
   subscriptionStatus: SubscriptionStatus;
+  /** Server-authoritative entitlement. Prefer this over recomputing the trial. */
+  hasAccess?: boolean;
 };
 
 export type InvestorAccount = EmailVerification & {

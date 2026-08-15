@@ -52,6 +52,7 @@ export function isPaid(account: FounderAccount): boolean {
 
 /** True when the founder has either paid or is still inside the trial window. */
 export function hasAccess(account: FounderAccount, now: number = Date.now()): boolean {
+  if (typeof account.hasAccess === 'boolean') return account.hasAccess;
   return isPaid(account) || trialActive(account, now);
 }
 

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, Select, TextArea } from "@/components/ui/field";
-import { EmptyState, ErrorState } from "@/components/ui/states";
+import { Badge, EmptyState, ErrorState } from "@/components/ui/states";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { Panel, PanelList, PanelRow } from "@/components/ui/panel";
@@ -16,6 +16,9 @@ export default function AdminProductsPage() {
   const [slug, setSlug] = useState("");
   const [kind, setKind] = useState("program");
   const [description, setDescription] = useState("");
+  const [amount, setAmount] = useState("");
+  const [currency, setCurrency] = useState("USD");
+  const [priceId, setPriceId] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const load = useLoad(
@@ -29,7 +32,10 @@ export default function AdminProductsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Products" />
+      <PageHeader
+        title="Products"
+        description="Priced items need a Stripe Price id (price_…) from the Dashboard. Unlock checkout stays on STRIPE_PRICE_ID_UNLOCK."
+      />
       <Panel className="grid gap-3 md:grid-cols-2">
         <Field label="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
         <Field label="Slug" value={slug} onChange={(e) => setSlug(e.target.value)} />
@@ -38,6 +44,9 @@ export default function AdminProductsPage() {
           <option value="mentorship">mentorship</option>
           <option value="event">event</option>
         </Select>
+        <Field label="Amount (minor units)" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} />
+        <Field label="Currency" value={currency} onChange={(e) => setCurrency(e.target.value)} />
+        <Field label="Stripe price id" value={priceId} onChange={(e) => setPriceId(e.target.value)} hint="price_…" />
         <TextArea label="Description" value={description} onChange={(e) => setDescription(e.target.value)} className="md:col-span-2" />
         {formError ? <p className="text-sm text-fail md:col-span-2">{formError}</p> : null}
         <Button
@@ -51,6 +60,7 @@ export default function AdminProductsPage() {
             setFormError(null);
             setBusy(true);
             try {
+              const amountMinor = amount.trim() ? Number(amount) : null;
               await api.createProduct({
                 kind,
                 slug,
@@ -59,11 +69,16 @@ export default function AdminProductsPage() {
                 regions: ["*"],
                 gap_tags: [],
                 active: true,
+                amount_minor: amountMinor,
+                currency: amountMinor != null ? currency : null,
+                stripe_price_id: priceId.trim() || null,
               });
               toast.success("Listed.");
               setTitle("");
               setSlug("");
               setDescription("");
+              setAmount("");
+              setPriceId("");
               await load.reload();
             } catch (err) {
               toast.error(err instanceof Error ? err.message : "Could not create.");
@@ -81,23 +96,28 @@ export default function AdminProductsPage() {
       {load.status === "ready" ? (
         <PanelList>
           {load.data.map((p: Product) => (
-            <PanelRow key={p.id} className="flex items-center justify-between">
+            <PanelRow key={p.id} className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-cream">{p.title}</p>
                 <p className="text-[11px] text-mist">
                   {p.kind} · {p.slug}
                 </p>
               </div>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={async () => {
-                  await api.updateProduct(p.id, { active: !p.active });
-                  await load.reload();
-                }}
-              >
-                {p.active ? "Retire" : "Activate"}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Badge tone={p.checkout_configured ? "pass" : "hold"}>
+                  {p.checkout_configured ? "Checkout ready" : "Needs Stripe price"}
+                </Badge>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={async () => {
+                    await api.updateProduct(p.id, { active: !p.active });
+                    await load.reload();
+                  }}
+                >
+                  {p.active ? "Retire" : "Activate"}
+                </Button>
+              </div>
             </PanelRow>
           ))}
         </PanelList>

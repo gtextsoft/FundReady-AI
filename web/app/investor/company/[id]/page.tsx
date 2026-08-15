@@ -9,9 +9,10 @@ import { LockedCard, ErrorState } from "@/components/ui/states";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { Panel } from "@/components/ui/panel";
-import { api, type Interest, type StartupCard } from "@/lib/api";
+import { api, type Interest, type Meeting, type StartupCard } from "@/lib/api";
 import { investorGate, gateCopy } from "@/lib/domain/access";
-import { investorAccount } from "@/lib/format";
+import { investorAccount, humanize } from "@/lib/format";
+import { formatSlot } from "@/lib/utils";
 import { useSession } from "@/stores/session";
 import { toast } from "sonner";
 
@@ -23,8 +24,9 @@ export default function CompanyPage() {
   const [note, setNote] = useState("");
   const [slot, setSlot] = useState("");
   const [interest, setInterest] = useState<Interest | null>(null);
+  const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [watching, setWatching] = useState(false);
-  const [busy, setBusy] = useState<"watch" | "interest" | "call" | null>(null);
+  const [busy, setBusy] = useState<"watch" | "interest" | "call" | "withdraw" | null>(null);
   const g = investorGate(investorAccount(session), "expressInterest");
 
   async function load() {
@@ -36,8 +38,15 @@ export default function CompanyPage() {
         api.getWatchlist().catch(() => ({ startup_ids: [] as string[] })),
       ]);
       setCard(c);
-      setInterest(list.find((i) => i.startup_id === id) ?? null);
+      const row = list.find((i) => i.startup_id === id) ?? null;
+      setInterest(row);
       setWatching(watch.startup_ids.includes(id));
+      if (row) {
+        const booked = await api.listMeetings(row.id).catch(() => [] as Meeting[]);
+        setMeetings(booked);
+      } else {
+        setMeetings([]);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load this card.");
     }
@@ -98,29 +107,55 @@ export default function CompanyPage() {
               value={note}
               onChange={(e) => setNote(e.target.value)}
             />
-            <Button
-              type="button"
-              disabled={Boolean(interest)}
-              loading={busy === "interest"}
-              onClick={async () => {
-                setBusy("interest");
-                try {
-                  const row = await api.expressInterest(id, note);
-                  setInterest(row);
-                  toast.success("Interest filed.");
-                } catch (err) {
-                  toast.error(err instanceof Error ? err.message : "Could not file interest.");
-                } finally {
-                  setBusy(null);
-                }
-              }}
-            >
-              {interest ? `Interest ${interest.status}` : "Express interest"}
-            </Button>
-            {interest ? (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                disabled={Boolean(interest)}
+                loading={busy === "interest"}
+                onClick={async () => {
+                  setBusy("interest");
+                  try {
+                    const row = await api.expressInterest(id, note);
+                    setInterest(row);
+                    toast.success("Interest filed.");
+                  } catch (err) {
+                    toast.error(err instanceof Error ? err.message : "Could not file interest.");
+                  } finally {
+                    setBusy(null);
+                  }
+                }}
+              >
+                {interest ? `Interest ${interest.status}` : "Express interest"}
+              </Button>
+              {interest?.status === "pending" ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  loading={busy === "withdraw"}
+                  onClick={async () => {
+                    setBusy("withdraw");
+                    try {
+                      const row = await api.withdrawInterest(interest.id);
+                      setInterest(row);
+                      toast.success("Interest withdrawn.");
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : "Could not withdraw.");
+                    } finally {
+                      setBusy(null);
+                    }
+                  }}
+                >
+                  Withdraw
+                </Button>
+              ) : null}
+            </div>
+            {interest?.status === "approved" ? (
               <>
+                <p className="text-sm text-mist">
+                  Propose a slot. SACI confirms and hosts — the founder is not notified until then.
+                </p>
                 <Field
-                  label="Propose a call (local time)"
+                  label="Propose a slot (local time)"
                   type="datetime-local"
                   value={slot}
                   onChange={(e) => setSlot(e.target.value)}
@@ -137,18 +172,32 @@ export default function CompanyPage() {
                     }
                     setBusy("call");
                     try {
-                      await api.requestCall(interest.id, new Date(slot).toISOString());
-                      toast.success("Call proposed.");
+                      const row = await api.proposeMeeting(interest.id, {
+                        scheduled_at: new Date(slot).toISOString(),
+                      });
+                      setMeetings((prev) => [row, ...prev]);
+                      setSlot("");
+                      toast.success("Slot proposed. SACI will confirm.");
                     } catch (err) {
-                      toast.error(err instanceof Error ? err.message : "Could not propose a call.");
+                      toast.error(err instanceof Error ? err.message : "Could not propose a slot.");
                     } finally {
                       setBusy(null);
                     }
                   }}
                 >
-                  Request call
+                  Propose slot
                 </Button>
               </>
+            ) : null}
+            {meetings.length ? (
+              <ul className="space-y-2 text-sm text-mist">
+                {meetings.map((m) => (
+                  <li key={m.id}>
+                    {formatSlot(m.scheduled_at)} · {humanize(m.status)}
+                    {m.location ? ` · ${m.location}` : ""}
+                  </li>
+                ))}
+              </ul>
             ) : null}
           </Panel>
         )}

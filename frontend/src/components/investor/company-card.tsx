@@ -4,6 +4,7 @@ import { Mono, Txt, TxtSemi } from '@/components/ui/text';
 import { C, scoreBorder, scoreColor, scoreTint } from '@/theme/tokens';
 import { growthColor, growthLabel, initials, moneyShort } from '@/lib/format';
 import type { CompanySummary } from '@/api';
+import type { DiscoveredStartup } from '@/domain/discovery';
 
 /**
  * Dealflow row. The desktop table's eight columns collapse into a header block
@@ -71,6 +72,75 @@ export function CompanyCard({
         </View>
       </Pressable>
 
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={watched ? 'Remove from watchlist' : 'Add to watchlist'}
+        hitSlop={10}
+        onPress={onToggleWatch}
+        className="absolute right-[13px] top-[43px] h-[20px] w-[24px] items-center justify-center">
+        <Txt className="text-[15px]" style={{ color: watched ? C.flag : C.boneGhost }}>
+          {watched ? '★' : '☆'}
+        </Txt>
+      </Pressable>
+    </View>
+  );
+}
+
+/** Summary-tier card: name, market, two verdicts. No invented MRR. */
+export function DiscoveryCard({
+  company,
+  watched,
+  onPress,
+  onToggleWatch,
+}: {
+  company: DiscoveredStartup;
+  watched: boolean;
+  onPress: () => void;
+  onToggleWatch: () => void;
+}) {
+  const score = company.fundability.score;
+  const name = company.name ?? 'Unnamed company';
+  return (
+    <View className="relative">
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${name}, fundability ${score ?? 'unscored'}`}
+        onPress={onPress}
+        className="rounded-[12px] border border-graphite bg-carbon-low p-[14px]">
+        <View className="flex-row items-start gap-[11px]">
+          <View className="h-[34px] w-[34px] items-center justify-center rounded-[9px] border border-graphite-strong bg-carbon-high">
+            <TxtSemi className="text-[11px] text-bone-secondary">{initials(name)}</TxtSemi>
+          </View>
+          <View className="min-w-0 flex-1">
+            <TxtSemi className="text-[14.5px]" style={{ letterSpacing: -0.2 }} numberOfLines={1}>
+              {name}
+            </TxtSemi>
+            <Txt className="mt-[3px] text-[12px] text-bone-muted" style={{ lineHeight: 17 }} numberOfLines={2}>
+              {[company.sector, company.stage, company.country].filter(Boolean).join(' · ') ||
+                'Summary card — no figures until SACI introduces you.'}
+            </Txt>
+          </View>
+          <View className="items-center gap-[5px]">
+            <ScoreBadge
+              score={score ?? 0}
+              color={scoreColor(score ?? 0)}
+              bg={scoreTint(score ?? 0)}
+              border={scoreBorder(score ?? 0)}
+            />
+            <View className="h-[20px] w-[22px]" />
+          </View>
+        </View>
+        <View className="mt-3 flex-row border-t pt-[10px]" style={{ borderTopColor: '#171717' }}>
+          <Metric label="FUND" value={score === null ? '—' : String(score)} mono />
+          <Metric
+            label="SALE"
+            value={company.saleability.score === null ? '—' : String(company.saleability.score)}
+            mono
+          />
+          <Metric label="STAGE" value={company.stage ?? '—'} />
+          <Metric label="SECTOR" value={company.sector ?? '—'} flex={1.2} />
+        </View>
+      </Pressable>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={watched ? 'Remove from watchlist' : 'Add to watchlist'}

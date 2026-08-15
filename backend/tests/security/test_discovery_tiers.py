@@ -89,8 +89,21 @@ async def _user(
     assert user is not None
     user.role = role
     user.status = AccountStatus.ACTIVE
+    if role is Role.ADMIN:
+        user.mfa_enabled = True
     await session.flush()
+    if role is Role.INVESTOR:
+        await _accept_thesis(session, user)
     return user, _actor(user)
+
+
+async def _accept_thesis(session: AsyncSession, user: User) -> None:
+    from app.modules.investor.models import ThesisReviewStatus
+    from app.modules.investor.repository import InvestorProfileRepository
+
+    row = await InvestorProfileRepository(session).get_or_create(user.id)
+    row.review_status = ThesisReviewStatus.ACCEPTED
+    await session.flush()
 
 
 def _stored() -> dict:
@@ -312,6 +325,35 @@ class TestWhoMayBrowse:
         card = await investor.visible_startup(db_session, admin, startup_id)
 
         assert card.startup_id == startup_id
+
+    async def test_an_unverified_investor_cannot_browse(
+        self, db_session: AsyncSession
+    ) -> None:
+        from app.modules.investor.models import ThesisReviewStatus
+        from app.modules.investor.repository import InvestorProfileRepository
+
+        _, owner = await _user(db_session)
+        await _startup(db_session, owner, published=True)
+        user = await identity.register_user(
+            db_session,
+            email=f"user-{uuid.uuid4().hex}@example.test",
+            password=PASSWORD,
+            role=Role.INVESTOR,
+            first_name="Ada",
+            last_name="Tester",
+        )
+        assert user is not None
+        user.status = AccountStatus.ACTIVE
+        await db_session.flush()
+        row = await InvestorProfileRepository(db_session).get_or_create(user.id)
+        row.review_status = ThesisReviewStatus.NONE
+        await db_session.flush()
+        viewer = _actor(user)
+
+        with pytest.raises(ForbiddenError):
+            await investor.discover(
+                db_session, viewer, DiscoveryFilters(), limit=10, offset=0
+            )
 
 
 class TestFilters:

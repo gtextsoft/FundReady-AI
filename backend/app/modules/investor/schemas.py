@@ -25,10 +25,21 @@ from app.modules.audit.reports import VerdictSummary, summary_report
 from app.modules.intake.fields import Stage
 from app.modules.intake.models import StartupProfile
 
+from app.core.security import KycStatus
+from app.modules.investor.models import InvestorProfile, ThesisReviewStatus
+
 __all__ = [
+    "AnalystChatRequest",
+    "AnalystChatResponse",
     "DiscoveryFilters",
     "DiscoveryPage",
+    "InvestorProfileResponse",
+    "InvestorProfileUpdate",
+    "InvestorReviewCard",
+    "InvestorReviewPage",
     "StartupCard",
+    "ThesisDecision",
+    "WatchlistResponse",
 ]
 
 
@@ -155,3 +166,200 @@ class DiscoveryPage(BaseModel):
     total: int = Field(description="Total matching startups, ignoring pagination.")
     limit: int
     offset: int
+
+
+class InvestorProfileUpdate(BaseModel):
+    """Thesis fields an investor may write. Review status is server-set."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "firm": "Sahel Capital",
+                "investor_type": "vc",
+                "country": "NG",
+                "linkedin_url": "https://www.linkedin.com/in/example",
+                "thesis_sectors": ["fintech"],
+                "thesis_stages": ["seed"],
+                "thesis_geographies": ["NG", "KE"],
+                "ticket_min_minor": 5000000,
+                "ticket_max_minor": 25000000,
+                "ticket_currency": "USD",
+                "risk_notes": "Prefer revenue-generating B2B.",
+            }
+        },
+    )
+
+    firm: str | None = Field(default=None, max_length=200)
+    investor_type: str | None = Field(default=None, max_length=80)
+    country: str | None = Field(default=None, min_length=2, max_length=2)
+    linkedin_url: str | None = Field(default=None, max_length=400)
+    thesis_sectors: list[str] = Field(default_factory=list, max_length=20)
+    thesis_stages: list[str] = Field(default_factory=list, max_length=10)
+    thesis_geographies: list[str] = Field(default_factory=list, max_length=20)
+    ticket_min_minor: int | None = Field(default=None, ge=0)
+    ticket_max_minor: int | None = Field(default=None, ge=0)
+    ticket_currency: str | None = Field(default=None, min_length=3, max_length=3)
+    risk_notes: str | None = Field(default=None, max_length=2000)
+
+
+class InvestorProfileResponse(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "firm": "Sahel Capital",
+                "investor_type": "vc",
+                "country": "NG",
+                "linkedin_url": None,
+                "thesis_sectors": ["fintech"],
+                "thesis_stages": ["seed"],
+                "thesis_geographies": ["NG"],
+                "ticket_min_minor": 5000000,
+                "ticket_max_minor": 25000000,
+                "ticket_currency": "USD",
+                "risk_notes": None,
+                "kyc_status": "none",
+                "review_status": "in_review",
+            }
+        },
+    )
+
+    firm: str | None = None
+    investor_type: str | None = None
+    country: str | None = None
+    linkedin_url: str | None = None
+    thesis_sectors: list[str] = Field(default_factory=list)
+    thesis_stages: list[str] = Field(default_factory=list)
+    thesis_geographies: list[str] = Field(default_factory=list)
+    ticket_min_minor: int | None = None
+    ticket_max_minor: int | None = None
+    ticket_currency: str | None = None
+    risk_notes: str | None = None
+    kyc_status: KycStatus
+    review_status: ThesisReviewStatus
+
+    @classmethod
+    def of(cls, row: InvestorProfile, kyc_status: KycStatus) -> "InvestorProfileResponse":
+        return cls(
+            firm=row.firm,
+            investor_type=row.investor_type,
+            country=row.country,
+            linkedin_url=row.linkedin_url,
+            thesis_sectors=list(row.thesis_sectors or []),
+            thesis_stages=list(row.thesis_stages or []),
+            thesis_geographies=list(row.thesis_geographies or []),
+            ticket_min_minor=row.ticket_min_minor,
+            ticket_max_minor=row.ticket_max_minor,
+            ticket_currency=row.ticket_currency,
+            risk_notes=row.risk_notes,
+            kyc_status=kyc_status,
+            review_status=row.review_status,
+        )
+
+
+class InvestorReviewCard(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "user_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+                "email": "lp@example.com",
+                "first_name": "Ada",
+                "last_name": "Okoye",
+                "firm": "Sahel Capital",
+                "investor_type": "vc",
+                "country": "NG",
+                "linkedin_url": None,
+                "thesis_sectors": ["fintech"],
+                "thesis_stages": ["seed"],
+                "thesis_geographies": ["NG"],
+                "risk_notes": None,
+                "review_status": "in_review",
+                "updated_at": "2026-08-15T12:00:00Z",
+            }
+        },
+    )
+
+    user_id: UUID
+    email: str
+    first_name: str | None
+    last_name: str | None
+    firm: str | None
+    investor_type: str | None
+    country: str | None
+    linkedin_url: str | None
+    thesis_sectors: list[str]
+    thesis_stages: list[str]
+    thesis_geographies: list[str]
+    risk_notes: str | None
+    review_status: ThesisReviewStatus
+    updated_at: datetime | None
+
+
+class InvestorReviewPage(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {"items": [], "total": 0, "limit": 20, "offset": 0}
+        },
+    )
+
+    items: list[InvestorReviewCard]
+    total: int
+    limit: int
+    offset: int
+
+
+class ThesisDecision(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"example": {"accept": True}},
+    )
+
+    accept: bool
+
+
+class WatchlistResponse(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "startup_ids": ["5f2b1c9e-0000-4000-8000-000000000001"],
+                "watching": True,
+            }
+        },
+    )
+
+    startup_ids: list[UUID]
+    watching: bool | None = None
+
+
+class AnalystChatRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "message": "What stage is this company?",
+                "history": [],
+            }
+        },
+    )
+
+    message: str = Field(min_length=1, max_length=2000)
+    history: list[dict[str, str]] = Field(default_factory=list, max_length=10)
+
+
+class AnalystChatResponse(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "reply": "The card lists stage as seed.",
+                "citations": [{"kind": "card", "ref": "stage"}],
+            }
+        },
+    )
+
+    reply: str
+    citations: list[dict[str, str]] = Field(default_factory=list)

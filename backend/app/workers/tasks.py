@@ -58,7 +58,8 @@ from app.modules.intake.repository import StartupProfileRepository
 from app.modules.notifications import service as notifications
 from app.modules.readiness import service as readiness
 from app.modules.readiness.assessment import assess_evidence as assess_submissions
-from app.modules.readiness.evidence import MAX_ASSESSMENT_ATTEMPTS
+from app.modules.notifications import inbox
+from app.modules.readiness.evidence import MAX_ASSESSMENT_ATTEMPTS, AssessmentOutcome
 from app.modules.readiness.repository import (
     EvidenceRepository,
     ReadinessTaskRepository,
@@ -303,6 +304,16 @@ async def _email_report(
             settings.app_link_base_url.rstrip("/") or PRODUCT_URL_FALLBACK,
             settings=settings,
         )
+        async with session_factory() as session:
+            await inbox.notify(
+                session,
+                owner_id,
+                kind="audit_ready",
+                title="Your assessment is ready",
+                body="Open FundReady to read the report.",
+                payload={"run_id": str(run_id)},
+            )
+            await session.commit()
     except Exception:
         # Deliberately broad, exactly like `_record_failure` and task
         # generation. The address is never logged -- `CLAUDE.md` section 4.
@@ -355,7 +366,20 @@ async def _generate_readiness_tasks(
                 audit_run_id=run_id,
                 report=report,
             )
+            await inbox.notify(
+                session,
+                owner_id,
+                kind="task_assigned",
+                title="Your action list is ready",
+                body="The assessment produced gaps to close.",
+                payload={"run_id": str(run_id)},
+            )
             await session.commit()
+        owner = None
+        async with get_session_factory()() as session:
+            owner = await UserRepository(session).get_by_id(owner_id)
+        if owner is not None:
+            await notifications.send_task_assigned_email(owner.email)
     except Exception:
         logger.exception(
             "readiness tasks could not be generated; the report is stored and "
@@ -642,7 +666,26 @@ async def assess_evidence_async(task_id: uuid.UUID) -> None:
             reasons=result.output.reasons,
             prompt_ref=result.record.prompt_ref,
         )
+        await inbox.notify(
+            session,
+            owner_id,
+            kind="evidence_result",
+            title="Evidence graded",
+            body="A submission has been assessed.",
+            payload={
+                "task_id": str(task_id),
+                "outcome": result.output.outcome.value,
+            },
+        )
         await session.commit()
+    owner = None
+    async with session_factory() as session:
+        owner = await UserRepository(session).get_by_id(owner_id)
+    if owner is not None:
+        await notifications.send_evidence_result_email(
+            owner.email,
+            passed=result.output.outcome is AssessmentOutcome.PASS,
+        )
 
 
 def _evidence_sources(

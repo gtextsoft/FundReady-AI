@@ -24,6 +24,7 @@ from app.modules.intake.fields import (
     Stage,
     value_error,
 )
+from app.modules.intake.models import CompanyVerificationStatus
 
 __all__ = [
     "DocumentKind",
@@ -32,6 +33,7 @@ __all__ = [
     "DownloadTicket",
     "FieldSource",
     "ProfileFieldValue",
+    "ProfilePage",
     "ProfileResponse",
     "RegistriesResponse",
     "RegistryEntry",
@@ -41,6 +43,10 @@ __all__ = [
     "StartupProfileUpdate",
     "UploadRequest",
     "UploadTicket",
+    "VerificationDecision",
+    "AdminStats",
+    "CorpusPage",
+    "CorpusRecord",
 ]
 
 Country = Annotated[str, Field(min_length=2, max_length=2)]
@@ -265,6 +271,9 @@ class ProfileResponse(BaseModel):
                         "monthly_costs_minor",
                         "team_size",
                     ],
+                    "investor_visible": False,
+                    "published_at": None,
+                    "company_verification_status": "none",
                     "created_at": "2026-07-30T08:00:00Z",
                     "updated_at": "2026-07-30T08:30:00Z",
                 }
@@ -299,8 +308,128 @@ class ProfileResponse(BaseModel):
     published_at: datetime | None = Field(
         default=None, description="When discovery was last opted in to."
     )
+    company_verification_status: CompanyVerificationStatus = Field(
+        default=CompanyVerificationStatus.NONE,
+        description=(
+            "Admin review of the registration certificate. Self-reported "
+            "until accepted. Not a call to a company register (D7)."
+        ),
+    )
     created_at: datetime
     updated_at: datetime
+
+
+class ProfilePage(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "items": [],
+                "total": 0,
+                "limit": 20,
+                "offset": 0,
+            }
+        },
+    )
+
+    items: list[ProfileResponse]
+    total: int
+    limit: int
+    offset: int
+
+
+class AdminStats(BaseModel):
+    """Console totals so the desk can scale past a single page of rows."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "startups_total": 120,
+                "startups_published": 40,
+                "startups_with_succeeded_audit": 55,
+                "users_founders": 90,
+                "users_investors": 25,
+                "users_admins": 3,
+                "interests_pending": 8,
+            }
+        },
+    )
+
+    startups_total: int
+    startups_published: int
+    startups_with_succeeded_audit: int
+    users_founders: int
+    users_investors: int
+    users_admins: int
+    interests_pending: int
+
+
+class CorpusRecord(BaseModel):
+    """One startup's scored file, stripped of identity, for later model training.
+
+    No owner email, no legal name, no document bytes. The figures, verdicts,
+    findings, and tasks are what a later rubric pass learns from.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "startup_id": "5f2b1c9e-0000-4000-8000-000000000001",
+                "sector": "fintech",
+                "stage": "seed",
+                "country": "NG",
+                "currency": "NGN",
+                "verification": "accepted",
+                "published": True,
+                "fields": {},
+                "latest_audit": None,
+                "tasks": [],
+            }
+        },
+    )
+
+    startup_id: uuid.UUID
+    sector: str | None
+    stage: str | None
+    country: str | None
+    currency: str | None
+    verification: CompanyVerificationStatus
+    published: bool
+    fields: dict[str, Any]
+    latest_audit: dict[str, Any] | None
+    tasks: list[dict[str, Any]]
+
+
+class CorpusPage(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "items": [],
+                "total": 0,
+                "limit": 50,
+                "offset": 0,
+                "purpose": "model_training",
+            }
+        },
+    )
+
+    items: list[CorpusRecord]
+    total: int
+    limit: int
+    offset: int
+    purpose: Literal["model_training"] = "model_training"
+
+
+class VerificationDecision(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"example": {"accept": True}},
+    )
+
+    accept: bool
 
 
 class ProfileConflict(BaseModel):

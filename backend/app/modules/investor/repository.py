@@ -26,11 +26,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.audit.models import AuditRun
 from app.modules.audit.runs import AuditStatus
 from app.modules.intake.models import StartupProfile
+from app.modules.investor.models import InvestorProfile, ThesisReviewStatus, WatchlistItem
 from app.modules.investor.schemas import DiscoveryFilters
 from app.modules.readiness.generation import Requirement, TaskStatus
 from app.modules.readiness.models import ReadinessTask
 
-__all__ = ["DiscoveryRepository"]
+__all__ = ["DiscoveryRepository", "InvestorProfileRepository", "WatchlistRepository"]
 
 
 class DiscoveryRepository:
@@ -171,3 +172,78 @@ class DiscoveryRepository:
             self._visible().where(StartupProfile.id == startup_id)
         )
         return result.tuples().first()
+
+
+class InvestorProfileRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get(self, user_id: uuid.UUID) -> InvestorProfile | None:
+        return await self._session.get(InvestorProfile, user_id)
+
+    async def get_or_create(self, user_id: uuid.UUID) -> InvestorProfile:
+        row = await self.get(user_id)
+        if row is not None:
+            return row
+        row = InvestorProfile(user_id=user_id)
+        self._session.add(row)
+        await self._session.flush()
+        return row
+
+    async def list_for_review(
+        self,
+        *,
+        status: ThesisReviewStatus | None,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[InvestorProfile], int]:
+        statement = select(InvestorProfile)
+        if status is not None:
+            statement = statement.where(InvestorProfile.review_status == status)
+        total = int(
+            await self._session.scalar(
+                select(func.count()).select_from(statement.subquery())
+            )
+            or 0
+        )
+        rows = list(
+            await self._session.scalars(
+                statement.order_by(InvestorProfile.updated_at.desc())
+                .limit(limit)
+                .offset(offset)
+            )
+        )
+        return rows, total
+
+
+class WatchlistRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def list_ids(self, investor_id: uuid.UUID) -> list[uuid.UUID]:
+        rows = await self._session.scalars(
+            select(WatchlistItem.startup_id)
+            .where(WatchlistItem.investor_id == investor_id)
+            .order_by(WatchlistItem.created_at.desc())
+        )
+        return list(rows)
+
+    async def get_pair(
+        self, investor_id: uuid.UUID, startup_id: uuid.UUID
+    ) -> WatchlistItem | None:
+        return await self._session.scalar(
+            select(WatchlistItem).where(
+                WatchlistItem.investor_id == investor_id,
+                WatchlistItem.startup_id == startup_id,
+            )
+        )
+
+    async def add(self, investor_id: uuid.UUID, startup_id: uuid.UUID) -> None:
+        self._session.add(
+            WatchlistItem(investor_id=investor_id, startup_id=startup_id)
+        )
+        await self._session.flush()
+
+    async def remove(self, row: WatchlistItem) -> None:
+        await self._session.delete(row)
+        await self._session.flush()

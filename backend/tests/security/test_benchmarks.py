@@ -65,6 +65,8 @@ async def actor_with_role(session: AsyncSession, role: Role) -> CurrentUser:
     assert user is not None
     user.role = role
     user.status = AccountStatus.ACTIVE
+    if role is Role.ADMIN:
+        user.mfa_enabled = True
     user.email_verified_at = datetime.now(UTC)
     await session.flush()
     return CurrentUser(

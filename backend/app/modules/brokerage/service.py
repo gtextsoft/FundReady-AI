@@ -25,25 +25,35 @@ from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import ConflictError, NotFoundError
+from app.core.errors import ConflictError, ForbiddenError, NotFoundError
 from app.core.security import CurrentUser, Role, assert_admin
 from app.modules.audit.models import AuditRun
 from app.modules.audit.reports import AdminReport, admin_report
 from app.modules.audit.repository import AuditRunRepository
 from app.modules.audit.runs import AuditStatus
-from app.modules.brokerage.models import Interest, InterestStatus
-from app.modules.brokerage.repository import InterestRepository, RevealRepository
-from app.modules.brokerage.schemas import InterestResponse, RevealResponse
+from app.modules.brokerage.models import Interest, InterestStatus, Meeting, MeetingStatus
+from app.modules.brokerage.repository import (
+    InterestRepository,
+    MeetingRepository,
+    RevealRepository,
+)
+from app.modules.brokerage.schemas import InterestResponse, MeetingResponse, RevealResponse
 from app.modules.identity import service as identity
 from app.modules.identity.models import AuditAction
 from app.modules.investor import service as investor
 
 __all__ = [
+    "confirm_meeting",
     "decide_interest",
     "express_interest",
     "list_interests",
+    "list_meetings",
+    "list_my_meetings",
+    "propose_meeting",
     "read_revealed_report",
     "reveal_report",
+    "schedule_meeting",
+    "withdraw_interest",
 ]
 
 _NOT_FOUND = "No such interest."
@@ -118,6 +128,7 @@ async def list_interests(
     reveals = RevealRepository(session)
 
     if actor.role is Role.ADMIN:
+        assert_admin(actor)
         rows = await repository.list_all(status=status)
     else:
         investor.require_investor(actor)
@@ -166,6 +177,18 @@ async def decide_interest(
         target_type="interest",
         target_id=interest.id,
         details={"startup_id": str(interest.startup_id)},
+    )
+    from app.modules.notifications import inbox
+
+    await inbox.notify(
+        session,
+        interest.investor_id,
+        kind="interest_decided",
+        title="Interest decided",
+        body="SACI approved your introduction request."
+        if approve
+        else "SACI declined your introduction request.",
+        payload={"accepted": approve, "interest_id": str(interest.id)},
     )
     return InterestResponse.of(interest)
 
@@ -272,3 +295,194 @@ async def read_revealed_report(
         raise NotFoundError("That report is no longer available.")
 
     return admin_report(run.report)
+
+
+async def withdraw_interest(
+    session: AsyncSession, actor: CurrentUser, interest_id: uuid.UUID
+) -> InterestResponse:
+    """The investor withdraws a pending interest. Terminal."""
+    investor.require_investor(actor)
+    if actor.role is Role.ADMIN:
+        raise ForbiddenError("Admins decide interests; they do not withdraw them.")
+    interest = await _owned_interest(session, actor, interest_id)
+    if interest.status is not InterestStatus.PENDING:
+        raise ConflictError(f"This interest is already {interest.status.value}.")
+    interest.status = InterestStatus.WITHDRAWN
+    interest.decided_at = datetime.now(UTC)
+    await session.flush()
+    await identity.record_action(
+        session,
+        AuditAction.INTEREST_WITHDRAWN,
+        actor_id=actor.id,
+        target_type="interest",
+        target_id=interest.id,
+        details={"startup_id": str(interest.startup_id)},
+    )
+    return InterestResponse.of(interest)
+
+
+async def propose_meeting(
+    session: AsyncSession,
+    actor: CurrentUser,
+    interest_id: uuid.UUID,
+    *,
+    scheduled_at: datetime,
+    duration_minutes: int,
+    message: str | None,
+) -> MeetingResponse:
+    """Investor proposes a slot. SACI still has to confirm before anyone is notified."""
+    investor.require_investor(actor)
+    if actor.role is Role.ADMIN:
+        raise ForbiddenError("Admins book meetings; they do not propose them.")
+    interest = await _owned_interest(session, actor, interest_id)
+    if interest.status is not InterestStatus.APPROVED:
+        raise ConflictError("Approve this interest before proposing a meeting.")
+    meeting = await MeetingRepository(session).create(
+        interest_id=interest.id,
+        scheduled_at=scheduled_at,
+        duration_minutes=duration_minutes,
+        location=None,
+        notes=message,
+        created_by_id=actor.id,
+        status=MeetingStatus.PROPOSED,
+    )
+    await identity.record_action(
+        session,
+        AuditAction.MEETING_PROPOSED,
+        actor_id=actor.id,
+        target_type="interest",
+        target_id=interest.id,
+        details={"meeting_id": str(meeting.id)},
+    )
+    return MeetingResponse.of(meeting)
+
+
+async def schedule_meeting(
+    session: AsyncSession,
+    actor: CurrentUser,
+    interest_id: uuid.UUID,
+    *,
+    scheduled_at: datetime,
+    duration_minutes: int,
+    location: str | None,
+    notes: str | None,
+) -> MeetingResponse:
+    """SACI books a meeting. SACI is a required participant by being the booker."""
+    _require_admin(actor)
+    interest = await _owned_interest(session, actor, interest_id)
+    if interest.status is not InterestStatus.APPROVED:
+        raise ConflictError("Approve this interest before scheduling a meeting.")
+    meeting = await MeetingRepository(session).create(
+        interest_id=interest.id,
+        scheduled_at=scheduled_at,
+        duration_minutes=duration_minutes,
+        location=location,
+        notes=notes,
+        created_by_id=actor.id,
+        status=MeetingStatus.SCHEDULED,
+    )
+    await identity.record_action(
+        session,
+        AuditAction.MEETING_SCHEDULED,
+        actor_id=actor.id,
+        target_type="interest",
+        target_id=interest.id,
+        details={"meeting_id": str(meeting.id)},
+    )
+    await _notify_meeting_booked(session, interest, meeting)
+    return MeetingResponse.of(meeting)
+
+
+async def confirm_meeting(
+    session: AsyncSession,
+    actor: CurrentUser,
+    interest_id: uuid.UUID,
+    meeting_id: uuid.UUID,
+    *,
+    scheduled_at: datetime | None,
+    duration_minutes: int | None,
+    location: str | None,
+    notes: str | None,
+) -> MeetingResponse:
+    """SACI accepts an investor proposal and hosts. Founder is notified only now."""
+    _require_admin(actor)
+    interest = await _owned_interest(session, actor, interest_id)
+    meeting = await MeetingRepository(session).get(meeting_id)
+    if meeting is None or meeting.interest_id != interest.id:
+        raise NotFoundError("No such meeting.")
+    if meeting.status is not MeetingStatus.PROPOSED:
+        raise ConflictError("Only a proposed meeting can be confirmed.")
+    if scheduled_at is not None:
+        meeting.scheduled_at = scheduled_at
+    if duration_minutes is not None:
+        meeting.duration_minutes = duration_minutes
+    if location is not None:
+        meeting.location = location
+    if notes is not None:
+        meeting.notes = notes
+    meeting.status = MeetingStatus.SCHEDULED
+    await session.flush()
+    await identity.record_action(
+        session,
+        AuditAction.MEETING_SCHEDULED,
+        actor_id=actor.id,
+        target_type="interest",
+        target_id=interest.id,
+        details={"meeting_id": str(meeting.id)},
+    )
+    await _notify_meeting_booked(session, interest, meeting)
+    return MeetingResponse.of(meeting)
+
+
+async def list_meetings(
+    session: AsyncSession, actor: CurrentUser, interest_id: uuid.UUID
+) -> list[MeetingResponse]:
+    if actor.role is Role.ADMIN:
+        assert_admin(actor)
+    interest = await _owned_interest(session, actor, interest_id)
+    rows = await MeetingRepository(session).list_for_interest(interest.id)
+    return [MeetingResponse.of(row) for row in rows]
+
+
+async def list_my_meetings(
+    session: AsyncSession, actor: CurrentUser
+) -> list[MeetingResponse]:
+    """Meetings this caller may see. Founders only see confirmed (scheduled) ones."""
+    repository = MeetingRepository(session)
+    if actor.role is Role.ADMIN:
+        assert_admin(actor)
+        rows = await repository.list_all()
+    elif actor.role is Role.INVESTOR:
+        investor.require_investor(actor)
+        rows = await repository.list_for_investor(actor.id)
+    elif actor.role is Role.FOUNDER:
+        rows = await repository.list_for_founder(actor.id)
+    else:
+        rows = []
+    return [MeetingResponse.of(row) for row in rows]
+
+
+async def _notify_meeting_booked(
+    session: AsyncSession, interest: Interest, meeting: Meeting
+) -> None:
+    from app.modules.identity.repository import UserRepository
+    from app.modules.intake.repository import StartupProfileRepository
+    from app.modules.notifications import inbox
+    from app.modules.notifications import service as mail
+
+    profile = await StartupProfileRepository(session).get(interest.startup_id)
+    recipients = [interest.investor_id]
+    if profile is not None:
+        recipients.append(profile.owner_id)
+    for user_id in recipients:
+        await inbox.notify(
+            session,
+            user_id,
+            kind="meeting_booked",
+            title="Meeting scheduled",
+            body="SACI booked an introduction meeting.",
+            payload={"meeting_id": str(meeting.id), "interest_id": str(interest.id)},
+        )
+        user = await UserRepository(session).get_by_id(user_id)
+        if user is not None:
+            await mail.send_meeting_booked_email(user.email)

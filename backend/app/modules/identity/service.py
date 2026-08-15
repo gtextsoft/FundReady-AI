@@ -447,6 +447,7 @@ async def load_current_user(
         session_valid_after=user.session_valid_after,
         subscription_status=user.subscription_status,
         created_at=user.created_at,
+        kyc_status=user.kyc_status,
     )
 
 
@@ -1165,3 +1166,20 @@ async def change_user_role(
     )
     await session.flush()
     return target
+
+
+async def list_users(
+    session: AsyncSession,
+    actor: CurrentUser,
+    *,
+    role: Role | None,
+    status: AccountStatus | None,
+    q: str | None = None,
+    limit: int,
+    offset: int,
+) -> tuple[list[User], int]:
+    """Every account, for the SACI console. MFA-enrolled admins only."""
+    _require_admin(actor)
+    return await UserRepository(session).list_all(
+        role=role, status=status, q=q, limit=limit, offset=offset
+    )

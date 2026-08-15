@@ -253,3 +253,60 @@ def audit_report_email(report: Any, app_url: str) -> EmailContent:
         html=_wrap(f"Your {PRODUCT_NAME} assessment", "".join(sections)),
         text="\n\n".join(text_parts),
     )
+
+
+def task_assigned_email() -> EmailContent:
+    """A new action list is waiting after an audit."""
+    return EmailContent(
+        subject=f"Your {PRODUCT_NAME} action list is ready",
+        html=_wrap(
+            "Your action list is ready",
+            "<p>The assessment produced a short list of gaps to close. "
+            "Open the app to see what to evidence next.</p>",
+        ),
+        text=(
+            "The assessment produced a short list of gaps to close. "
+            "Open the app to see what to evidence next."
+        ),
+    )
+
+
+def evidence_result_email(*, passed: bool) -> EmailContent:
+    """A submitted file has been graded. No task text — that is PII-adjacent."""
+    if passed:
+        return EmailContent(
+            subject=f"Evidence accepted — {PRODUCT_NAME}",
+            html=_wrap(
+                "Evidence accepted",
+                "<p>A submission passed. Open the app to see what remains.</p>",
+            ),
+            text="A submission passed. Open the app to see what remains.",
+        )
+    return EmailContent(
+        subject=f"Evidence needs more work — {PRODUCT_NAME}",
+        html=_wrap(
+            "Evidence needs more work",
+            "<p>A submission did not pass. Open the app for the reasons "
+            "and what to send next.</p>",
+        ),
+        text=(
+            "A submission did not pass. Open the app for the reasons "
+            "and what to send next."
+        ),
+    )
+
+
+def meeting_booked_email() -> EmailContent:
+    """SACI booked an introduction. No names or times in the template."""
+    return EmailContent(
+        subject=f"A {PRODUCT_NAME} meeting has been scheduled",
+        html=_wrap(
+            "A meeting has been scheduled",
+            "<p>SACI booked an introduction meeting. Open the app for "
+            "the time and how to join.</p>",
+        ),
+        text=(
+            "SACI booked an introduction meeting. Open the app for "
+            "the time and how to join."
+        ),
+    )

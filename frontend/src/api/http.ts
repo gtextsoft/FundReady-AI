@@ -253,6 +253,8 @@ type MeResponse = {
   kyc_status: 'none' | 'pending' | 'verified' | 'failed';
   subscription_status: 'none' | 'active' | 'past_due' | 'canceled';
   created_at: string;
+  trial_ends_at?: string;
+  has_access?: boolean;
 };
 
 /**
@@ -576,10 +578,14 @@ export const httpApi: FundReadyApi = {
     });
   },
 
-  async resetPassword(token: string, password: string) {
+  async resetPassword(email: string, code: string, password: string) {
     await request<void>('/v1/auth/password-reset/confirm', {
       method: 'POST',
-      body: { token: token.trim(), password },
+      body: {
+        email: email.trim().toLowerCase(),
+        code: code.replace(/[\s-]/g, ''),
+        password,
+      },
     });
     // The server has just revoked every refresh token and invalidated every
     // access token it had issued, so anything this device is still holding is
@@ -600,19 +606,25 @@ export const httpApi: FundReadyApi = {
       ownProfile().catch(() => null),
     ]);
     const created = new Date(me.created_at).getTime();
+    const status = profile?.company_verification_status;
+    const verification =
+      status === 'accepted'
+        ? 'verified'
+        : status === 'rejected'
+          ? 'rejected'
+          : status === 'in_review' || status === 'submitted'
+            ? 'in_review'
+            : 'unverified';
 
     return {
       emailVerified: me.email_verified,
-      // The stored name first; the domain guess only until one exists. The
-      // server fills the name in from the verified company domain at
-      // registration (T1.4a), so in practice this falls back rarely.
       companyName: profile?.name || companyNameFromEmail(me.email),
-      // Company-registration verification still has no endpoint. This is
-      // deliberately NOT read off `kyc_status`, which is investor identity.
-      verification: 'unverified',
+      verification,
       registration: null,
-      trialEndsAt: new Date(created + TRIAL_DAYS * 86_400_000).toISOString(),
+      trialEndsAt:
+        me.trial_ends_at ?? new Date(created + TRIAL_DAYS * 86_400_000).toISOString(),
       subscriptionStatus: me.subscription_status,
+      hasAccess: me.has_access,
     };
   },
 
@@ -662,11 +674,56 @@ export const httpApi: FundReadyApi = {
   },
 
   // ── verification ────────────────────────────────────────
-  submitCompanyRegistration: () => notYet('Company verification', 'T1.4'),
-  submitInvestorCredentials: () => notYet('Investor verification', 'T4.1'),
+  async submitCompanyRegistration(registration) {
+    const startupId = await requireProfileId();
+    await request<unknown>(`/v1/startups/${startupId}`, {
+      method: 'PATCH',
+      body: {
+        country: registration.country,
+        fields: {
+          legal_name: { value: registration.legalName, source: 'founder' },
+          registration_number: {
+            value: registration.registrationNumber,
+            source: 'founder',
+          },
+        },
+      },
+      auth: true,
+    });
+    await request<unknown>(`/v1/startups/${startupId}/company-verification/submit`, {
+      method: 'POST',
+      auth: true,
+    });
+    return this.getFounderAccount();
+  },
+  async submitInvestorCredentials(credentials) {
+    await request<unknown>('/v1/investor/me', {
+      method: 'PUT',
+      body: {
+        firm: credentials.firm,
+        investor_type: credentials.investorType,
+        country: credentials.country,
+        linkedin_url: credentials.linkedinUrl,
+      },
+      auth: true,
+    });
+    return this.getInvestorAccount();
+  },
 
   // ── billing ─────────────────────────────────────────────
-  purchaseUnlock: () => notYet('Payments', 'T3.3 / T3.4'),
+  async purchaseUnlock() {
+    const checkout = await request<{ checkout_url: string; session_id: string }>(
+      '/v1/billing/checkout',
+      { method: 'POST', auth: true },
+    );
+    return {
+      reference: checkout.session_id,
+      amount: 0,
+      currency: 'USD',
+      paidAt: new Date().toISOString(),
+      checkoutUrl: checkout.checkout_url,
+    };
+  },
 
   // ── founder ─────────────────────────────────────────────
   /**
@@ -771,8 +828,31 @@ export const httpApi: FundReadyApi = {
     };
   },
 
-  enrol: () => notYet('Programme enrolment', 'T3.2'),
-  askMentor: () => notYet('The AI mentor', 'T3.7'),
+  async enrol(programme) {
+    const page = await request<{ items: { id: string; slug: string; title: string }[] }>(
+      '/v1/products?limit=100',
+      { auth: true },
+    );
+    const needle = programme.toLowerCase();
+    const match = (page.items ?? []).find(
+      (item) =>
+        item.slug.toLowerCase().includes(needle) ||
+        item.title.toLowerCase().includes(needle),
+    );
+    if (!match) {
+      throw new ApiFailure('not_found', 'No matching programme is in the catalogue.');
+    }
+    await request<unknown>(`/v1/products/${match.id}/enrol`, { method: 'POST', auth: true });
+  },
+  async askMentor(question) {
+    const startupId = await requireProfileId();
+    const out = await request<{ reply: string }>(`/v1/startups/${startupId}/mentor/chat`, {
+      method: 'POST',
+      body: { message: question, history: [] },
+      auth: true,
+    });
+    return out.reply;
+  },
 
   // ── investor ────────────────────────────────────────────
   /**
@@ -819,9 +899,20 @@ export const httpApi: FundReadyApi = {
       auth: true,
     });
   },
-  getWatchlist: () => notYet('The watchlist', 'no backend task yet'),
-  toggleWatch: () => notYet('The watchlist', 'no backend task yet'),
-  requestIntroduction: () => notYet('Introductions', 'T4.5'),
+  async getWatchlist() {
+    const out = await request<{ startup_ids: string[] }>('/v1/watchlist', { auth: true });
+    return out.startup_ids ?? [];
+  },
+  async toggleWatch(id: string) {
+    const out = await request<{ startup_ids: string[] }>(`/v1/watchlist/${id}`, {
+      method: 'POST',
+      auth: true,
+    });
+    return out.startup_ids ?? [];
+  },
+  async requestIntroduction(companyId: string) {
+    await this.expressInterest(companyId);
+  },
 
   // ── virtual calls ───────────────────────────────────────
   requestCall: () => notYet('Call scheduling', 'T4.5'),
@@ -829,6 +920,33 @@ export const httpApi: FundReadyApi = {
   respondToCall: () => notYet('Call requests', 'T4.5'),
 
   // ── notifications ───────────────────────────────────────
-  listNotifications: () => notYet('Notifications', 'T5.3'),
-  markNotificationsRead: () => notYet('Notifications', 'T5.3'),
+  async listNotifications(audience) {
+    const page = await request<{
+      items: {
+        id: string;
+        kind: string;
+        title: string;
+        body: string;
+        created_at: string;
+        read_at: string | null;
+      }[];
+    }>('/v1/notifications?limit=50', { auth: true });
+    return (page.items ?? []).map((row) => ({
+      id: row.id,
+      audience,
+      kind: 'score_changed' as const,
+      title: row.title,
+      body: row.body,
+      createdAt: row.created_at,
+      read: Boolean(row.read_at),
+    }));
+  },
+  async markNotificationsRead(ids: string[]) {
+    if (!ids.length) return;
+    await request<unknown>('/v1/notifications/read', {
+      method: 'POST',
+      body: { ids },
+      auth: true,
+    });
+  },
 };

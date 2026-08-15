@@ -19,12 +19,50 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import ForbiddenError, NotFoundError
-from app.core.security import CurrentUser, Role
-from app.modules.investor.repository import DiscoveryRepository
-from app.modules.investor.schemas import DiscoveryFilters, DiscoveryPage, StartupCard
+from datetime import UTC, datetime
 
-__all__ = ["discover", "require_investor", "visible_startup"]
+from app.ai.caching import uncached_system
+from app.ai.client import AiClient, ModelTier
+from app.ai.guards import UNTRUSTED_RULE, fence
+from app.core.config import get_settings
+from app.core.errors import ForbiddenError, NotFoundError
+from app.core.security import CurrentUser, KycStatus, Role, assert_admin
+from app.modules.identity import service as identity
+from app.modules.identity.models import AuditAction
+from app.modules.identity.repository import UserRepository
+from app.modules.investor.models import ThesisReviewStatus
+from app.modules.investor.repository import (
+    DiscoveryRepository,
+    InvestorProfileRepository,
+    WatchlistRepository,
+)
+from app.modules.investor.schemas import (
+    AnalystChatResponse,
+    DiscoveryFilters,
+    DiscoveryPage,
+    InvestorProfileResponse,
+    InvestorProfileUpdate,
+    InvestorReviewCard,
+    InvestorReviewPage,
+    StartupCard,
+    WatchlistResponse,
+)
+from app.modules.mentor.ai_schema import MentorReplyOut
+from app.modules.mentor.prompts import MENTOR_SYSTEM_V1
+
+__all__ = [
+    "analyst_chat",
+    "decide_thesis",
+    "discover",
+    "get_or_create_profile",
+    "list_theses",
+    "list_watchlist",
+    "require_investor",
+    "require_verified_investor",
+    "toggle_watch",
+    "update_profile",
+    "visible_startup",
+]
 
 _NOT_DISCOVERABLE = "No such startup."
 """One message for "no such id" and for "not discoverable".
@@ -44,6 +82,207 @@ def require_investor(actor: CurrentUser) -> None:
     """
     if actor.role not in (Role.INVESTOR, Role.ADMIN):
         raise ForbiddenError
+    if actor.role is Role.ADMIN:
+        assert_admin(actor)
+
+
+async def require_verified_investor(
+    session: AsyncSession, actor: CurrentUser
+) -> None:
+    """T4.1: an investor must have an accepted thesis before dealflow."""
+    require_investor(actor)
+    if actor.role is Role.ADMIN:
+        return
+    profile = await InvestorProfileRepository(session).get(actor.id)
+    if profile is None or profile.review_status is not ThesisReviewStatus.ACCEPTED:
+        raise ForbiddenError(
+            "Complete investor verification before browsing dealflow."
+        )
+
+
+async def get_or_create_profile(
+    session: AsyncSession, actor: CurrentUser
+) -> InvestorProfileResponse:
+    require_investor(actor)
+    if actor.role is Role.ADMIN:
+        raise ForbiddenError("Admins do not hold an investor thesis.")
+    row = await InvestorProfileRepository(session).get_or_create(actor.id)
+    return InvestorProfileResponse.of(row, actor.kyc_status)
+
+
+async def update_profile(
+    session: AsyncSession, actor: CurrentUser, payload: InvestorProfileUpdate
+) -> InvestorProfileResponse:
+    require_investor(actor)
+    if actor.role is Role.ADMIN:
+        raise ForbiddenError("Admins do not hold an investor thesis.")
+    row = await InvestorProfileRepository(session).get_or_create(actor.id)
+    if row.review_status is ThesisReviewStatus.ACCEPTED:
+        raise ForbiddenError("An accepted thesis cannot be edited.")
+    data = payload.model_dump()
+    for key, value in data.items():
+        setattr(row, key, value)
+    row.review_status = ThesisReviewStatus.IN_REVIEW
+    row.updated_at = datetime.now(UTC)
+    await session.flush()
+    return InvestorProfileResponse.of(row, actor.kyc_status)
+
+
+async def list_theses(
+    session: AsyncSession,
+    actor: CurrentUser,
+    *,
+    status: ThesisReviewStatus | None,
+    limit: int,
+    offset: int,
+) -> InvestorReviewPage:
+    assert_admin(actor)
+    rows, total = await InvestorProfileRepository(session).list_for_review(
+        status=status, limit=limit, offset=offset
+    )
+    users = UserRepository(session)
+    items: list[InvestorReviewCard] = []
+    for row in rows:
+        user = await users.get_by_id(row.user_id)
+        if user is None:
+            continue
+        items.append(
+            InvestorReviewCard(
+                user_id=row.user_id,
+                email=user.email,
+                first_name=user.first_name,
+                last_name=user.last_name,
+                firm=row.firm,
+                investor_type=row.investor_type,
+                country=row.country,
+                linkedin_url=row.linkedin_url,
+                thesis_sectors=list(row.thesis_sectors or []),
+                thesis_stages=list(row.thesis_stages or []),
+                thesis_geographies=list(row.thesis_geographies or []),
+                risk_notes=row.risk_notes,
+                review_status=row.review_status,
+                updated_at=row.updated_at,
+            )
+        )
+    return InvestorReviewPage(items=items, total=total, limit=limit, offset=offset)
+
+
+async def decide_thesis(
+    session: AsyncSession, actor: CurrentUser, user_id: uuid.UUID, *, accept: bool
+) -> InvestorReviewCard:
+    assert_admin(actor)
+    row = await InvestorProfileRepository(session).get(user_id)
+    if row is None:
+        raise NotFoundError("No such investor thesis.")
+    row.review_status = (
+        ThesisReviewStatus.ACCEPTED if accept else ThesisReviewStatus.REJECTED
+    )
+    row.reviewed_at = datetime.now(UTC)
+    row.reviewed_by_id = actor.id
+    user = await UserRepository(session).get_by_id(user_id)
+    if user is None:
+        raise NotFoundError("No such investor thesis.")
+    user.kyc_status = KycStatus.VERIFIED if accept else KycStatus.FAILED
+    await session.flush()
+    await identity.record_action(
+        session,
+        AuditAction.THESIS_REVIEWED,
+        actor_id=actor.id,
+        target_type="investor_profile",
+        target_id=user_id,
+        details={"accepted": accept},
+    )
+    from app.modules.notifications import inbox
+
+    await inbox.notify(
+        session,
+        user_id,
+        kind="thesis_review",
+        title="Thesis review decided",
+        body="SACI accepted your thesis." if accept else "SACI declined your thesis.",
+        payload={"accepted": accept},
+    )
+    return InvestorReviewCard(
+        user_id=row.user_id,
+        email=user.email,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        firm=row.firm,
+        investor_type=row.investor_type,
+        country=row.country,
+        linkedin_url=row.linkedin_url,
+        thesis_sectors=list(row.thesis_sectors or []),
+        thesis_stages=list(row.thesis_stages or []),
+        thesis_geographies=list(row.thesis_geographies or []),
+        risk_notes=row.risk_notes,
+        review_status=row.review_status,
+        updated_at=row.updated_at,
+    )
+
+
+async def list_watchlist(
+    session: AsyncSession, actor: CurrentUser
+) -> WatchlistResponse:
+    require_investor(actor)
+    ids = await WatchlistRepository(session).list_ids(actor.id)
+    return WatchlistResponse(startup_ids=ids)
+
+
+async def toggle_watch(
+    session: AsyncSession, actor: CurrentUser, startup_id: uuid.UUID
+) -> WatchlistResponse:
+    await require_verified_investor(session, actor)
+    await visible_startup(session, actor, startup_id)
+    repo = WatchlistRepository(session)
+    existing = await repo.get_pair(actor.id, startup_id)
+    if existing is None:
+        await repo.add(actor.id, startup_id)
+        watching = True
+    else:
+        await repo.remove(existing)
+        watching = False
+    ids = await repo.list_ids(actor.id)
+    return WatchlistResponse(startup_ids=ids, watching=watching)
+
+
+async def analyst_chat(
+    session: AsyncSession,
+    actor: CurrentUser,
+    startup_id: uuid.UUID,
+    message: str,
+    history: list[dict[str, str]],
+    *,
+    client: AiClient | None = None,
+) -> AnalystChatResponse:
+    """Summary-tier retrieval only — the card, never the stored report."""
+    await require_verified_investor(session, actor)
+    card = await visible_startup(session, actor, startup_id)
+    context = card.model_dump(mode="json")
+    user_payload = (
+        f"SUMMARY_CARD:\n{context}\n\n"
+        f"PRIOR_TURNS:\n{history[-10:]}\n\n"
+        f"INVESTOR_QUESTION:\n{message.strip()}\n\n"
+        "Answer only from SUMMARY_CARD. If the card does not contain the "
+        "figure, say so. Never invent MRR, runway, team, or contact details."
+    )
+    fenced = fence(user_payload, label="investor_analyst_turn")
+    ai = client or AiClient(get_settings())
+    result = await ai.complete(
+        tier=ModelTier.CHAT,
+        prompt=MENTOR_SYSTEM_V1,
+        schema=MentorReplyOut,
+        system=uncached_system(
+            UNTRUSTED_RULE,
+            "You are an investor analyst. You may use only the summary card.",
+        ),
+        messages=[{"role": "user", "content": fenced.text}],
+        user_id=str(actor.id),
+    )
+    out = result.output
+    return AnalystChatResponse(
+        reply=out.reply,
+        citations=[{"kind": c.kind.value, "ref": c.ref} for c in out.citations],
+    )
 
 
 async def discover(
@@ -55,7 +294,7 @@ async def discover(
     offset: int,
 ) -> DiscoveryPage:
     """One page of discoverable startups, at summary tier."""
-    require_investor(actor)
+    await require_verified_investor(session, actor)
 
     repository = DiscoveryRepository(session)
     rows = await repository.search(filters, limit=limit, offset=offset)
@@ -78,7 +317,7 @@ async def visible_startup(
     cannot act on a startup that is not discoverable by pasting an id they were
     never shown.
     """
-    require_investor(actor)
+    await require_verified_investor(session, actor)
 
     row = await DiscoveryRepository(session).visible_run(startup_id)
     if row is None:

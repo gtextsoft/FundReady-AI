@@ -50,7 +50,7 @@ function MentorChrome({ children }: { children: React.ReactNode }) {
 export default function MentorPage() {
   const session = useSession((s) => s.session);
   const { profile, loading } = useStartup();
-  const g = gate(founderAccount(session), "aiMentor");
+  const g = gate(founderAccount(session, profile?.company_verification_status), "aiMentor");
   const [briefing, setBriefing] = useState<Briefing | null>(null);
   const [briefingError, setBriefingError] = useState<string | null>(null);
   const [history, setHistory] = useState<MentorTurn[]>([]);
@@ -157,27 +157,34 @@ export default function MentorPage() {
       busy={busy}
       onReset={() => setHistory([])}
       onSend={async (message) => {
-        const next: MentorTurn[] = [...history, { id: crypto.randomUUID(), role: "user", content: message }];
+        const userTurn: MentorTurn = { id: crypto.randomUUID(), role: "user", content: message };
+        const assistantId = crypto.randomUUID();
+        const next: MentorTurn[] = [...history, userTurn, { id: assistantId, role: "assistant", content: "" }];
         setHistory(next);
         setBusy(true);
         try {
-          const res = await api.chatMentor(
+          const res = await api.chatMentorStream(
             profile.id,
             message,
-            next.filter((t) => t.role !== "system").map((t) => ({ role: t.role, content: t.content })),
-          );
-          setHistory([
-            ...next,
-            {
-              id: crypto.randomUUID(),
-              role: "assistant",
-              content: res.reply,
-              citations: res.citations,
+            [...history, userTurn]
+              .filter((t) => t.role !== "system")
+              .map((t) => ({ role: t.role, content: t.content })),
+            (text) => {
+              setHistory((prev) =>
+                prev.map((t) => (t.id === assistantId ? { ...t, content: t.content + text } : t)),
+              );
             },
-          ]);
+          );
+          setHistory((prev) =>
+            prev.map((t) =>
+              t.id === assistantId
+                ? { ...t, content: res.reply || t.content, citations: res.citations }
+                : t,
+            ),
+          );
         } catch (err) {
-          setHistory([
-            ...next,
+          setHistory((prev) => [
+            ...prev.filter((t) => t.id !== assistantId),
             {
               id: crypto.randomUUID(),
               role: "system",

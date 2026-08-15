@@ -8,12 +8,13 @@ No business logic, no database access, no LLM calls.
 """
 
 import uuid
+from typing import Annotated
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 
 from app.core.deps import AuthenticatedUserDep, CurrentAdmin, SessionDep
 from app.core.errors import UnauthenticatedError, error_responses
-from app.core.security import create_mfa_challenge_token
+from app.core.security import AccountStatus, Role, create_mfa_challenge_token
 from app.modules.identity import service
 from app.modules.identity.repository import UserRepository
 from app.modules.identity.schemas import (
@@ -33,6 +34,7 @@ from app.modules.identity.schemas import (
     RegistrationAccepted,
     ResendVerificationRequest,
     TokenPairResponse,
+    UserPage,
     UserResponse,
     VerifyEmailRequest,
 )
@@ -370,6 +372,43 @@ ADMIN_ACTION_DESCRIPTION = (
     "\n\nRequires an admin account **with MFA enrolled**. An admin who has "
     "not enrolled receives `403` here until they do."
 )
+
+
+@router.get(
+    "/admin/users",
+    response_model=UserPage,
+    summary="List accounts",
+    description=(
+        "Every user, newest first. Filter with `role`, `status`, and `q` "
+        "(email or name)."
+        + ADMIN_ACTION_DESCRIPTION
+    ),
+    responses=error_responses(401, 403, 422),
+)
+async def list_users(
+    actor: CurrentAdmin,
+    session: SessionDep,
+    role: Annotated[Role | None, Query()] = None,
+    account_status: Annotated[AccountStatus | None, Query(alias="status")] = None,
+    q: Annotated[str | None, Query(max_length=120)] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> UserPage:
+    rows, total = await service.list_users(
+        session,
+        actor,
+        role=role,
+        status=account_status,
+        q=q,
+        limit=limit,
+        offset=offset,
+    )
+    return UserPage(
+        items=[UserResponse.of(row) for row in rows],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.post(

@@ -54,6 +54,7 @@ __all__ = [
     "Role",
     "SubscriptionStatus",
     "TokenPairResponse",
+    "UserPage",
     "UserResponse",
     "VerifyEmailRequest",
 ]
@@ -296,6 +297,7 @@ class UserResponse(BaseModel):
                     "created_at": "2026-07-29T09:15:00Z",
                     "trial_ends_at": "2026-08-12T09:15:00Z",
                     "has_access": True,
+                    "mfa_enabled": False,
                 }
             ]
         },
@@ -319,6 +321,7 @@ class UserResponse(BaseModel):
     # not recompute these from `created_at` with a local clock.
     trial_ends_at: datetime
     has_access: bool
+    mfa_enabled: bool = False
 
     @classmethod
     def of(cls, user: Any) -> "UserResponse":
@@ -345,7 +348,22 @@ class UserResponse(BaseModel):
             created_at=user.created_at,
             trial_ends_at=ends,
             has_access=access,
+            mfa_enabled=bool(user.mfa_enabled),
         )
+
+
+class UserPage(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {"items": [], "total": 0, "limit": 20, "offset": 0}
+        },
+    )
+
+    items: list[UserResponse]
+    total: int
+    limit: int
+    offset: int
 
 
 class VerifyEmailRequest(_EmailMixin):

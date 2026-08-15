@@ -182,7 +182,7 @@ export interface FundReadyApi {
    * Unknown, expired and already-used tokens come back as one indistinguishable
    * `validation` failure, deliberately.
    */
-  resetPassword(token: string, password: string): Promise<void>;
+  resetPassword(email: string, code: string, password: string): Promise<void>;
 
   // ── email verification ──────────────────────────────────
   /**
@@ -311,9 +311,9 @@ export interface FundReadyApi {
    * reading. Optional: the server accepts null.
    */
   expressInterest(startupId: string, note?: string): Promise<void>;
-  getWatchlist(): Promise<number[]>;
-  toggleWatch(id: number): Promise<number[]>;
-  requestIntroduction(companyId: number): Promise<void>;
+  getWatchlist(): Promise<string[]>;
+  toggleWatch(id: string): Promise<string[]>;
+  requestIntroduction(companyId: string): Promise<void>;
 
   // ── virtual calls ───────────────────────────────────────
   /** Investor proposes a slot; the founder is notified. */

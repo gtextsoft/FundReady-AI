@@ -15,8 +15,20 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
+from enum import StrEnum
+
 from app.modules.intake.documents import DocumentKind, DocumentStatus, ScanStatus
 from app.modules.intake.fields import Stage
+
+
+class CompanyVerificationStatus(StrEnum):
+    """Admin review of a founder's registration certificate (not a registry API)."""
+
+    NONE = "none"
+    SUBMITTED = "submitted"
+    IN_REVIEW = "in_review"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
 
 
 class StartupProfile(Base):
@@ -95,6 +107,18 @@ class StartupProfile(Base):
         Boolean, default=False, server_default="false", index=True
     )
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    company_verification_status: Mapped[CompanyVerificationStatus] = mapped_column(
+        SAEnum(
+            CompanyVerificationStatus,
+            native_enum=False,
+            length=16,
+            name="company_verification_status",
+            values_callable=lambda enum: [member.value for member in enum],
+        ),
+        default=CompanyVerificationStatus.NONE,
+        server_default=CompanyVerificationStatus.NONE.value,
+        index=True,
+    )
     """When the founder last opted in. Cleared on unpublish, so the column also
     answers "has this ever been discoverable" for a support conversation."""
 

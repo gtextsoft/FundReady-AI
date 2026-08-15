@@ -110,6 +110,40 @@ class UserRepository:
         )
         return int(result or 0)
 
+    async def list_all(
+        self,
+        *,
+        role: Role | None,
+        status: AccountStatus | None,
+        q: str | None = None,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[User], int]:
+        statement = select(User)
+        if role is not None:
+            statement = statement.where(User.role == role)
+        if status is not None:
+            statement = statement.where(User.status == status)
+        if q and q.strip():
+            needle = f"%{q.strip().lower()}%"
+            statement = statement.where(
+                func.lower(User.email).like(needle)
+                | func.lower(func.coalesce(User.first_name, "")).like(needle)
+                | func.lower(func.coalesce(User.last_name, "")).like(needle)
+            )
+        total = int(
+            await self._session.scalar(
+                select(func.count()).select_from(statement.subquery())
+            )
+            or 0
+        )
+        rows = list(
+            await self._session.scalars(
+                statement.order_by(User.created_at.desc()).limit(limit).offset(offset)
+            )
+        )
+        return rows, total
+
     async def count_active_admins(self) -> int:
         """How many admins can currently act.
 

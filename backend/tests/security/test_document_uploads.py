@@ -140,6 +140,8 @@ async def founder_with_profile(
     assert user is not None
     user.role = role
     user.status = AccountStatus.ACTIVE
+    if role is Role.ADMIN:
+        user.mfa_enabled = True
     user.email_verified_at = datetime.now(UTC)
     await session.flush()
     actor = actor_for(user)

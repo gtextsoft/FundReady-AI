@@ -1,28 +1,23 @@
 "use client";
 
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
 import { Badge, EmptyState, ErrorState, LockedCard } from "@/components/ui/states";
-import { ConfirmDialog } from "@/components/ui/dialog";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageSkeleton } from "@/components/ui/skeleton";
-import { PanelList, PanelRow, SectionLabel } from "@/components/ui/panel";
-import { api, type CallRequest } from "@/lib/api";
+import { PanelList, PanelRow } from "@/components/ui/panel";
+import { api, type Meeting } from "@/lib/api";
 import { gate, gateCopy } from "@/lib/domain/access";
 import { founderAccount, humanize } from "@/lib/format";
 import { formatSlot } from "@/lib/utils";
 import { useSession } from "@/stores/session";
-import { toast } from "sonner";
 import { useLoad } from "@/lib/hooks/use-load";
 import { useStartup } from "@/lib/hooks/use-startup";
+import { Button } from "@/components/ui/button";
 
 export default function RequestsPage() {
   const session = useSession((s) => s.session);
   const { profile, loading: profileLoading, error: profileError, reload: reloadProfile } = useStartup();
   const g = gate(founderAccount(session), "investorRequests");
-  const load = useLoad(() => api.listCalls(), [], (d) => d.length === 0);
-  const [declineId, setDeclineId] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const load = useLoad(() => api.listMyMeetings(), [], (d) => d.length === 0);
 
   if (!g.allowed) {
     const copy = gateCopy(g.reason, "founder");
@@ -42,7 +37,7 @@ export default function RequestsPage() {
     return (
       <EmptyState
         title="No company on file"
-        body="Complete intake so investor calls have a company to land on."
+        body="Complete intake so SACI has a company to introduce."
         action={<Button href="/onboarding">Start intake</Button>}
       />
     );
@@ -53,86 +48,39 @@ export default function RequestsPage() {
   if (load.status === "empty") {
     return (
       <div className="space-y-6">
-        <PageHeader title="Investor requests" />
+        <PageHeader
+          title="Meetings"
+          description="SACI books introductions. Time and location appear here after confirmation."
+        />
         <EmptyState
-          title="No requests"
-          body="Call scheduling is not live yet. When an investor can propose a slot, it will land here."
+          title="No meetings yet"
+          body="SACI hosts every introduction. When a meeting is confirmed, the slot lands here."
         />
       </div>
     );
   }
 
-  const calls = load.data;
-  const pending = calls.filter((c) => c.status === "pending");
-  const rest = calls.filter((c) => c.status !== "pending");
-
-  async function respond(c: CallRequest, accept: boolean) {
-    setBusyId(c.id);
-    try {
-      await api.respondCall(c.id, accept);
-      toast.success(accept ? "Accepted." : "Declined.");
-      await load.reload();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not respond.");
-    } finally {
-      setBusyId(null);
-      setDeclineId(null);
-    }
-  }
-
   return (
-    <div className="space-y-8">
-      <PageHeader title="Investor requests" description="Accept or decline proposed slots. The investor never sees your notes to SACI." />
-      <section className="space-y-3">
-        <SectionLabel>Pending</SectionLabel>
-        {pending.length === 0 ? (
-          <p className="text-sm text-mist">Nothing waiting. Earlier replies are listed below.</p>
-        ) : (
-          <PanelList>
-            {pending.map((c) => (
-              <PanelRow key={c.id} className="flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <p className="text-sm text-cream">Investor · {formatSlot(c.proposed_at)}</p>
-                  {c.message ? <p className="mt-1 text-xs text-mist">{c.message}</p> : null}
-                </div>
-                <div className="flex gap-2">
-                  <Button type="button" loading={busyId === c.id} onClick={() => void respond(c, true)}>
-                    Accept
-                  </Button>
-                  <Button type="button" variant="ghost" onClick={() => setDeclineId(c.id)}>
-                    Decline
-                  </Button>
-                </div>
-              </PanelRow>
-            ))}
-          </PanelList>
-        )}
-      </section>
-      {rest.length ? (
-        <section className="space-y-3">
-          <SectionLabel>Answered</SectionLabel>
-          <PanelList>
-            {rest.map((c) => (
-              <PanelRow key={c.id} className="flex items-center justify-between text-sm">
-                <span>Investor · {formatSlot(c.proposed_at)}</span>
-                <Badge tone={c.status === "accepted" ? "pass" : "fail"}>{humanize(c.status)}</Badge>
-              </PanelRow>
-            ))}
-          </PanelList>
-        </section>
-      ) : null}
-      <ConfirmDialog
-        open={Boolean(declineId)}
-        title="Decline this call?"
-        body="The investor is notified. You can still take other requests."
-        confirmLabel="Decline"
-        danger
-        onClose={() => setDeclineId(null)}
-        onConfirm={() => {
-          const row = pending.find((c) => c.id === declineId);
-          if (row) void respond(row, false);
-        }}
+    <div className="space-y-6">
+      <PageHeader
+        title="Meetings"
+        description="SACI hosts every introduction. You see a meeting only after it is confirmed."
       />
+      <PanelList>
+        {load.data.map((m: Meeting) => (
+          <PanelRow key={m.id} className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="text-sm text-cream">{formatSlot(m.scheduled_at)}</p>
+              <p className="mt-1 text-xs text-mist">
+                {m.duration_minutes} minutes
+                {m.location ? ` · ${m.location}` : ""}
+              </p>
+              {m.notes ? <p className="mt-1 text-xs text-mist">{m.notes}</p> : null}
+            </div>
+            <Badge tone="pass">{humanize(m.status)}</Badge>
+          </PanelRow>
+        ))}
+      </PanelList>
     </div>
   );
 }

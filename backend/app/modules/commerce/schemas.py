@@ -24,6 +24,7 @@ _PRODUCT_EXAMPLE: dict[str, Any] = {
     "event_starts_at": None,
     "event_location": None,
     "active": True,
+    "checkout_configured": True,
 }
 
 
@@ -193,6 +194,12 @@ class ProductResponse(BaseModel):
     event_starts_at: datetime | None
     event_location: str | None
     active: bool
+    checkout_configured: bool = Field(
+        description=(
+            "True when the item is free, or when a Stripe Price is attached. "
+            "A priced item without `stripe_price_id` is listed but cannot enrol."
+        )
+    )
 
 
 class ProductPage(BaseModel):

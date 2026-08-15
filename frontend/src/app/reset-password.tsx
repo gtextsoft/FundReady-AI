@@ -35,6 +35,7 @@ export default function ResetPassword() {
   // hand without needing another email.
   const linked = tokenFromParams(params);
   const [token, setToken] = useState(linked ?? '');
+  const [email, setEmail] = useState(typeof params.email === 'string' ? params.email : '');
 
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -53,6 +54,10 @@ export default function ResetPassword() {
       setFieldError('Type your new password twice.');
       return;
     }
+    if (!email.trim()) {
+      setFieldError('Enter the email address you reset.');
+      return;
+    }
     if (!token.trim()) {
       setFieldError('Paste the code from your reset email.');
       return;
@@ -62,7 +67,7 @@ export default function ResetPassword() {
     setFieldError(null);
     setError(null);
     try {
-      await api.resetPassword(token.trim(), password);
+      await api.resetPassword(email.trim(), token.trim(), password);
       setDone(true);
     } catch (e) {
       setError(e);
@@ -127,8 +132,18 @@ export default function ResetPassword() {
               </Txt>
 
               <View className="gap-[14px]">
-                {/* Hidden when the link supplied it: nothing to type, nothing
-                    to mistype. */}
+                <Field
+                  label="Email"
+                  placeholder="you@company.com"
+                  value={email}
+                  onChangeText={(value) => {
+                    setEmail(value);
+                    if (fieldError) setFieldError(null);
+                  }}
+                  autoCapitalize="none"
+                  autoComplete="email"
+                  keyboardType="email-address"
+                />
                 {linked ? null : (
                   <Field
                     label="Reset code"

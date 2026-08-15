@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BrandMark } from "@/components/brand/mark";
+import { LandingFooter } from "@/components/layout/landing-footer";
 import { LandingNav } from "@/components/layout/landing-nav";
 
 const CHECKS = [
@@ -193,11 +193,7 @@ export default function LandingPage() {
         </Link>
       </section>
 
-      <footer className="mx-auto grid max-w-[1184px] items-center gap-4 px-5 py-10 text-[11px] text-mist-2 md:grid-cols-3 md:px-7">
-        <BrandMark />
-        <p>AI-assisted investment readiness for ambitious founders.</p>
-        <small className="md:text-right">© 2026 Fundready. Decision support, not investment advice.</small>
-      </footer>
+      <LandingFooter />
     </div>
   );
 }

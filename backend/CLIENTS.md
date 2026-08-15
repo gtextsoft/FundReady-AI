@@ -181,6 +181,7 @@ be wrong for those two.
 | `GET /v1/tasks/{id}/evidence` | `limit`, `offset` | `{items, total, limit, offset}` |
 | `GET /v1/benchmarks` | `sector`, `stage`, `metric`, `region`, `include_retired`, `limit`, `offset` | bare array |
 | `GET /v1/startups/{id}/documents` | **none** — returns every document for that startup | bare array |
+| `GET /v1/me/meetings` · `GET /v1/interests/{id}/meetings` | **none** | bare array |
 
 **The convention is the paged envelope** — `{items, total, limit, offset}`, with
 `limit` capped at 100 and `total` counted ignoring pagination so you can render
@@ -225,6 +226,7 @@ per endpoint (`tasks` is priority-first, `audits` is newest-first).
 | | |
 |---|---|
 | `GET /v1/users/me` | The caller's own account, never another's. Includes server `trial_ends_at` and `has_access` |
+| `GET /v1/notifications` · `POST /v1/notifications/read` | In-app inbox. Mark-read is idempotent and ignores unknown ids. |
 | `POST /v1/auth/mfa/enroll` · `POST /v1/auth/mfa/confirm` | Enrol a second factor |
 | `GET /v1/registries` | Company-register labels by country (for registration forms) |
 | `GET /v1/products` · `GET /v1/products/{id}` | Catalogue. Inactive items are hidden unless the caller is an MFA-enrolled admin. Filter with `region` (ISO alpha-2 or omitted) and `kind` |
@@ -242,12 +244,14 @@ per endpoint (`tasks` is priority-first, `audits` is newest-first).
 | `GET /v1/startups/{id}/documents` | List |
 | `GET /v1/documents/{id}/download` | Expiring signed URL |
 | `POST /v1/startups/{id}/publish` · `POST /v1/startups/{id}/unpublish` | Opt in or out of investor discovery — see §5c |
+| `POST /v1/startups/{id}/company-verification/submit` | Ask SACI to review the registration certificate. Sets `in_review`. |
 | `POST /v1/startups/{id}/audits` | Request an audit — see §5a. Requires trial or paid unlock |
 | `GET /v1/startups/{id}/audits` | This startup's runs, newest first |
 | `GET /v1/startups/{id}/audits/{run_id}` | Poll one run's status |
 | `GET /v1/startups/{id}/audits/{run_id}/report` | Founder-tier report JSON |
 | `GET /v1/startups/{id}/audits/{run_id}/report.pdf` | Founder-tier report PDF |
 | `POST /v1/startups/{id}/mentor/chat` | AI mentor over this startup's own audit (trial or paid) |
+| `POST /v1/startups/{id}/mentor/chat/stream` | Same as chat, as `text/event-stream`: `delta` tokens then a `done` event with `{reply, citations}` |
 | `GET /v1/startups/{id}/tasks` | Readiness tasks — see §5e |
 | `GET /v1/startups/{id}/tasks/summary` | Progress counts for a home screen |
 | `GET /v1/startups/{id}/tasks/{task_id}` | One task |
@@ -274,14 +278,22 @@ Enrol before calling any of them; an access token alone is not enough.
 
 | | |
 |---|---|
+| `GET /v1/admin/users` | List accounts. Filter with `role`, `status`, and `q` (email or name). |
 | `POST /v1/admin/users` | Provision another admin |
 | `POST /v1/admin/users/{id}/suspend` · `POST /v1/admin/users/{id}/reactivate` | Suspension bumps `session_valid_after`, killing live sessions |
 | `PATCH /v1/admin/users/{id}/role` | Change a role |
 | `GET /v1/benchmarks` · `GET /v1/benchmarks/{id}` | Browse and read the benchmark KB |
 | `POST /v1/benchmarks` · `PATCH /v1/benchmarks/{id}` · `POST /v1/benchmarks/{id}/retire` | Create, revise, retire |
 | `GET /v1/admin/startups/{startup_id}/audits/{run_id}/report` | Any startup's report **in full** — see §5b |
+| `GET /v1/admin/investors` · `POST /v1/admin/investors/{id}/thesis-review` | Thesis review queue. Accepting sets `kyc_status=verified`. |
+| `GET /v1/admin/startups` | Every startup profile. Filter with `company_verification_status`, `q`, `country`, `sector`, `stage`, `published`. |
+| `GET /v1/admin/stats` | Platform counters: startups, published, succeeded audits, users by role, pending interests. |
+| `GET /v1/admin/corpus` | Identity-stripped training records. Same filters as startups plus `startup_id`. Audit-logged. |
+| `POST /v1/admin/startups/{id}/company-verification` | Accept or reject a registration badge. |
 | `POST /v1/admin/interests/{id}/approve` · `POST /v1/admin/interests/{id}/decline` | Decide an interest — see §5d |
 | `POST /v1/admin/interests/{id}/reveal` | Open one full report to one investor — see §5d |
+| `POST /v1/admin/interests/{id}/meetings` | Book a meeting. SACI is the required host. Interest must be approved. |
+| `POST /v1/admin/interests/{id}/meetings/{meeting_id}/confirm` | Confirm an investor proposal. Notifies both sides. `409` unless `proposed`. |
 | `POST /v1/admin/tasks/{task_id}/reopen` | Clear a locked task's attempt cap — see §5e |
 | `POST /v1/admin/products` · `PATCH /v1/admin/products/{id}` | Create or revise a catalogue item. Set `active: false` to retire it |
 
@@ -784,8 +796,11 @@ the audit log keeps it.
 
 | | |
 |---|---|
-| `GET /v1/discover` | Browse published startups, newest first |
+| `GET /v1/investor/me` · `PUT /v1/investor/me` | Read or submit your thesis. First GET creates an empty row. `PUT` sets `review_status` to `in_review`. |
+| `GET /v1/discover` | Browse published startups, newest first. **Requires an accepted thesis** (`403` otherwise). |
 | `GET /v1/discover/{startup_id}` | One card |
+| `POST /v1/discover/{startup_id}/analyst/chat` | AI analyst. Retrieval is **summary-tier only** — the card, never the stored report. |
+| `GET /v1/watchlist` · `POST /v1/watchlist/{startup_id}` | Star / unstar a discoverable startup. Toggle is idempotent. |
 
 **Investors and SACI admins only — `403` for a founder.** Founders do not browse
 each other.
@@ -849,6 +864,10 @@ nothing has been opened; a run id in it means that report is readable.
 |---|---|
 | `POST /v1/discover/{id}/interest` | Express interest. Idempotent — a repeat returns the original. `404` if the startup has not published. |
 | `GET /v1/interests` | Your own, newest first. Optional `?status=`. |
+| `POST /v1/interests/{id}/withdraw` | Withdraw a **pending** interest. `409` if already decided. |
+| `GET /v1/interests/{id}/meetings` | Meetings for this interest (proposed and scheduled). |
+| `POST /v1/interests/{id}/meetings/propose` | Propose a slot on an **approved** interest. Founder is not notified until SACI confirms. |
+| `GET /v1/me/meetings` | Caller's meetings. Investors see proposed+scheduled; founders see scheduled only. |
 | `GET /v1/interests/{id}/reports/{run_id}` | The full report, **only** if it was revealed to you. |
 
 **The founder is never told an interest exists.** They hear about it when SACI
@@ -1098,6 +1117,7 @@ compatibility, not as an error — parse defensively.
 | `AssessmentOutcome` | `pass`, `fail`, `needs_more` |
 | `Dimension` | `financial_health`, `unit_economics`, `traction`, `market_opportunity`, `team`, `legal_and_ip`, `data_integrity`, `scalability`, `owner_independence`, `transferability`, `revenue_durability` |
 | `ProductKind` | `program`, `mentorship`, `event` |
+| `MeetingStatus` | `proposed`, `scheduled`, `cancelled` |
 
 `TaskStatus` is the whole evidence loop and **every value is now reachable** —
 `submitted` through `needs_more` are written by evidence assessment (§5f).
@@ -1129,16 +1149,16 @@ to handle it now is cheaper than retrofitting it when T2.8 lands.
 
 ## 7. Not built yet
 
-**Do not code against these.** Listed so you can plan, not integrate. No paths
-exist for any of them today.
+**Do not code against these.** Listed so you can plan, not integrate.
 
 | Area | Task | Affects |
 |---|---|---|
-| Stripe checkout and subscriptions | T3.3, T3.4 | Founder mobile |
-| Founder AI chat over their own audit and tasks | T3.7 | Founder mobile |
-| Investor profile + KYC gate. **Any investor account can discover today** | T4.1 | Investor mobile |
-| Investor analyst chat (summary-tier retrieval only) | T4.4 | Investor mobile |
 | Golden-set accuracy run — no verdict has been tuned against hand-scored companies, so treat early scores as provisional in the product sense too | T2.9 | Founder mobile |
+| Embeddings-based recommendation ranking and semantic task matching | T5.1 remainder | Founder + investor |
+| Push notifications | unscoped | Mobile |
+| Corporate SSO | unscoped | Auth |
+
+**Shipped since this section last claimed otherwise:** Stripe unlock Checkout (T3.3 / T3.4), founder mentor chat (T3.7), catalogue + enrol (T3.2), investor thesis + admin review gate (T4.1), investor analyst chat (T4.4), meetings (T4.5), in-app notifications (T5.3). Discovery now requires an **accepted thesis**.
 
 Two contract rules that will shape those endpoints when they land, worth
 knowing now:
@@ -1156,8 +1176,8 @@ knowing now:
 Honesty over polish — these are real and currently unresolved:
 
 - **`POST /v1/auth/register` requires `first_name` and `last_name`.** The Expo
-  client in `frontend/` does not send them, so mobile registration currently
-  returns **422**. Restoring those two fields client-side fixes it.
+  client now sends them. A 422 here is a real validation failure, not a
+  missing-field client bug.
 - **`first_name` / `last_name` can be `null`** on `UserResponse` for accounts
   created before the columns existed, and for admins (who are provisioned, not
   registered). Handle null.

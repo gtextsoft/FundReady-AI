@@ -23,6 +23,7 @@ export type FounderAccount = {
   trialEndsAt: string;
   subscriptionStatus: "none" | "active" | "past_due" | "canceled";
   hasAccess?: boolean;
+  verification?: "none" | "submitted" | "in_review" | "accepted" | "rejected";
 };
 
 export type InvestorAccount = {
@@ -47,6 +48,8 @@ const NEEDS_EMAIL = new Set<FounderCapability>([
   "investorRequests",
 ]);
 
+const NEEDS_VERIFICATION = new Set<FounderCapability>(["aiMentor", "investorVisibility"]);
+
 export function gate(
   account: FounderAccount,
   capability: FounderCapability,
@@ -54,12 +57,16 @@ export function gate(
 ): Gate {
   if (NEEDS_EMAIL.has(capability) && !account.emailVerified) return deny("email");
   if (!hasAccess(account, now)) return deny("payment");
+  if (NEEDS_VERIFICATION.has(capability) && account.verification === "rejected") {
+    return deny("verification");
+  }
   return ALLOW;
 }
 
 export function investorGate(account: InvestorAccount, capability: InvestorCapability): Gate {
-  void capability;
   if (!account.emailVerified) return deny("email");
+  if (account.verification !== "verified") return deny("verification");
+  void capability;
   return ALLOW;
 }
 

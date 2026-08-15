@@ -106,6 +106,7 @@ class CurrentUser:
     # Founder entitlement inputs (DECISIONS.md D21). Investors leave defaults.
     subscription_status: SubscriptionStatus = SubscriptionStatus.NONE
     created_at: datetime | None = None
+    kyc_status: KycStatus = KycStatus.NONE
 
 
 def assert_admin(actor: CurrentUser, *, message: str | None = None) -> None:

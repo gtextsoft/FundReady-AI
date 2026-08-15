@@ -61,6 +61,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from functools import lru_cache
+from collections.abc import AsyncIterator
 from typing import Any, Final, Generic, TypeVar, cast
 
 from anthropic import AsyncAnthropic, transform_schema
@@ -434,6 +435,68 @@ class AiClient:
                 usage=usage,
             )
         return text, usage
+
+    async def stream_text(
+        self,
+        *,
+        tier: ModelTier,
+        schema: type[SchemaT],
+        system: list[TextBlockParam],
+        messages: list[MessageParam],
+        user_id: str | None = None,
+    ) -> AsyncIterator[str]:
+        """Yield text deltas from one structured call, then stop.
+
+        Callers accumulate the chunks and parse. Usage is recorded when the
+        iterator is exhausted. Raises the same refusal/truncation errors as
+        `_call` after the stream ends.
+        """
+        profile = self.profile_for(tier)
+        assert_within_budget(user_id, settings=self._settings)
+        output_config = cast(
+            Any,
+            {
+                "format": {"type": "json_schema", "schema": _wire_schema(schema)},
+                "effort": profile.effort,
+            },
+        )
+        usage = AiUsage(0, 0, 0, 0)
+        try:
+            async with self._client.messages.stream(
+                model=profile.model,
+                max_tokens=profile.max_output_tokens,
+                system=system,
+                messages=messages,
+                output_config=output_config,
+                thinking={"type": "adaptive"},
+            ) as stream:
+                async for chunk in stream.text_stream:
+                    if chunk:
+                        yield chunk
+                message = await stream.get_final_message()
+            usage = AiUsage(
+                input_tokens=message.usage.input_tokens,
+                output_tokens=message.usage.output_tokens,
+                cache_creation_input_tokens=message.usage.cache_creation_input_tokens
+                or 0,
+                cache_read_input_tokens=message.usage.cache_read_input_tokens or 0,
+            )
+            if message.stop_reason == "refusal":
+                raise AiRefusalError(
+                    f"{profile.model} declined the request "
+                    f"(stop_reason=refusal); not retryable with the same input",
+                    usage=usage,
+                )
+            if message.stop_reason == "max_tokens":
+                raise AiTruncatedError(
+                    f"{profile.model} hit the {profile.max_output_tokens}-token output "
+                    "cap before completing; re-run with more headroom or lower effort",
+                    usage=usage,
+                )
+        finally:
+            billed = usage.total_input_tokens + usage.output_tokens
+            if billed > 0:
+                record_usage(user_id, billed, settings=self._settings)
 
 
 def _build_client(settings: Settings) -> AsyncAnthropic:

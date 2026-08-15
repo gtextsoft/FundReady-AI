@@ -75,6 +75,8 @@ async def make_founder(
     assert user is not None
     user.role = role
     user.status = AccountStatus.ACTIVE
+    if role is Role.ADMIN:
+        user.mfa_enabled = True
     await session.flush()
     return user, actor_for(user)
 

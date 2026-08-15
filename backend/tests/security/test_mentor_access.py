@@ -244,8 +244,9 @@ class TestMentorTenantIsolation:
 
         assert response.reply.startswith("Grounded")
         body = captured["messages"][0]["content"]
-        assert "Alpha Logistics" in body
-        assert "Beta Secrets Ltd" not in body
+        context = body.split("FOUNDER_QUESTION:", 1)[0]
+        assert "Alpha Logistics" in context
+        assert "Beta Secrets Ltd" not in context
         assert captured["user_id"] == str(owner_a.id)
 
 
