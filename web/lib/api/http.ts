@@ -5,11 +5,14 @@ import { displayName } from "@/lib/utils";
 // Same-origin `/v1/*` — Next rewrites these to the Render API. Do not point
 // the browser at the upstream host; staging/production CORS is closed.
 const BASE = "";
+const REFRESH_SKEW_MS = 30_000;
 
 let accessToken: string | null = null;
 let refreshing: Promise<string> | null = null;
 let refreshAbort: AbortController | null = null;
 let authEpoch = 0;
+let unauthorizedHandler: (() => void) | null = null;
+let unauthorizedEpoch = -1;
 
 export function setAccessToken(token: string | null) {
   accessToken = token;
@@ -19,22 +22,60 @@ export function getAccessToken() {
   return accessToken;
 }
 
+/** Session store registers this so a dead token signs the UI out. */
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  unauthorizedHandler = handler;
+}
+
+function emitUnauthorized() {
+  accessToken = null;
+  if (unauthorizedEpoch === authEpoch) return;
+  unauthorizedEpoch = authEpoch;
+  unauthorizedHandler?.();
+}
+
+function tokenNeedsRefresh(token: string | null): boolean {
+  if (!token) return true;
+  const payload = token.split(".")[1];
+  if (!payload) return true;
+  try {
+    const b64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const pad = b64.length % 4 === 0 ? "" : "=".repeat(4 - (b64.length % 4));
+    const claims = JSON.parse(atob(b64 + pad)) as { exp?: unknown };
+    if (typeof claims.exp !== "number") return true;
+    return claims.exp * 1000 - Date.now() < REFRESH_SKEW_MS;
+  } catch {
+    return true;
+  }
+}
+
 async function refreshAccess(): Promise<string> {
   const started = authEpoch;
   refreshing ??= (async () => {
     refreshAbort = new AbortController();
-    const res = await fetch("/api/auth/refresh", {
-      method: "POST",
-      credentials: "same-origin",
-      cache: "no-store",
-      signal: refreshAbort.signal,
-    });
+    let res: Response;
+    try {
+      res = await fetch("/api/auth/refresh", {
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+        signal: refreshAbort.signal,
+      });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        throw new ApiFailure("unauthorized", "You are signed out.");
+      }
+      throw new ApiFailure("network", "Could not reach the API. Is the backend running?");
+    }
     if (started !== authEpoch) {
       throw new ApiFailure("unauthorized", "You are signed out.");
     }
     if (res.status === 204) {
       accessToken = null;
       throw new ApiFailure("unauthorized", "You are signed out.");
+    }
+    if (res.status >= 500) {
+      throw new ApiFailure("server", "Could not refresh your session. Please try again.");
     }
     if (!res.ok) {
       accessToken = null;
@@ -53,6 +94,18 @@ async function refreshAccess(): Promise<string> {
   return refreshing;
 }
 
+async function ensureAccess(): Promise<string> {
+  if (!tokenNeedsRefresh(accessToken)) return accessToken as string;
+  try {
+    return await refreshAccess();
+  } catch (err) {
+    if (err instanceof ApiFailure && err.code === "unauthorized") {
+      emitUnauthorized();
+    }
+    throw err;
+  }
+}
+
 type SendOpts = {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
@@ -68,6 +121,7 @@ async function send(path: string, opts: SendOpts, bearer: string | null): Promis
       method: opts.method ?? "GET",
       headers,
       body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+      cache: "no-store",
     });
   } catch {
     throw new ApiFailure("network", "Could not reach the API. Is the backend running?");
@@ -76,19 +130,21 @@ async function send(path: string, opts: SendOpts, bearer: string | null): Promis
 
 export async function request<T>(path: string, opts: SendOpts = {}): Promise<T> {
   const auth = opts.auth !== false;
-  if (auth && !accessToken) {
-    try {
-      await refreshAccess();
-    } catch {
-      throw new ApiFailure("unauthorized", "You are signed out.");
-    }
-  }
+  if (auth) await ensureAccess();
 
   let res = await send(path, opts, auth ? accessToken : null);
   if (res.status === 401 && auth) {
-    const next = await refreshAccess();
-    res = await send(path, opts, next);
+    try {
+      const next = await refreshAccess();
+      res = await send(path, opts, next);
+    } catch (err) {
+      if (err instanceof ApiFailure && err.code === "unauthorized") {
+        emitUnauthorized();
+      }
+      throw err;
+    }
   }
+  if (res.status === 401 && auth) emitUnauthorized();
   if (res.status === 204) return undefined as T;
   const body = (await res.json().catch(() => null)) as (T & {
     error?: { code?: string; message?: string; details?: Record<string, unknown> };
@@ -98,7 +154,7 @@ export async function request<T>(path: string, opts: SendOpts = {}): Promise<T> 
 }
 
 export async function requestBytes(path: string): Promise<Uint8Array> {
-  if (!accessToken) await refreshAccess();
+  await ensureAccess();
   const url = path.startsWith("/api/") ? path : `${BASE}${path}`;
   const headers: Record<string, string> = { Accept: "application/octet-stream" };
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
@@ -109,10 +165,18 @@ export async function requestBytes(path: string): Promise<Uint8Array> {
     throw new ApiFailure("network", "Could not download the file.");
   }
   if (res.status === 401) {
-    const next = await refreshAccess();
-    headers.Authorization = `Bearer ${next}`;
-    res = await fetch(url, { headers, cache: "no-store" });
+    try {
+      const next = await refreshAccess();
+      headers.Authorization = `Bearer ${next}`;
+      res = await fetch(url, { headers, cache: "no-store" });
+    } catch (err) {
+      if (err instanceof ApiFailure && err.code === "unauthorized") {
+        emitUnauthorized();
+      }
+      throw err;
+    }
   }
+  if (res.status === 401) emitUnauthorized();
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as {
       error?: { code?: string; message?: string };
@@ -127,26 +191,41 @@ export async function requestStream(
   body: unknown,
   onEvent: (event: string, data: Record<string, unknown>) => void,
 ): Promise<Record<string, unknown>> {
-  if (!accessToken) await refreshAccess();
+  await ensureAccess();
   const headers: Record<string, string> = {
     Accept: "text/event-stream",
     "Content-Type": "application/json",
   };
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
-  let res = await fetch(`${BASE}${path}`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
-  if (res.status === 401) {
-    const next = await refreshAccess();
-    headers.Authorization = `Bearer ${next}`;
+  let res: Response;
+  try {
     res = await fetch(`${BASE}${path}`, {
       method: "POST",
       headers,
       body: JSON.stringify(body),
+      cache: "no-store",
     });
+  } catch {
+    throw new ApiFailure("network", "Could not reach the API. Is the backend running?");
   }
+  if (res.status === 401) {
+    try {
+      const next = await refreshAccess();
+      headers.Authorization = `Bearer ${next}`;
+      res = await fetch(`${BASE}${path}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        cache: "no-store",
+      });
+    } catch (err) {
+      if (err instanceof ApiFailure && err.code === "unauthorized") {
+        emitUnauthorized();
+      }
+      throw err;
+    }
+  }
+  if (res.status === 401) emitUnauthorized();
   if (!res.ok) {
     const errBody = (await res.json().catch(() => null)) as {
       error?: { code?: string; message?: string };
