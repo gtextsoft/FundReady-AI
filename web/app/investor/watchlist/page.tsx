@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { EmptyState, ErrorState } from "@/components/ui/states";
+import { EmptyState, ErrorState, LockedCard } from "@/components/ui/states";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -24,7 +24,18 @@ export default function WatchlistPage() {
     <div className="space-y-6">
       <PageHeader title="Watchlist" description="Companies you marked from dealflow." />
       {load.status === "loading" ? <PageSkeleton /> : null}
-      {load.status === "error" ? <ErrorState message={load.message} onRetry={() => void load.reload()} /> : null}
+      {load.status === "error" ? (
+        load.message.toLowerCase().includes("verification") ? (
+          <LockedCard
+            title="Thesis required"
+            body="SACI reviews who you are and what you look for before dealflow opens."
+            cta="Submit your thesis"
+            href="/investor/verify"
+          />
+        ) : (
+          <ErrorState message={load.message} onRetry={() => void load.reload()} />
+        )
+      ) : null}
       {load.status === "empty" ? (
         <EmptyState
           title="Empty watchlist"

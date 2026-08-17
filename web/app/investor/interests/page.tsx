@@ -17,7 +17,7 @@ export default function InterestsPage() {
   const load = useLoad(
     async () => {
       const items = await api.listInterests();
-      const page = await api.discover("");
+      const page = await api.discover("").catch(() => ({ items: [] as { startup_id: string; name: string | null }[] }));
       const names: Record<string, string> = {};
       for (const c of page.items) names[c.startup_id] = c.name ?? c.startup_id.slice(0, 8);
       const meetings: Record<string, Meeting[]> = {};

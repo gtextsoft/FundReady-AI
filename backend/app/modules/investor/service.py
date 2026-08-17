@@ -15,11 +15,12 @@ you are being shown the summary tier". Both live in this file and neither is
 optional.
 """
 
+import logging
 import uuid
-
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from datetime import UTC, datetime
+
+from pydantic import ValidationError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.caching import uncached_system
 from app.ai.client import AiClient, ModelTier
@@ -27,9 +28,11 @@ from app.ai.guards import UNTRUSTED_RULE, fence
 from app.core.config import get_settings
 from app.core.errors import ForbiddenError, NotFoundError
 from app.core.security import CurrentUser, KycStatus, Role, assert_admin
+from app.modules.audit.models import AuditRun
 from app.modules.identity import service as identity
 from app.modules.identity.models import AuditAction
 from app.modules.identity.repository import UserRepository
+from app.modules.intake.models import StartupProfile
 from app.modules.investor.models import ThesisReviewStatus
 from app.modules.investor.repository import (
     DiscoveryRepository,
@@ -49,6 +52,8 @@ from app.modules.investor.schemas import (
 )
 from app.modules.mentor.ai_schema import MentorReplyOut
 from app.modules.mentor.prompts import MENTOR_SYSTEM_V1
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "analyst_chat",
@@ -300,8 +305,14 @@ async def discover(
     rows = await repository.search(filters, limit=limit, offset=offset)
     total = await repository.count(filters)
 
+    items: list[StartupCard] = []
+    for profile, run in rows:
+        card = _summary_card(profile, run)
+        if card is not None:
+            items.append(card)
+
     return DiscoveryPage(
-        items=[StartupCard.of(profile, run) for profile, run in rows],
+        items=items,
         total=total,
         limit=limit,
         offset=offset,
@@ -324,4 +335,28 @@ async def visible_startup(
         raise NotFoundError(_NOT_DISCOVERABLE)
 
     profile, run = row
-    return StartupCard.of(profile, run)
+    card = _summary_card(profile, run)
+    if card is None:
+        raise NotFoundError(_NOT_DISCOVERABLE)
+    return card
+
+
+def _summary_card(profile: StartupProfile, run: AuditRun) -> StartupCard | None:
+    """Build a card, or drop a stored report that is not summary-tier shaped.
+
+    A succeeded run with `report = {}` (or missing verdict keys) used to 500
+    the whole discovery list. One bad row must not take dealflow down.
+    """
+    try:
+        return StartupCard.of(profile, run)
+    except (KeyError, TypeError, ValueError, ValidationError, AttributeError):
+        logger.exception(
+            "could not serialise discovery card",
+            extra={
+                "context": {
+                    "startup_id": str(profile.id),
+                    "run_id": str(run.id),
+                }
+            },
+        )
+        return None

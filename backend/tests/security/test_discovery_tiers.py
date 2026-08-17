@@ -21,6 +21,7 @@ from collections.abc import Iterator
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.schemas import Citation, DataSufficiency
@@ -28,6 +29,7 @@ from app.core.config import get_settings
 from app.core.errors import ForbiddenError, NotFoundError
 from app.core.security import AccountStatus, CurrentUser, Role
 from app.modules.audit import service as audit
+from app.modules.audit.models import AuditRun
 from app.modules.audit.rubric.v1 import Dimension, DimensionScore
 from app.modules.audit.runs import AuditStatus
 from app.modules.audit.schemas import report_to_storage
@@ -255,6 +257,28 @@ class TestOnlyPublishedStartupsAreVisible:
 
         assert startup_id in {card.startup_id for card in page.items}
         assert page.total >= 1
+
+    async def test_a_malformed_stored_report_does_not_500_the_list(
+        self, db_session: AsyncSession
+    ) -> None:
+        """A succeeded run with an empty report used to take dealflow down."""
+        _, owner = await _user(db_session)
+        startup_id = await _startup(db_session, owner, published=True)
+        run = await db_session.scalar(
+            select(AuditRun)
+            .where(AuditRun.startup_id == startup_id)
+            .order_by(AuditRun.created_at.desc())
+        )
+        assert run is not None
+        run.report = {}
+        await db_session.flush()
+        _, viewer = await _user(db_session, role=Role.INVESTOR)
+
+        page = await investor.discover(
+            db_session, viewer, DiscoveryFilters(), limit=100, offset=0
+        )
+
+        assert startup_id not in {card.startup_id for card in page.items}
 
 
 class TestACardCarriesSummaryTierOnly:

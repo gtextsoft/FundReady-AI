@@ -21,12 +21,17 @@ import uuid
 from collections.abc import Sequence
 
 from sqlalchemy import Select, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.audit.models import AuditRun
 from app.modules.audit.runs import AuditStatus
 from app.modules.intake.models import StartupProfile
-from app.modules.investor.models import InvestorProfile, ThesisReviewStatus, WatchlistItem
+from app.modules.investor.models import (
+    InvestorProfile,
+    ThesisReviewStatus,
+    WatchlistItem,
+)
 from app.modules.investor.schemas import DiscoveryFilters
 from app.modules.readiness.generation import Requirement, TaskStatus
 from app.modules.readiness.models import ReadinessTask
@@ -185,10 +190,17 @@ class InvestorProfileRepository:
         row = await self.get(user_id)
         if row is not None:
             return row
-        row = InvestorProfile(user_id=user_id)
-        self._session.add(row)
-        await self._session.flush()
-        return row
+        try:
+            async with self._session.begin_nested():
+                created = InvestorProfile(user_id=user_id)
+                self._session.add(created)
+                await self._session.flush()
+                return created
+        except IntegrityError:
+            existing = await self.get(user_id)
+            if existing is None:
+                raise
+            return existing
 
     async def list_for_review(
         self,

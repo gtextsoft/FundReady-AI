@@ -4,11 +4,12 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { DualAxisStamp } from "@/components/brand/dual-axis-stamp";
 import { Select } from "@/components/ui/field";
-import { EmptyState, ErrorState, Badge } from "@/components/ui/states";
+import { EmptyState, ErrorState, Badge, LockedCard } from "@/components/ui/states";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { Panel } from "@/components/ui/panel";
 import { api, type StartupCard } from "@/lib/api";
+import { ApiFailure } from "@/lib/api/errors";
 
 export default function DealflowPage() {
   const [items, setItems] = useState<StartupCard[] | null>(null);
@@ -31,7 +32,11 @@ export default function DealflowPage() {
       setItems(page.items);
       setWatching(new Set(watch.startup_ids));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load dealflow.");
+      if (err instanceof ApiFailure && err.code === "forbidden") {
+        setError("verify");
+      } else {
+        setError(err instanceof Error ? err.message : "Could not load dealflow.");
+      }
     }
   }
 
@@ -68,7 +73,14 @@ export default function DealflowPage() {
           <option value="US">United States</option>
         </Select>
       </Panel>
-      {error ? (
+      {error === "verify" ? (
+        <LockedCard
+          title="Thesis required"
+          body="SACI reviews who you are and what you look for before dealflow opens."
+          cta="Submit your thesis"
+          href="/investor/verify"
+        />
+      ) : error ? (
         <ErrorState message={error} onRetry={() => void load()} />
       ) : items === null ? (
         <PageSkeleton rows={4} />

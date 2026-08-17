@@ -15,17 +15,15 @@ docstring for what is excluded and why.
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.security import KycStatus
 from app.modules.audit.models import AuditRun
 from app.modules.audit.reports import VerdictSummary, summary_report
 from app.modules.intake.fields import Stage
 from app.modules.intake.models import StartupProfile
-
-from app.core.security import KycStatus
 from app.modules.investor.models import InvestorProfile, ThesisReviewStatus
 
 __all__ = [
@@ -41,6 +39,12 @@ __all__ = [
     "ThesisDecision",
     "WatchlistResponse",
 ]
+
+
+def _string_list(value: object) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    return []
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,7 +135,7 @@ class StartupCard(BaseModel):
         field, so this card can never carry more of a verdict than the investor
         tier allows -- there is exactly one place that decision is made.
         """
-        stored: dict[str, Any] = run.report or {}
+        stored = run.report if isinstance(run.report, dict) else {}
         summary = summary_report(stored)
         return cls(
             startup_id=profile.id,
@@ -240,15 +244,17 @@ class InvestorProfileResponse(BaseModel):
     review_status: ThesisReviewStatus
 
     @classmethod
-    def of(cls, row: InvestorProfile, kyc_status: KycStatus) -> "InvestorProfileResponse":
+    def of(
+        cls, row: InvestorProfile, kyc_status: KycStatus
+    ) -> "InvestorProfileResponse":
         return cls(
             firm=row.firm,
             investor_type=row.investor_type,
             country=row.country,
             linkedin_url=row.linkedin_url,
-            thesis_sectors=list(row.thesis_sectors or []),
-            thesis_stages=list(row.thesis_stages or []),
-            thesis_geographies=list(row.thesis_geographies or []),
+            thesis_sectors=_string_list(row.thesis_sectors),
+            thesis_stages=_string_list(row.thesis_stages),
+            thesis_geographies=_string_list(row.thesis_geographies),
             ticket_min_minor=row.ticket_min_minor,
             ticket_max_minor=row.ticket_max_minor,
             ticket_currency=row.ticket_currency,
